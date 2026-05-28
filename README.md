@@ -1,5 +1,7 @@
 # Success Planner MCP
 
+Personal Success Planner.
+
 Success Planner MCP is a solo, local planning and focus app for personal success development.
 
 The goal is to provide a simple point-and-click control center that hides the complexity of Microsoft To Do, Planner, Project, local storage, and automation behind a calm visual interface.
@@ -42,4 +44,3 @@ Version 0.1 should prove the local control experience before deep Microsoft inte
 - Manual task creation
 - Done and snooze actions
 - Simple weekly review
-
