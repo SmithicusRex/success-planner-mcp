@@ -1,0 +1,87 @@
+<Window x:Class="SuccessPlanner.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Success Planner MCP"
+        Width="1100"
+        Height="720"
+        MinWidth="900"
+        MinHeight="600"
+        WindowStartupLocation="CenterScreen"
+        Background="#F7F6F2">
+    <Window.Resources>
+        <Style x:Key="TileButtonStyle" TargetType="Button">
+            <Setter Property="Margin" Value="10" />
+            <Setter Property="FontSize" Value="28" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="#1E1E1E" />
+            <Setter Property="MinHeight" Value="180" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="#22000000"
+                                BorderThickness="1"
+                                CornerRadius="8"
+                                Padding="22">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="28">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <DockPanel Grid.Row="0" LastChildFill="True">
+            <Border DockPanel.Dock="Right"
+                    Padding="14,6"
+                    CornerRadius="8"
+                    Background="#E6F4EA">
+                <TextBlock Text="{Binding StatusText}"
+                           Foreground="#1E6B3A"
+                           FontWeight="SemiBold" />
+            </Border>
+
+            <StackPanel>
+                <TextBlock Text="Success Planner MCP"
+                           FontSize="30"
+                           FontWeight="SemiBold"
+                           Foreground="#222222" />
+                <TextBlock Text="Personal Success Planner"
+                           FontSize="15"
+                           Foreground="#666666"
+                           Margin="0,4,0,0" />
+            </StackPanel>
+        </DockPanel>
+
+        <UniformGrid Grid.Row="1"
+                     Columns="3"
+                     Rows="2"
+                     Margin="0,34,0,28">
+            <Button Content="Capture" Background="#9DCCFF" Style="{StaticResource TileButtonStyle}" />
+            <Button Content="Today" Background="#A8E6B1" Style="{StaticResource TileButtonStyle}" />
+            <Button Content="Plan" Background="#FFE08A" Style="{StaticResource TileButtonStyle}" />
+            <Button Content="Start" Background="#8DDAD5" Style="{StaticResource TileButtonStyle}" />
+            <Button Content="Done" Background="#DADDE2" Style="{StaticResource TileButtonStyle}" />
+            <Button Content="Move" Background="#FFBE7A" Style="{StaticResource TileButtonStyle}" />
+        </UniformGrid>
+
+        <DockPanel Grid.Row="2">
+            <TextBlock Text="{Binding FooterText}"
+                       Foreground="#666666"
+                       VerticalAlignment="Center" />
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <Button Content="Find" MinWidth="90" Margin="0,0,10,0" />
+                <Button Content="Settings" MinWidth="90" />
+            </StackPanel>
+        </DockPanel>
+    </Grid>
+</Window>

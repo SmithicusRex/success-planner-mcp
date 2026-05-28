@@ -46,3 +46,9 @@ Version 0.1 should prove the local control experience before deep Microsoft inte
 - Manual task creation
 - Done and snooze actions
 - Simple weekly review
+
+## Build
+
+```powershell
+dotnet build SuccessPlannerMCP.slnx
+```
