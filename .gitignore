@@ -1,0 +1,29 @@
+# Build output
+bin/
+obj/
+.vs/
+.vscode/
+
+# User/local files
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Logs and local data
+*.log
+data/
+*.db
+*.db-shm
+*.db-wal
+
+# Environment and secrets
+.env
+.env.*
+secrets.json
+appsettings.Local.json
+
+# Generated artifacts
+output/
+tmp/
+
