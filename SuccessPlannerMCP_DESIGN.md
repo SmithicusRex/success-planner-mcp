@@ -1,5 +1,7 @@
 # Success Planner MCP Design
 
+For the top-down software build and test plan, see [SOFTWARE_DESIGN_TOP_DOWN.md](SOFTWARE_DESIGN_TOP_DOWN.md).
+
 ## Goal
 
 Success Planner MCP is a solo, local Windows control program for personal project success. It hides Microsoft To Do, Planner, and Project complexity behind a simple mouse-driven interface with colorful, minimal screens.

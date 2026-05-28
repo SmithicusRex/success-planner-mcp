@@ -23,6 +23,8 @@ Success Planner MCP is designed for a fast creative mind with many active ideas 
 
 The first design pass is in [SuccessPlannerMCP_DESIGN.md](SuccessPlannerMCP_DESIGN.md).
 
+The top-down software design, including component coding and testing from app startup through shutdown, is in [SOFTWARE_DESIGN_TOP_DOWN.md](SOFTWARE_DESIGN_TOP_DOWN.md).
+
 ## Proposed Stack
 
 - Desktop app: C# / .NET / WPF
