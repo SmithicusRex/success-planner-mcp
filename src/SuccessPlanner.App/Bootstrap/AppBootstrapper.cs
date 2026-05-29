@@ -44,7 +44,8 @@ public sealed class AppBootstrapper
 
             AppShellViewModel shellViewModel = new(
                 statusText: "Ready",
-                footerText: $"Local control center - {settings.ProfileName}");
+                footerText: $"Local control center - {settings.ProfileName}",
+                currentScreen: new HomeScreenViewModel());
 
             MainWindow mainWindow = new()
             {

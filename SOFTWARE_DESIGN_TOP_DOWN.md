@@ -775,7 +775,7 @@ Status:
 
 ~~2.2. Add `NavigationService`.~~
 
-2.3. Add screen host area to `MainWindow`.
+~~2.3. Add screen host area to `MainWindow`.~~
 
 2.4. Wire Home tile buttons to navigation commands.
 
