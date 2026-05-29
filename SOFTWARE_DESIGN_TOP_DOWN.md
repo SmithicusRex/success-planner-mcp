@@ -797,15 +797,15 @@ Status:
 
 ~~3.2. Create `SettingsViewModel`.~~
 
-3.3. Create `SettingsView`.
+~~3.3. Create `SettingsView`.~~
 
-3.4. Show profile name, focus minutes, sync-on-launch, display settings, connection toggles, and destination rules summary.
+~~3.4. Show profile name, focus minutes, sync-on-launch, display settings, connection toggles, and destination rules summary.~~
 
-3.5. Show settings file status in plain language.
+~~3.5. Show settings file status in plain language.~~
 
-3.6. Add Save and Cancel behavior.
+~~3.6. Add Save and Cancel behavior.~~
 
-3.7. Validate settings before saving.
+~~3.7. Validate settings before saving.~~
 
 3.8. Show recovery status when invalid settings were recreated.
 

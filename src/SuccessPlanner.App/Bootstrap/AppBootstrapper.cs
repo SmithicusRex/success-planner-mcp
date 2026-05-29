@@ -82,7 +82,20 @@ public sealed class AppBootstrapper
         _navigationService.Register(AppScreen.Move, () => new InitialScreenViewModel(ScreenCatalog.Move));
         _navigationService.Register(AppScreen.Review, () => new InitialScreenViewModel(ScreenCatalog.Review));
         _navigationService.Register(AppScreen.Find, () => new InitialScreenViewModel(ScreenCatalog.Find));
-        _navigationService.Register(AppScreen.Settings, () => new InitialScreenViewModel(ScreenCatalog.Settings));
+        _navigationService.Register(AppScreen.Settings, CreateSettingsViewModel);
+    }
+
+    private SettingsViewModel CreateSettingsViewModel()
+    {
+        AppSettings settings = _settingsService
+            .LoadOrCreateAsync(CancellationToken.None)
+            .GetAwaiter()
+            .GetResult();
+
+        return new SettingsViewModel(
+            _settingsService,
+            settings,
+            settingsFileStatus: "Loaded from local settings file");
     }
 
     public async Task StopAsync(CancellationToken cancellationToken = default)

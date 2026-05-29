@@ -25,6 +25,10 @@
             <views:InitialScreenView />
         </DataTemplate>
 
+        <DataTemplate DataType="{x:Type viewModels:SettingsViewModel}">
+            <views:SettingsView />
+        </DataTemplate>
+
         <Style x:Key="ActionButtonStyle" TargetType="Button">
             <Setter Property="MinWidth" Value="118" />
             <Setter Property="Height" Value="42" />
