@@ -795,7 +795,7 @@ Status:
 
 ~~3.1. Finish `SettingsService` local load/save behavior.~~
 
-3.2. Create `SettingsViewModel`.
+~~3.2. Create `SettingsViewModel`.~~
 
 3.3. Create `SettingsView`.
 
