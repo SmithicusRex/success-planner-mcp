@@ -771,7 +771,7 @@ Status:
 
 ### 2. Navigation Shell And Screen Host
 
-2.1. Create a shared screen contract for app pages.
+~~2.1. Create a shared screen contract for app pages.~~
 
 2.2. Add `NavigationService`.
 
