@@ -17,7 +17,6 @@
         <SolidColorBrush x:Key="MutedBrush" Color="#5F656C" />
         <SolidColorBrush x:Key="PanelBrush" Color="#FFFCF7" />
         <SolidColorBrush x:Key="FocusRingBrush" Color="#2F6FED" />
-
         <DataTemplate DataType="{x:Type viewModels:HomeScreenViewModel}">
             <views:HomeScreenView />
         </DataTemplate>
@@ -59,6 +58,15 @@
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <Style x:Key="NavButtonStyle" TargetType="Button" BasedOn="{StaticResource ActionButtonStyle}">
+            <Setter Property="MinWidth" Value="46" />
+            <Setter Property="Width" Value="46" />
+            <Setter Property="Margin" Value="0,0,10,0" />
+            <Setter Property="FontFamily" Value="Segoe MDL2 Assets" />
+            <Setter Property="FontSize" Value="15" />
+            <Setter Property="ToolTipService.ShowDuration" Value="5000" />
+        </Style>
     </Window.Resources>
 
     <Grid>
@@ -83,6 +91,15 @@
             </Grid.ColumnDefinitions>
 
             <StackPanel Orientation="Horizontal">
+                <Button Content="&#xE72B;"
+                        Command="{Binding GoBackCommand}"
+                        Style="{StaticResource NavButtonStyle}"
+                        ToolTip="Back"
+                        IsEnabled="{Binding CanGoBack}" />
+                <Button Content="&#xE80F;"
+                        Command="{Binding GoHomeCommand}"
+                        Style="{StaticResource NavButtonStyle}"
+                        ToolTip="Home" />
                 <Border Width="52"
                         Height="52"
                         CornerRadius="8"

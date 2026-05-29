@@ -779,7 +779,7 @@ Status:
 
 ~~2.4. Wire Home tile buttons to navigation commands.~~
 
-2.5. Add Back and Home controls where appropriate.
+~~2.5. Add Back and Home controls where appropriate.~~
 
 2.6. Add initial visible screens for Capture, Today, Plan, Start, Done, Move, Review, Find, and Settings.
 

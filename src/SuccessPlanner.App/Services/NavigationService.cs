@@ -70,7 +70,7 @@ public sealed class NavigationService : INavigationService
         {
             _backStack.Clear();
         }
-        else if (addCurrentToBackStack && previousScreen is not null && previousScreen.CanGoBack)
+        else if (addCurrentToBackStack && previousScreen is not null)
         {
             _backStack.Push(previousScreen.Descriptor.Screen);
         }
