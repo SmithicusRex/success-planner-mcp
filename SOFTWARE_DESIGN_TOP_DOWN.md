@@ -13,8 +13,41 @@ Success Planner MCP is a solo, local-first personal success planner. The interfa
 - Store local changes first, then sync in the background.
 - Make every user action recoverable if sync fails.
 - Keep Microsoft-specific details out of the main user interface.
+- Make each completed milestone visible in the running app.
 - Test each component in isolation before connecting it to the full app.
 - Support future phone companion sync without redesigning the core model.
+
+## Implementation Pattern
+
+Development should follow visible vertical slices. A backend service may be built first, but it is only a sub-step. A workflow component is not complete until the user can see it, click it, and observe its current state in the app.
+
+Each workflow should move through this order:
+
+```text
+1. Domain model
+2. Service or repository
+3. View model
+4. View
+5. Navigation from Home
+6. User-visible status or diagnostics
+7. Unit tests
+8. Integration tests where relevant
+9. Manual click-through acceptance
+```
+
+For infrastructure-only work, such as settings, database, sync queue, or adapters, the app must still provide visual insight before the milestone is considered complete. That may be a real workflow screen, a status panel, or a plain-language diagnostics screen.
+
+Example:
+
+```text
+SettingsService coded
+  -> not complete as a user milestone
+
+SettingsService + SettingsViewModel + SettingsView + Home navigation + visible loaded settings
+  -> complete Settings workflow milestone
+```
+
+This keeps the project honest: the code may be complex under the hood, but every finished step should make the app more understandable from the outside.
 
 ## Top-Level Runtime Flow
 
@@ -517,6 +550,22 @@ ConnectionTestService.TestProjectDesktop()
 DestinationRuleService.SaveRules()
 ```
 
+### Visible Settings Requirements
+
+The Settings workflow must show the user what the app actually loaded.
+
+The first Settings screen should display:
+
+- Profile name
+- Default focus minutes
+- Sync on launch status
+- Large controls setting
+- Enabled connections: To Do, Planner, Project Desktop, Phone Companion
+- Destination rules summary
+- Settings file status: Loaded defaults, Loaded from file, Recovered from backup, or Recreated after invalid file
+
+The first Settings screen does not need to expose every edit control. It does need to prove visually that the SettingsService is active and understandable.
+
 ### Settings Tests
 
 - Settings load from disk.
@@ -680,6 +729,7 @@ Test user paths:
 Before each milestone is considered done:
 
 - A nontechnical user can complete the workflow by clicking only.
+- The running app shows visible evidence of the new capability.
 - No main screen exposes API, Graph, OAuth, COM, VBA, database, or adapter language.
 - The app remains useful when offline.
 - The app does not show more decisions than needed.
@@ -688,23 +738,24 @@ Before each milestone is considered done:
 ## Build Order
 
 ```text
-1. Core domain objects
-2. SQLite database and repositories
-3. App bootstrap and Home screen
-4. Capture workflow
-5. Today workflow
-6. Done workflow
-7. Start Work timer workflow
-8. Move workflow
-9. Plan workflow
-10. Review workflow
-11. Find workflow
-12. Settings workflow
-13. Sync queue
-14. Microsoft To Do adapter
-15. Project desktop detection and import
-16. Planner availability test
-17. Phone companion quick capture
+1. App bootstrap and Home screen shell
+2. Navigation shell and screen host
+3. Settings workflow visible slice
+4. Core domain objects
+5. SQLite database and repositories
+6. Capture workflow
+7. Today workflow
+8. Done workflow
+9. Start Work timer workflow
+10. Move workflow
+11. Plan workflow
+12. Review workflow
+13. Find workflow
+14. Sync queue with visible status
+15. Microsoft To Do adapter with visible connection status
+16. Project desktop detection and import with visible detection status
+17. Planner availability test with visible connection status
+18. Phone companion quick capture
 ```
 
 ## Definition Of Done For Each Component
@@ -712,10 +763,11 @@ Before each milestone is considered done:
 Each component is complete only when:
 
 - Code is implemented.
+- The feature is reachable from the running app when it is user-facing.
+- The app shows visible status, state, or results for the feature.
 - Unit tests pass.
 - Relevant integration tests pass.
 - User-facing text is simple and nontechnical.
 - Failure state is handled.
 - Local data is not lost if sync fails.
 - The component is documented enough for future maintenance.
-
