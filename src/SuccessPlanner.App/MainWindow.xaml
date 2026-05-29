@@ -10,7 +10,8 @@
         MinHeight="600"
         WindowStartupLocation="CenterScreen"
         Background="#F5F3EE"
-        FontFamily="Segoe UI">
+        FontFamily="Segoe UI"
+        Icon="Assets/success-planner-mcp.ico">
     <Window.Resources>
         <SolidColorBrush x:Key="InkBrush" Color="#171717" />
         <SolidColorBrush x:Key="MutedBrush" Color="#5F656C" />

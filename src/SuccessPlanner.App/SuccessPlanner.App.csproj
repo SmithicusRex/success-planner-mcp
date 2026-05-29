@@ -7,5 +7,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>SuccessPlanner.App</AssemblyName>
     <RootNamespace>SuccessPlanner.App</RootNamespace>
+    <ApplicationIcon>..\..\assets\icons\success-planner-mcp.ico</ApplicationIcon>
   </PropertyGroup>
+  <ItemGroup>
+    <Resource Include="..\..\assets\icons\success-planner-mcp.ico" Link="Assets\success-planner-mcp.ico" />
+  </ItemGroup>
 </Project>
