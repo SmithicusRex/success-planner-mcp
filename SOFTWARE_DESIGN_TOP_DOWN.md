@@ -777,7 +777,7 @@ Status:
 
 ~~2.3. Add screen host area to `MainWindow`.~~
 
-2.4. Wire Home tile buttons to navigation commands.
+~~2.4. Wire Home tile buttons to navigation commands.~~
 
 2.5. Add Back and Home controls where appropriate.
 

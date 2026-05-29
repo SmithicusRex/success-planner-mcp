@@ -1,0 +1,58 @@
+<UserControl x:Class="SuccessPlanner.App.Views.InitialScreenView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid>
+        <Border Background="#FFFCF7"
+                BorderBrush="#E5E1D8"
+                BorderThickness="1"
+                CornerRadius="8"
+                Padding="34">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <StackPanel Orientation="Horizontal">
+                    <Border Width="64"
+                            Height="64"
+                            CornerRadius="8"
+                            Background="{Binding AccentColor}"
+                            Margin="0,0,18,0">
+                        <TextBlock Text="{Binding IconGlyph}"
+                                   FontFamily="Segoe MDL2 Assets"
+                                   FontSize="28"
+                                   Foreground="#171717"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center" />
+                    </Border>
+
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Title}"
+                                   FontSize="32"
+                                   FontWeight="SemiBold"
+                                   Foreground="#171717" />
+                        <TextBlock Text="{Binding Subtitle}"
+                                   FontSize="16"
+                                   Foreground="#5F656C"
+                                   Margin="0,4,0,0" />
+                    </StackPanel>
+                </StackPanel>
+
+                <Border Grid.Row="1"
+                        Margin="0,34,0,0"
+                        Background="#F5F3EE"
+                        BorderBrush="#E7E2D8"
+                        BorderThickness="1"
+                        CornerRadius="8"
+                        Padding="24">
+                    <TextBlock Text="This screen is ready for its workflow."
+                               FontSize="18"
+                               Foreground="#5F656C"
+                               VerticalAlignment="Center"
+                               HorizontalAlignment="Center" />
+                </Border>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

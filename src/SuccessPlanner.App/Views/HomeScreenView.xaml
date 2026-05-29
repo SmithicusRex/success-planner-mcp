@@ -59,42 +59,42 @@
 
     <Grid>
         <UniformGrid Columns="3" Rows="2">
-            <Button Background="#9DCCFF" Style="{StaticResource TileButtonStyle}">
+            <Button Background="#9DCCFF" Style="{StaticResource TileButtonStyle}" Command="{Binding OpenCaptureCommand}">
                 <StackPanel HorizontalAlignment="Center">
                     <TextBlock Text="&#xE710;" FontFamily="Segoe MDL2 Assets" FontSize="31" HorizontalAlignment="Center" Margin="0,0,0,16" />
                     <TextBlock Text="Capture" FontSize="29" FontWeight="SemiBold" HorizontalAlignment="Center" />
                     <TextBlock Text="Add the thought" FontSize="14" Foreground="#44505C" HorizontalAlignment="Center" Margin="0,8,0,0" />
                 </StackPanel>
             </Button>
-            <Button Background="#A8E6B1" Style="{StaticResource TileButtonStyle}">
+            <Button Background="#A8E6B1" Style="{StaticResource TileButtonStyle}" Command="{Binding OpenTodayCommand}">
                 <StackPanel HorizontalAlignment="Center">
                     <TextBlock Text="&#xE787;" FontFamily="Segoe MDL2 Assets" FontSize="31" HorizontalAlignment="Center" Margin="0,0,0,16" />
                     <TextBlock Text="Today" FontSize="29" FontWeight="SemiBold" HorizontalAlignment="Center" />
                     <TextBlock Text="See what matters" FontSize="14" Foreground="#44505C" HorizontalAlignment="Center" Margin="0,8,0,0" />
                 </StackPanel>
             </Button>
-            <Button Background="#FFE08A" Style="{StaticResource TileButtonStyle}">
+            <Button Background="#FFE08A" Style="{StaticResource TileButtonStyle}" Command="{Binding OpenPlanCommand}">
                 <StackPanel HorizontalAlignment="Center">
                     <TextBlock Text="&#xE9D5;" FontFamily="Segoe MDL2 Assets" FontSize="31" HorizontalAlignment="Center" Margin="0,0,0,16" />
                     <TextBlock Text="Plan" FontSize="29" FontWeight="SemiBold" HorizontalAlignment="Center" />
                     <TextBlock Text="Make it smaller" FontSize="14" Foreground="#44505C" HorizontalAlignment="Center" Margin="0,8,0,0" />
                 </StackPanel>
             </Button>
-            <Button Background="#8DDAD5" Style="{StaticResource TileButtonStyle}">
+            <Button Background="#8DDAD5" Style="{StaticResource TileButtonStyle}" Command="{Binding OpenStartCommand}">
                 <StackPanel HorizontalAlignment="Center">
                     <TextBlock Text="&#xE768;" FontFamily="Segoe MDL2 Assets" FontSize="31" HorizontalAlignment="Center" Margin="0,0,0,16" />
                     <TextBlock Text="Start" FontSize="29" FontWeight="SemiBold" HorizontalAlignment="Center" />
                     <TextBlock Text="20-minute focus" FontSize="14" Foreground="#44505C" HorizontalAlignment="Center" Margin="0,8,0,0" />
                 </StackPanel>
             </Button>
-            <Button Background="#DADDE2" Style="{StaticResource TileButtonStyle}">
+            <Button Background="#DADDE2" Style="{StaticResource TileButtonStyle}" Command="{Binding OpenDoneCommand}">
                 <StackPanel HorizontalAlignment="Center">
                     <TextBlock Text="&#xE73E;" FontFamily="Segoe MDL2 Assets" FontSize="31" HorizontalAlignment="Center" Margin="0,0,0,16" />
                     <TextBlock Text="Done" FontSize="29" FontWeight="SemiBold" HorizontalAlignment="Center" />
                     <TextBlock Text="Record the win" FontSize="14" Foreground="#44505C" HorizontalAlignment="Center" Margin="0,8,0,0" />
                 </StackPanel>
             </Button>
-            <Button Background="#FFBE7A" Style="{StaticResource TileButtonStyle}">
+            <Button Background="#FFBE7A" Style="{StaticResource TileButtonStyle}" Command="{Binding OpenMoveCommand}">
                 <StackPanel HorizontalAlignment="Center">
                     <TextBlock Text="&#xE805;" FontFamily="Segoe MDL2 Assets" FontSize="31" HorizontalAlignment="Center" Margin="0,0,0,16" />
                     <TextBlock Text="Move" FontSize="29" FontWeight="SemiBold" HorizontalAlignment="Center" />

@@ -1,4 +1,5 @@
 using SuccessPlanner.App.Infrastructure;
+using SuccessPlanner.App.Screens;
 using SuccessPlanner.App.Services;
 using SuccessPlanner.App.ViewModels;
 
@@ -10,6 +11,7 @@ public sealed class AppBootstrapper
     private readonly SettingsService _settingsService;
     private readonly DatabaseService _databaseService;
     private readonly BackgroundWorkerHost _backgroundWorkerHost;
+    private readonly NavigationService _navigationService;
     private bool _started;
 
     public AppBootstrapper()
@@ -23,6 +25,8 @@ public sealed class AppBootstrapper
         _settingsService = new SettingsService(_paths);
         _databaseService = new DatabaseService(_paths);
         _backgroundWorkerHost = new BackgroundWorkerHost();
+        _navigationService = new NavigationService();
+        RegisterScreens();
     }
 
     public async Task<BootstrapResult> StartAsync(CancellationToken cancellationToken = default)
@@ -42,10 +46,12 @@ public sealed class AppBootstrapper
             await _databaseService.MigrateAsync(cancellationToken);
             await _databaseService.HealthCheckAsync(cancellationToken);
 
+            await _navigationService.GoHomeAsync(cancellationToken);
+
             AppShellViewModel shellViewModel = new(
                 statusText: "Ready",
                 footerText: $"Local control center - {settings.ProfileName}",
-                currentScreen: new HomeScreenViewModel());
+                navigationService: _navigationService);
 
             MainWindow mainWindow = new()
             {
@@ -63,6 +69,20 @@ public sealed class AppBootstrapper
             return BootstrapResult.Failed(
                 "Success Planner MCP could not start. Your local data was not changed. Check the log folder for details.");
         }
+    }
+
+    private void RegisterScreens()
+    {
+        _navigationService.Register(AppScreen.Home, () => new HomeScreenViewModel(_navigationService));
+        _navigationService.Register(AppScreen.Capture, () => new InitialScreenViewModel(ScreenCatalog.Capture));
+        _navigationService.Register(AppScreen.Today, () => new InitialScreenViewModel(ScreenCatalog.Today));
+        _navigationService.Register(AppScreen.Plan, () => new InitialScreenViewModel(ScreenCatalog.Plan));
+        _navigationService.Register(AppScreen.StartWork, () => new InitialScreenViewModel(ScreenCatalog.StartWork));
+        _navigationService.Register(AppScreen.Done, () => new InitialScreenViewModel(ScreenCatalog.Done));
+        _navigationService.Register(AppScreen.Move, () => new InitialScreenViewModel(ScreenCatalog.Move));
+        _navigationService.Register(AppScreen.Review, () => new InitialScreenViewModel(ScreenCatalog.Review));
+        _navigationService.Register(AppScreen.Find, () => new InitialScreenViewModel(ScreenCatalog.Find));
+        _navigationService.Register(AppScreen.Settings, () => new InitialScreenViewModel(ScreenCatalog.Settings));
     }
 
     public async Task StopAsync(CancellationToken cancellationToken = default)
