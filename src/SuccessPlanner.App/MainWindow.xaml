@@ -7,81 +7,241 @@
         MinWidth="900"
         MinHeight="600"
         WindowStartupLocation="CenterScreen"
-        Background="#F7F6F2">
+        Background="#F5F3EE"
+        FontFamily="Segoe UI">
     <Window.Resources>
+        <SolidColorBrush x:Key="InkBrush" Color="#171717" />
+        <SolidColorBrush x:Key="MutedBrush" Color="#5F656C" />
+        <SolidColorBrush x:Key="PanelBrush" Color="#FFFCF7" />
+        <SolidColorBrush x:Key="FocusRingBrush" Color="#2F6FED" />
+
         <Style x:Key="TileButtonStyle" TargetType="Button">
-            <Setter Property="Margin" Value="10" />
-            <Setter Property="FontSize" Value="28" />
-            <Setter Property="FontWeight" Value="SemiBold" />
-            <Setter Property="Foreground" Value="#1E1E1E" />
-            <Setter Property="MinHeight" Value="180" />
+            <Setter Property="Margin" Value="11" />
+            <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
+            <Setter Property="MinHeight" Value="172" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="BorderBrush" Value="#18000000" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chrome"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="8"
+                                Padding="22"
+                                SnapsToDevicePixels="True">
+                            <Border.Effect>
+                                <DropShadowEffect BlurRadius="14"
+                                                  Direction="270"
+                                                  Opacity="0.12"
+                                                  ShadowDepth="3" />
+                            </Border.Effect>
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="#55000000" />
+                                <Setter TargetName="Chrome" Property="Effect">
+                                    <Setter.Value>
+                                        <DropShadowEffect BlurRadius="18"
+                                                          Direction="270"
+                                                          Opacity="0.18"
+                                                          ShadowDepth="5" />
+                                    </Setter.Value>
+                                </Setter>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Chrome" Property="Opacity" Value="0.88" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="{StaticResource FocusRingBrush}" />
+                                <Setter TargetName="Chrome" Property="BorderThickness" Value="2" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="ActionButtonStyle" TargetType="Button">
+            <Setter Property="MinWidth" Value="118" />
+            <Setter Property="Height" Value="42" />
+            <Setter Property="Padding" Value="14,0" />
+            <Setter Property="Margin" Value="10,0,0,0" />
+            <Setter Property="Background" Value="#FFFFFF" />
+            <Setter Property="BorderBrush" Value="#D7DADF" />
+            <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border Background="{TemplateBinding Background}"
-                                BorderBrush="#22000000"
-                                BorderThickness="1"
-                                CornerRadius="8"
-                                Padding="22">
+                        <Border x:Name="Chrome"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="8">
                             <ContentPresenter HorizontalAlignment="Center"
                                               VerticalAlignment="Center" />
                         </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="#F1F5F9" />
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="#B8C0CC" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="#E8EDF3" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
         </Style>
     </Window.Resources>
 
-    <Grid Margin="28">
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="10" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <Border Grid.Column="0" Background="#2F6FED" />
+
+        <Grid Grid.Column="1" Margin="32,28,32,24">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <DockPanel Grid.Row="0" LastChildFill="True">
-            <Border DockPanel.Dock="Right"
-                    Padding="14,6"
+        <Grid Grid.Row="0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <StackPanel Orientation="Horizontal">
+                <Border Width="52"
+                        Height="52"
+                        CornerRadius="8"
+                        Background="#FFFFFF"
+                        BorderBrush="#E5E1D8"
+                        BorderThickness="1"
+                        Margin="0,0,16,0">
+                    <Grid>
+                        <TextBlock Text="&#xE8A5;"
+                                   FontFamily="Segoe MDL2 Assets"
+                                   FontSize="23"
+                                   Foreground="#2F6FED"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center" />
+                    </Grid>
+                </Border>
+
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="Success Planner MCP"
+                               FontSize="32"
+                               FontWeight="SemiBold"
+                               Foreground="{StaticResource InkBrush}" />
+                    <TextBlock Text="Capture simply. Focus briefly. Build momentum."
+                               FontSize="15"
+                               Foreground="{StaticResource MutedBrush}"
+                               Margin="0,3,0,0" />
+                </StackPanel>
+            </StackPanel>
+
+            <Border Grid.Column="1"
+                    Padding="14,8"
                     CornerRadius="8"
-                    Background="#E6F4EA">
-                <TextBlock Text="{Binding StatusText}"
-                           Foreground="#1E6B3A"
-                           FontWeight="SemiBold" />
+                    Background="#E6F4EA"
+                    BorderBrush="#CDEAD5"
+                    BorderThickness="1"
+                    VerticalAlignment="Top">
+                <StackPanel Orientation="Horizontal">
+                    <Ellipse Width="8" Height="8" Fill="#24984E" Margin="0,0,8,0" />
+                    <TextBlock Text="{Binding StatusText}"
+                               Foreground="#1E6B3A"
+                               FontWeight="SemiBold"
+                               FontSize="13" />
+                </StackPanel>
             </Border>
+        </Grid>
 
-            <StackPanel>
-                <TextBlock Text="Success Planner MCP"
-                           FontSize="30"
-                           FontWeight="SemiBold"
-                           Foreground="#222222" />
-                <TextBlock Text="Personal Success Planner"
-                           FontSize="15"
-                           Foreground="#666666"
-                           Margin="0,4,0,0" />
-            </StackPanel>
-        </DockPanel>
+        <Grid Grid.Row="1" Margin="0,34,0,30">
+            <UniformGrid Columns="3" Rows="2">
+                <Button Background="#9DCCFF" Style="{StaticResource TileButtonStyle}">
+                    <StackPanel HorizontalAlignment="Center">
+                        <TextBlock Text="&#xE710;" FontFamily="Segoe MDL2 Assets" FontSize="31" HorizontalAlignment="Center" Margin="0,0,0,16" />
+                        <TextBlock Text="Capture" FontSize="29" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                        <TextBlock Text="Add the thought" FontSize="14" Foreground="#44505C" HorizontalAlignment="Center" Margin="0,8,0,0" />
+                    </StackPanel>
+                </Button>
+                <Button Background="#A8E6B1" Style="{StaticResource TileButtonStyle}">
+                    <StackPanel HorizontalAlignment="Center">
+                        <TextBlock Text="&#xE787;" FontFamily="Segoe MDL2 Assets" FontSize="31" HorizontalAlignment="Center" Margin="0,0,0,16" />
+                        <TextBlock Text="Today" FontSize="29" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                        <TextBlock Text="See what matters" FontSize="14" Foreground="#44505C" HorizontalAlignment="Center" Margin="0,8,0,0" />
+                    </StackPanel>
+                </Button>
+                <Button Background="#FFE08A" Style="{StaticResource TileButtonStyle}">
+                    <StackPanel HorizontalAlignment="Center">
+                        <TextBlock Text="&#xE9D5;" FontFamily="Segoe MDL2 Assets" FontSize="31" HorizontalAlignment="Center" Margin="0,0,0,16" />
+                        <TextBlock Text="Plan" FontSize="29" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                        <TextBlock Text="Make it smaller" FontSize="14" Foreground="#44505C" HorizontalAlignment="Center" Margin="0,8,0,0" />
+                    </StackPanel>
+                </Button>
+                <Button Background="#8DDAD5" Style="{StaticResource TileButtonStyle}">
+                    <StackPanel HorizontalAlignment="Center">
+                        <TextBlock Text="&#xE768;" FontFamily="Segoe MDL2 Assets" FontSize="31" HorizontalAlignment="Center" Margin="0,0,0,16" />
+                        <TextBlock Text="Start" FontSize="29" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                        <TextBlock Text="20-minute focus" FontSize="14" Foreground="#44505C" HorizontalAlignment="Center" Margin="0,8,0,0" />
+                    </StackPanel>
+                </Button>
+                <Button Background="#DADDE2" Style="{StaticResource TileButtonStyle}">
+                    <StackPanel HorizontalAlignment="Center">
+                        <TextBlock Text="&#xE73E;" FontFamily="Segoe MDL2 Assets" FontSize="31" HorizontalAlignment="Center" Margin="0,0,0,16" />
+                        <TextBlock Text="Done" FontSize="29" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                        <TextBlock Text="Record the win" FontSize="14" Foreground="#44505C" HorizontalAlignment="Center" Margin="0,8,0,0" />
+                    </StackPanel>
+                </Button>
+                <Button Background="#FFBE7A" Style="{StaticResource TileButtonStyle}">
+                    <StackPanel HorizontalAlignment="Center">
+                        <TextBlock Text="&#xE805;" FontFamily="Segoe MDL2 Assets" FontSize="31" HorizontalAlignment="Center" Margin="0,0,0,16" />
+                        <TextBlock Text="Move" FontSize="29" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                        <TextBlock Text="Walk or workout" FontSize="14" Foreground="#44505C" HorizontalAlignment="Center" Margin="0,8,0,0" />
+                    </StackPanel>
+                </Button>
+            </UniformGrid>
+        </Grid>
 
-        <UniformGrid Grid.Row="1"
-                     Columns="3"
-                     Rows="2"
-                     Margin="0,34,0,28">
-            <Button Content="Capture" Background="#9DCCFF" Style="{StaticResource TileButtonStyle}" />
-            <Button Content="Today" Background="#A8E6B1" Style="{StaticResource TileButtonStyle}" />
-            <Button Content="Plan" Background="#FFE08A" Style="{StaticResource TileButtonStyle}" />
-            <Button Content="Start" Background="#8DDAD5" Style="{StaticResource TileButtonStyle}" />
-            <Button Content="Done" Background="#DADDE2" Style="{StaticResource TileButtonStyle}" />
-            <Button Content="Move" Background="#FFBE7A" Style="{StaticResource TileButtonStyle}" />
-        </UniformGrid>
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
 
-        <DockPanel Grid.Row="2">
             <TextBlock Text="{Binding FooterText}"
-                       Foreground="#666666"
-                       VerticalAlignment="Center" />
-            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                <Button Content="Find" MinWidth="90" Margin="0,0,10,0" />
-                <Button Content="Settings" MinWidth="90" />
+                       Foreground="{StaticResource MutedBrush}"
+                       VerticalAlignment="Center"
+                       FontSize="13" />
+
+            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                <Button Style="{StaticResource ActionButtonStyle}">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE721;" FontFamily="Segoe MDL2 Assets" FontSize="15" Margin="0,0,8,0" VerticalAlignment="Center" />
+                        <TextBlock Text="Find" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+                <Button Style="{StaticResource ActionButtonStyle}">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE713;" FontFamily="Segoe MDL2 Assets" FontSize="15" Margin="0,0,8,0" VerticalAlignment="Center" />
+                        <TextBlock Text="Settings" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
             </StackPanel>
-        </DockPanel>
+        </Grid>
+        </Grid>
     </Grid>
 </Window>
