@@ -820,7 +820,7 @@ Status:
 
 ### 4. Core Domain Objects
 
-4.1. Create `TaskItem`.
+~~4.1. Create `TaskItem`.~~
 
 4.2. Create `ProjectItem`.
 
