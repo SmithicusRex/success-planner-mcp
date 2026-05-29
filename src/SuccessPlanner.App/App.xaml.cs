@@ -24,14 +24,27 @@ public partial class App : Application
             return;
         }
 
-        result.MainWindow?.Show();
+        MainWindow = result.MainWindow;
+        if (MainWindow is null)
+        {
+            Shutdown(1);
+            return;
+        }
+
+        MainWindow.Closed += OnMainWindowClosed;
+        MainWindow.Show();
     }
 
-    private async void OnExit(object sender, ExitEventArgs e)
+    private void OnMainWindowClosed(object? sender, EventArgs e)
+    {
+        Shutdown();
+    }
+
+    private void OnExit(object sender, ExitEventArgs e)
     {
         if (_bootstrapper is not null)
         {
-            await _bootstrapper.StopAsync();
+            _bootstrapper.StopAsync().GetAwaiter().GetResult();
         }
     }
 }
