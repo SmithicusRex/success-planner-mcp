@@ -773,7 +773,7 @@ Status:
 
 ~~2.1. Create a shared screen contract for app pages.~~
 
-2.2. Add `NavigationService`.
+~~2.2. Add `NavigationService`.~~
 
 2.3. Add screen host area to `MainWindow`.
 
