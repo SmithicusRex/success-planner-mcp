@@ -739,6 +739,8 @@ Before each milestone is considered done:
 
 This roadmap is the controlling implementation sequence. Each major step has a benchmark gate. The next major step should not begin until the benchmark gate for the current step is met.
 
+Benchmarks must describe a distinct completed accomplishment. They should not include future refinements, deferred cleanup, or placeholder caveats. If a future refinement is known, it must appear as its own later roadmap step with its own benchmark gate.
+
 ### 1. App Bootstrap And Home Shell
 
 1.1. Create the WPF app project and solution file.
@@ -765,8 +767,7 @@ Benchmark gate:
 
 Status:
 
-- Complete for first scaffold.
-- Needs future refinement when real database and sync workers replace placeholders.
+- Complete.
 
 ### 2. Navigation Shell And Screen Host
 
@@ -780,11 +781,11 @@ Status:
 
 2.5. Add Back and Home controls where appropriate.
 
-2.6. Add placeholder screens for Capture, Today, Plan, Start, Done, Move, Review, Find, and Settings.
+2.6. Add initial visible screens for Capture, Today, Plan, Start, Done, Move, Review, Find, and Settings.
 
 Benchmark gate:
 
-- Every Home tile opens a visible screen.
+- Every Home tile opens a visible initial screen.
 - Settings and Find buttons open visible screens.
 - User can return Home by clicking.
 - No screen exposes technical implementation labels.
@@ -846,7 +847,7 @@ Benchmark gate:
 
 ### 5. SQLite Database And Repositories
 
-5.1. Replace placeholder local data file with SQLite.
+5.1. Replace the bootstrap local data marker with SQLite.
 
 5.2. Add database migration structure.
 
@@ -1032,7 +1033,7 @@ Benchmark gate:
 
 13.4. Open selected local item.
 
-13.5. Add future hook for opening source item.
+13.5. Add an inactive Open Source control that clearly shows when no source item is connected.
 
 Benchmark gate:
 
@@ -1067,7 +1068,7 @@ Benchmark gate:
 
 15.1. Add Microsoft To Do connection status model.
 
-15.2. Add authentication placeholder or integration path.
+15.2. Add the first usable authentication or connection-test path.
 
 15.3. Pull To Do lists and tasks where available.
 
