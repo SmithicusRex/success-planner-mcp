@@ -741,33 +741,33 @@ This roadmap is the controlling implementation sequence. Each major step has a b
 
 Benchmarks must describe a distinct completed accomplishment. They should not include future refinements, deferred cleanup, or placeholder caveats. If a future refinement is known, it must appear as its own later roadmap step with its own benchmark gate.
 
-### 1. App Bootstrap And Home Shell
+### ~~1. App Bootstrap And Home Shell~~
 
-1.1. Create the WPF app project and solution file.
+~~1.1. Create the WPF app project and solution file.~~
 
-1.2. Implement `AppBootstrapper`.
+~~1.2. Implement `AppBootstrapper`.~~
 
-1.3. Load settings during startup.
+~~1.3. Load settings during startup.~~
 
-1.4. Open the local data service during startup.
+~~1.4. Open the local data service during startup.~~
 
-1.5. Start background workers without blocking the Home screen.
+~~1.5. Start background workers without blocking the Home screen.~~
 
-1.6. Show the Home screen with the main action tiles.
+~~1.6. Show the Home screen with the main action tiles.~~
 
-1.7. Implement clean shutdown that stops workers and closes local services.
+~~1.7. Implement clean shutdown that stops workers and closes local services.~~
 
-Benchmark gate:
+~~Benchmark gate:~~
 
-- App launches from desktop shortcut.
-- Home screen appears quickly.
-- Status shows `Ready`.
-- App closes without error.
-- `dotnet build SuccessPlannerMCP.slnx` passes.
+- ~~App launches from desktop shortcut.~~
+- ~~Home screen appears quickly.~~
+- ~~Status shows `Ready`.~~
+- ~~App closes without error.~~
+- ~~`dotnet build SuccessPlannerMCP.slnx` passes.~~
 
 Status:
 
-- Complete.
+- ~~Complete.~~
 
 ### 2. Navigation Shell And Screen Host
 
@@ -793,7 +793,7 @@ Benchmark gate:
 
 ### 3. Settings Workflow Visible Slice
 
-3.1. Finish `SettingsService` local load/save behavior.
+~~3.1. Finish `SettingsService` local load/save behavior.~~
 
 3.2. Create `SettingsViewModel`.
 
