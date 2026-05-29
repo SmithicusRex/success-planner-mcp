@@ -20,6 +20,7 @@ public sealed class HomeScreenViewModel : ScreenViewModelBase
         OpenStartCommand = CreateNavigationCommand(AppScreen.StartWork);
         OpenDoneCommand = CreateNavigationCommand(AppScreen.Done);
         OpenMoveCommand = CreateNavigationCommand(AppScreen.Move);
+        OpenReviewCommand = CreateNavigationCommand(AppScreen.Review);
     }
 
     public ICommand OpenCaptureCommand { get; }
@@ -33,6 +34,8 @@ public sealed class HomeScreenViewModel : ScreenViewModelBase
     public ICommand OpenDoneCommand { get; }
 
     public ICommand OpenMoveCommand { get; }
+
+    public ICommand OpenReviewCommand { get; }
 
     private ICommand CreateNavigationCommand(AppScreen screen)
     {

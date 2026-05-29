@@ -12,6 +12,8 @@ public sealed class AppShellViewModel : INotifyPropertyChanged
     private readonly INavigationService _navigationService;
     private readonly AsyncRelayCommand _goBackCommand;
     private readonly AsyncRelayCommand _goHomeCommand;
+    private readonly AsyncRelayCommand _openFindCommand;
+    private readonly AsyncRelayCommand _openSettingsCommand;
     private IScreenViewModel _currentScreen;
 
     public AppShellViewModel(string statusText, string footerText, INavigationService navigationService)
@@ -30,6 +32,9 @@ public sealed class AppShellViewModel : INotifyPropertyChanged
             () => _navigationService.GoHomeAsync(),
             () => !IsHome);
 
+        _openFindCommand = new AsyncRelayCommand(() => _navigationService.NavigateToAsync(AppScreen.Find));
+        _openSettingsCommand = new AsyncRelayCommand(() => _navigationService.NavigateToAsync(AppScreen.Settings));
+
         navigationService.Navigated += OnNavigated;
     }
 
@@ -42,6 +47,10 @@ public sealed class AppShellViewModel : INotifyPropertyChanged
     public ICommand GoBackCommand => _goBackCommand;
 
     public ICommand GoHomeCommand => _goHomeCommand;
+
+    public ICommand OpenFindCommand => _openFindCommand;
+
+    public ICommand OpenSettingsCommand => _openSettingsCommand;
 
     public bool CanGoBack => _navigationService.CanGoBack;
 

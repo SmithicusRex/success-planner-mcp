@@ -58,7 +58,7 @@
     </UserControl.Resources>
 
     <Grid>
-        <UniformGrid Columns="3" Rows="2">
+        <UniformGrid Columns="4" Rows="2">
             <Button Background="#9DCCFF" Style="{StaticResource TileButtonStyle}" Command="{Binding OpenCaptureCommand}">
                 <StackPanel HorizontalAlignment="Center">
                     <TextBlock Text="&#xE710;" FontFamily="Segoe MDL2 Assets" FontSize="31" HorizontalAlignment="Center" Margin="0,0,0,16" />
@@ -99,6 +99,13 @@
                     <TextBlock Text="&#xE805;" FontFamily="Segoe MDL2 Assets" FontSize="31" HorizontalAlignment="Center" Margin="0,0,0,16" />
                     <TextBlock Text="Move" FontSize="29" FontWeight="SemiBold" HorizontalAlignment="Center" />
                     <TextBlock Text="Walk or workout" FontSize="14" Foreground="#44505C" HorizontalAlignment="Center" Margin="0,8,0,0" />
+                </StackPanel>
+            </Button>
+            <Button Background="#C8B6FF" Style="{StaticResource TileButtonStyle}" Command="{Binding OpenReviewCommand}">
+                <StackPanel HorizontalAlignment="Center">
+                    <TextBlock Text="&#xE9D2;" FontFamily="Segoe MDL2 Assets" FontSize="31" HorizontalAlignment="Center" Margin="0,0,0,16" />
+                    <TextBlock Text="Review" FontSize="29" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                    <TextBlock Text="See small wins" FontSize="14" Foreground="#44505C" HorizontalAlignment="Center" Margin="0,8,0,0" />
                 </StackPanel>
             </Button>
         </UniformGrid>

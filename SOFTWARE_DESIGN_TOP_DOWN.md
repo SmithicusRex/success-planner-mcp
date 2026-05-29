@@ -781,15 +781,15 @@ Status:
 
 ~~2.5. Add Back and Home controls where appropriate.~~
 
-2.6. Add initial visible screens for Capture, Today, Plan, Start, Done, Move, Review, Find, and Settings.
+~~2.6. Add initial visible screens for Capture, Today, Plan, Start, Done, Move, Review, Find, and Settings.~~
 
-Benchmark gate:
+~~Benchmark gate:~~
 
-- Every Home tile opens a visible initial screen.
-- Settings and Find buttons open visible screens.
-- User can return Home by clicking.
-- No screen exposes technical implementation labels.
-- Build passes.
+- ~~Every Home tile opens a visible initial screen.~~
+- ~~Settings and Find buttons open visible screens.~~
+- ~~User can return Home by clicking.~~
+- ~~No screen exposes technical implementation labels.~~
+- ~~Build passes.~~
 
 ### 3. Settings Workflow Visible Slice
 
