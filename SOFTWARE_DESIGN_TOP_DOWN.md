@@ -822,7 +822,7 @@ Status:
 
 ~~4.1. Create `TaskItem`.~~
 
-4.2. Create `ProjectItem`.
+~~4.2. Create `ProjectItem`.~~
 
 4.3. Create `MilestoneItem`.
 
