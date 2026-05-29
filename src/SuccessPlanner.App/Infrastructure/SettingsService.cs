@@ -21,13 +21,19 @@ public sealed class SettingsService
 
     public async Task<AppSettings> LoadOrCreateAsync(CancellationToken cancellationToken)
     {
+        SettingsLoadResult result = await LoadOrCreateWithStatusAsync(cancellationToken);
+        return result.Settings;
+    }
+
+    public async Task<SettingsLoadResult> LoadOrCreateWithStatusAsync(CancellationToken cancellationToken)
+    {
         Directory.CreateDirectory(_paths.AppDataDirectory);
 
         if (!File.Exists(_paths.SettingsPath))
         {
             AppSettings defaults = AppSettings.CreateDefault();
             await SaveAsync(defaults, cancellationToken);
-            return defaults;
+            return new SettingsLoadResult(defaults, "Loaded defaults");
         }
 
         try
@@ -35,7 +41,7 @@ public sealed class SettingsService
             AppSettings settings = await LoadAsync(_paths.SettingsPath, cancellationToken);
             Normalize(settings);
             Validate(settings);
-            return settings;
+            return new SettingsLoadResult(settings, "Loaded from local settings file");
         }
         catch (JsonException)
         {
@@ -53,7 +59,7 @@ public sealed class SettingsService
                 Normalize(settings);
                 Validate(settings);
                 await SaveAsync(settings, cancellationToken);
-                return settings;
+                return new SettingsLoadResult(settings, "Recovered from backup settings file");
             }
 
             throw;
@@ -93,7 +99,7 @@ public sealed class SettingsService
         return settings ?? throw new SettingsValidationException("Settings file is empty.");
     }
 
-    private async Task<AppSettings> RecoverFromInvalidSettingsAsync(CancellationToken cancellationToken)
+    private async Task<SettingsLoadResult> RecoverFromInvalidSettingsAsync(CancellationToken cancellationToken)
     {
         string invalidPath = $"{_paths.SettingsPath}.invalid-{DateTimeOffset.Now:yyyyMMddHHmmss}";
 
@@ -104,7 +110,7 @@ public sealed class SettingsService
 
         AppSettings defaults = AppSettings.CreateDefault();
         await SaveAsync(defaults, cancellationToken);
-        return defaults;
+        return new SettingsLoadResult(defaults, "Recreated after invalid settings file");
     }
 
     private static void Normalize(AppSettings settings)
@@ -162,3 +168,5 @@ public sealed class SettingsValidationException : Exception
     {
     }
 }
+
+public sealed record SettingsLoadResult(AppSettings Settings, string StatusText);

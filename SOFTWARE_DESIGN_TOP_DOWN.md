@@ -807,16 +807,16 @@ Status:
 
 ~~3.7. Validate settings before saving.~~
 
-3.8. Show recovery status when invalid settings were recreated.
+~~3.8. Show recovery status when invalid settings were recreated.~~
 
-Benchmark gate:
+~~Benchmark gate:~~
 
-- User can open Settings from the app.
-- User can see the settings that were loaded.
-- User can change at least profile name and default focus minutes.
-- User can save settings and see changes after app restart.
-- Corrupt settings file does not prevent launch.
-- Build passes.
+- ~~User can open Settings from the app.~~
+- ~~User can see the settings that were loaded.~~
+- ~~User can change at least profile name and default focus minutes.~~
+- ~~User can save settings and see changes after app restart.~~
+- ~~Corrupt settings file does not prevent launch.~~
+- ~~Build passes.~~
 
 ### 4. Core Domain Objects
 

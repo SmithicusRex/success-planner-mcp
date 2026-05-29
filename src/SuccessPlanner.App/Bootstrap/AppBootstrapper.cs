@@ -12,6 +12,8 @@ public sealed class AppBootstrapper
     private readonly DatabaseService _databaseService;
     private readonly BackgroundWorkerHost _backgroundWorkerHost;
     private readonly NavigationService _navigationService;
+    private AppSettings? _loadedSettings;
+    private string _settingsFileStatus = "Settings not loaded yet";
     private bool _started;
 
     public AppBootstrapper()
@@ -41,7 +43,11 @@ public sealed class AppBootstrapper
             Directory.CreateDirectory(_paths.AppDataDirectory);
             Directory.CreateDirectory(_paths.LogDirectory);
 
-            AppSettings settings = await _settingsService.LoadOrCreateAsync(cancellationToken);
+            SettingsLoadResult settingsLoadResult = await _settingsService.LoadOrCreateWithStatusAsync(cancellationToken);
+            AppSettings settings = settingsLoadResult.Settings;
+            _loadedSettings = settings;
+            _settingsFileStatus = settingsLoadResult.StatusText;
+
             await _databaseService.OpenAsync(cancellationToken);
             await _databaseService.MigrateAsync(cancellationToken);
             await _databaseService.HealthCheckAsync(cancellationToken);
@@ -87,15 +93,24 @@ public sealed class AppBootstrapper
 
     private SettingsViewModel CreateSettingsViewModel()
     {
-        AppSettings settings = _settingsService
-            .LoadOrCreateAsync(CancellationToken.None)
-            .GetAwaiter()
-            .GetResult();
+        AppSettings settings = _loadedSettings ?? LoadSettingsForView();
 
         return new SettingsViewModel(
             _settingsService,
             settings,
-            settingsFileStatus: "Loaded from local settings file");
+            settingsFileStatus: _settingsFileStatus);
+    }
+
+    private AppSettings LoadSettingsForView()
+    {
+        SettingsLoadResult result = _settingsService
+            .LoadOrCreateWithStatusAsync(CancellationToken.None)
+            .GetAwaiter()
+            .GetResult();
+
+        _loadedSettings = result.Settings;
+        _settingsFileStatus = result.StatusText;
+        return result.Settings;
     }
 
     public async Task StopAsync(CancellationToken cancellationToken = default)
