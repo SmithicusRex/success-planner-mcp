@@ -867,7 +867,7 @@ Status:
 - ~~Database failure shows a simple user-facing error.~~
 - ~~Build and tests pass.~~
 
-### 6. Capture Workflow
+### ~~6. Capture Workflow~~
 
 ~~6.1. Create `CaptureViewModel`.~~
 
@@ -881,15 +881,15 @@ Status:
 
 ~~6.6. Save captured task locally.~~
 
-6.7. Show success feedback and Capture Another option.
+~~6.7. Show success feedback and Capture Another option.~~
 
-Benchmark gate:
+~~Benchmark gate:~~
 
-- User can create a task by clicking through Capture.
-- Task persists after restart.
-- Empty task title is rejected politely.
-- Capture works without Microsoft sync.
-- Build and tests pass.
+- ~~User can create a task by clicking through Capture.~~
+- ~~Task persists after restart.~~
+- ~~Empty task title is rejected politely.~~
+- ~~Capture works without Microsoft sync.~~
+- ~~Build and tests pass.~~
 
 ### 7. Today Workflow
 

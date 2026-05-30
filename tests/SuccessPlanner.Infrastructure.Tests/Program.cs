@@ -301,6 +301,7 @@ static async Task CaptureViewModelSavesCapturedTasksThroughTaskRepository()
         TaskTitle = "  Capture a local task  "
     };
     viewModel.TomorrowDateCommand.Execute(null);
+    viewModel.MicrosoftToDoDestinationCommand.Execute(null);
 
     await viewModel.SaveCapturedTaskAsync(CancellationToken.None);
 
@@ -308,11 +309,19 @@ static async Task CaptureViewModelSavesCapturedTasksThroughTaskRepository()
     Assert.True(viewModel.LastSavedTaskId.HasValue, "Capture should expose the saved task id.");
     Guid savedTaskId = viewModel.LastSavedTaskId.GetValueOrDefault();
 
-    TaskItem? savedTask = await repository.GetByIdAsync(savedTaskId, CancellationToken.None);
+    DatabaseService restartDatabase = new(paths);
+    DatabaseStartupMigrationService restartMigration = new(restartDatabase);
+    await restartMigration.RunAsync(CancellationToken.None);
+
+    TaskRepository restartedRepository = new(paths);
+    TaskItem? savedTask = await restartedRepository.GetByIdAsync(savedTaskId, CancellationToken.None);
+    await restartDatabase.CloseAsync(CancellationToken.None);
+
     Assert.NotNull(savedTask, "Saved capture task should load from SQLite.");
     Assert.Equal("Capture a local task", savedTask!.Title);
     Assert.Equal(DateOnly.FromDateTime(DateTime.Today).AddDays(1), savedTask.DueDate);
     Assert.Equal(TaskItemStatus.Planned, savedTask.Status);
+    Assert.Equal(CaptureDestinationPreference.MicrosoftToDo, viewModel.SelectedDestination);
 }
 
 static async Task SettingsMetadataRepositoryUpsertsAndDeletesMetadata()

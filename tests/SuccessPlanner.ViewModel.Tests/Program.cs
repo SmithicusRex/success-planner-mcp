@@ -10,6 +10,7 @@ TestRunner.RunAll(
     ("CaptureViewModel creates a captured task draft", CaptureViewModelCreatesCapturedTaskDraft),
     ("CaptureViewModel creates a scheduled task draft when date is selected", CaptureViewModelCreatesScheduledTaskDraftWhenDateIsSelected),
     ("CaptureViewModel saves a captured task locally", CaptureViewModelSavesCapturedTaskLocally),
+    ("CaptureViewModel captures another task after success", CaptureViewModelCapturesAnotherTaskAfterSuccess),
     ("CaptureViewModel resets the capture form", CaptureViewModelResetsCaptureForm),
     ("CaptureViewModel raises property change notifications", CaptureViewModelRaisesPropertyChangeNotifications));
 
@@ -32,6 +33,8 @@ static void CaptureViewModelStartsReady()
     Assert.Equal("Let MCP Choose.", viewModel.DestinationHintText);
     Assert.False(viewModel.CanCreateTask, "Blank capture title should not be ready.");
     Assert.False(viewModel.SaveTaskCommand.CanExecute(null), "Blank capture title should disable save.");
+    Assert.False(viewModel.CaptureAnotherCommand.CanExecute(null), "Capture Another should wait for a saved task.");
+    Assert.Equal("No task saved yet.", viewModel.SuccessFeedbackText);
 }
 
 static void CaptureViewModelAppliesDateHintButtons()
@@ -154,11 +157,37 @@ static void CaptureViewModelSavesCapturedTaskLocally()
     Assert.True(viewModel.HasSavedTask, "Successful save should mark the current task saved.");
     Assert.Equal(savedTasks[0].Id, viewModel.LastSavedTaskId);
     Assert.Equal("Saved locally.", viewModel.StatusText);
+    Assert.Equal("Saved locally: Save this locally", viewModel.SuccessFeedbackText);
     Assert.False(viewModel.SaveTaskCommand.CanExecute(null), "Saved task should not save again until changed.");
+    Assert.True(viewModel.CaptureAnotherCommand.CanExecute(null), "Successful save should enable Capture Another.");
 
     viewModel.TaskTitle = "Changed after save";
     Assert.False(viewModel.HasSavedTask, "Editing after save should clear saved state.");
+    Assert.Equal("No task saved yet.", viewModel.SuccessFeedbackText);
     Assert.True(viewModel.SaveTaskCommand.CanExecute(null), "Edited task should be saveable again.");
+}
+
+static void CaptureViewModelCapturesAnotherTaskAfterSuccess()
+{
+    CaptureViewModel viewModel = new((_, _) => Task.CompletedTask)
+    {
+        TaskTitle = "Saved task",
+        Notes = "Keep the loop simple."
+    };
+    viewModel.TodayDateCommand.Execute(null);
+    viewModel.MicrosoftToDoDestinationCommand.Execute(null);
+    viewModel.SaveCapturedTaskAsync().GetAwaiter().GetResult();
+
+    viewModel.CaptureAnotherCommand.Execute(null);
+
+    Assert.Equal(string.Empty, viewModel.TaskTitle);
+    Assert.Equal(string.Empty, viewModel.Notes);
+    Assert.Null(viewModel.DueDate, "Capture Another should clear the selected date.");
+    Assert.Equal(CaptureDestinationPreference.LetMcpChoose, viewModel.SelectedDestination);
+    Assert.Equal("No task saved yet.", viewModel.SuccessFeedbackText);
+    Assert.False(viewModel.HasSavedTask, "Capture Another should clear saved state.");
+    Assert.False(viewModel.CaptureAnotherCommand.CanExecute(null), "Capture Another should disable until the next save.");
+    Assert.Equal("Ready to capture.", viewModel.StatusText);
 }
 
 static void CaptureViewModelResetsCaptureForm()

@@ -11,6 +11,7 @@ public sealed class CaptureViewModel : ScreenViewModelBase, INotifyPropertyChang
 {
     private const string EmptyTitleMessage = "Add one small action first.";
     private const string ReadyStatus = "Ready to capture.";
+    private const string NoSavedTaskMessage = "No task saved yet.";
 
     private readonly Func<TaskItem, CancellationToken, Task> _saveTaskAsync;
     private string _taskTitle = string.Empty;
@@ -23,6 +24,7 @@ public sealed class CaptureViewModel : ScreenViewModelBase, INotifyPropertyChang
     private string _destinationHintText = "Let MCP Choose.";
     private bool _hasSavedTask;
     private Guid? _lastSavedTaskId;
+    private string _successFeedbackText = NoSavedTaskMessage;
 
     public CaptureViewModel()
         : this(MissingTaskRepositorySaveAsync)
@@ -83,6 +85,13 @@ public sealed class CaptureViewModel : ScreenViewModelBase, INotifyPropertyChang
         SaveTaskCommand = new AsyncRelayCommand(
             () => SaveCapturedTaskAsync(CancellationToken.None),
             () => CanCreateTask && !HasSavedTask);
+        CaptureAnotherCommand = new AsyncRelayCommand(
+            () =>
+            {
+                ResetCaptureForm();
+                return Task.CompletedTask;
+            },
+            () => HasSavedTask);
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -114,6 +123,8 @@ public sealed class CaptureViewModel : ScreenViewModelBase, INotifyPropertyChang
     public ICommand MicrosoftProjectDestinationCommand { get; }
 
     public AsyncRelayCommand SaveTaskCommand { get; }
+
+    public AsyncRelayCommand CaptureAnotherCommand { get; }
 
     public string TaskTitle
     {
@@ -192,6 +203,7 @@ public sealed class CaptureViewModel : ScreenViewModelBase, INotifyPropertyChang
             if (SetProperty(ref _hasSavedTask, value))
             {
                 SaveTaskCommand.RaiseCanExecuteChanged();
+                CaptureAnotherCommand.RaiseCanExecuteChanged();
             }
         }
     }
@@ -200,6 +212,12 @@ public sealed class CaptureViewModel : ScreenViewModelBase, INotifyPropertyChang
     {
         get => _lastSavedTaskId;
         private set => SetProperty(ref _lastSavedTaskId, value);
+    }
+
+    public string SuccessFeedbackText
+    {
+        get => _successFeedbackText;
+        private set => SetProperty(ref _successFeedbackText, value);
     }
 
     public bool CanCreateTask => !string.IsNullOrWhiteSpace(TaskTitle);
@@ -241,6 +259,7 @@ public sealed class CaptureViewModel : ScreenViewModelBase, INotifyPropertyChang
             LastSavedTaskId = task.Id;
             HasSavedTask = true;
             ValidationMessage = string.Empty;
+            SuccessFeedbackText = $"Saved locally: {task.Title}";
             StatusText = "Saved locally.";
         }
         catch (OperationCanceledException)
@@ -251,6 +270,7 @@ public sealed class CaptureViewModel : ScreenViewModelBase, INotifyPropertyChang
         {
             LastSavedTaskId = null;
             HasSavedTask = false;
+            SuccessFeedbackText = NoSavedTaskMessage;
             ValidationMessage = "Could not save locally. Try again.";
             StatusText = "Save failed.";
         }
@@ -302,6 +322,7 @@ public sealed class CaptureViewModel : ScreenViewModelBase, INotifyPropertyChang
     {
         LastSavedTaskId = null;
         HasSavedTask = false;
+        SuccessFeedbackText = NoSavedTaskMessage;
     }
 
     private static Task MissingTaskRepositorySaveAsync(TaskItem task, CancellationToken cancellationToken)

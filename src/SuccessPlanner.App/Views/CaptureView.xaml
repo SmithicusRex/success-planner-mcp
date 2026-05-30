@@ -70,6 +70,9 @@
                             <Trigger Property="IsPressed" Value="True">
                                 <Setter TargetName="Chrome" Property="Background" Value="#D9ECFF" />
                             </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Chrome" Property="Opacity" Value="0.45" />
+                            </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
@@ -234,22 +237,57 @@
                                            TextWrapping="Wrap" />
                             </StackPanel>
 
-                            <StackPanel Grid.Row="1"
-                                        Orientation="Horizontal"
-                                        HorizontalAlignment="Right"
-                                        Margin="0,18,0,0">
-                                <Button Command="{Binding SaveTaskCommand}"
-                                        Style="{StaticResource PrimaryButtonStyle}">
+                            <StackPanel Grid.Row="1" Margin="0,18,0,0">
+                                <Border Background="#E6F4EA"
+                                        BorderBrush="#CDEAD5"
+                                        BorderThickness="1"
+                                        CornerRadius="8"
+                                        Padding="12,9">
                                     <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="&#xE74E;"
+                                        <TextBlock Text="&#xE73E;"
                                                    FontFamily="Segoe MDL2 Assets"
-                                                   FontSize="15"
+                                                   FontSize="14"
+                                                   Foreground="#1E6B3A"
                                                    Margin="0,0,8,0"
                                                    VerticalAlignment="Center" />
-                                        <TextBlock Text="Save"
+                                        <TextBlock Text="{Binding SuccessFeedbackText}"
+                                                   Foreground="#1E6B3A"
+                                                   FontWeight="SemiBold"
+                                                   TextWrapping="Wrap"
                                                    VerticalAlignment="Center" />
                                     </StackPanel>
-                                </Button>
+                                </Border>
+
+                                <StackPanel Orientation="Horizontal"
+                                            HorizontalAlignment="Right"
+                                            Margin="0,12,0,0">
+                                    <Button Command="{Binding CaptureAnotherCommand}"
+                                            Style="{StaticResource ChoiceButtonStyle}"
+                                            MinHeight="48"
+                                            Margin="0,0,10,0">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="&#xE710;"
+                                                       FontFamily="Segoe MDL2 Assets"
+                                                       FontSize="15"
+                                                       Margin="0,0,8,0"
+                                                       VerticalAlignment="Center" />
+                                            <TextBlock Text="Capture Another"
+                                                       VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </Button>
+                                    <Button Command="{Binding SaveTaskCommand}"
+                                            Style="{StaticResource PrimaryButtonStyle}">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="&#xE74E;"
+                                                       FontFamily="Segoe MDL2 Assets"
+                                                       FontSize="15"
+                                                       Margin="0,0,8,0"
+                                                       VerticalAlignment="Center" />
+                                            <TextBlock Text="Save"
+                                                       VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </Button>
+                                </StackPanel>
                             </StackPanel>
                         </Grid>
                     </Border>
