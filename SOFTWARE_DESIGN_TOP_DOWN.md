@@ -769,7 +769,7 @@ Status:
 
 - ~~Complete.~~
 
-### 2. Navigation Shell And Screen Host
+### ~~2. Navigation Shell And Screen Host~~
 
 ~~2.1. Create a shared screen contract for app pages.~~
 
@@ -791,7 +791,7 @@ Status:
 - ~~No screen exposes technical implementation labels.~~
 - ~~Build passes.~~
 
-### 3. Settings Workflow Visible Slice
+### ~~3. Settings Workflow Visible Slice~~
 
 ~~3.1. Finish `SettingsService` local load/save behavior.~~
 
