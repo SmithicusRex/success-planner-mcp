@@ -824,7 +824,7 @@ Status:
 
 ~~4.2. Create `ProjectItem`.~~
 
-4.3. Create `MilestoneItem`.
+~~4.3. Create `MilestoneItem`.~~
 
 4.4. Create `NoteItem`.
 
