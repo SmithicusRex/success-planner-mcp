@@ -21,6 +21,10 @@
             <views:HomeScreenView />
         </DataTemplate>
 
+        <DataTemplate DataType="{x:Type viewModels:CaptureViewModel}">
+            <views:CaptureView />
+        </DataTemplate>
+
         <DataTemplate DataType="{x:Type viewModels:InitialScreenViewModel}">
             <views:InitialScreenView />
         </DataTemplate>

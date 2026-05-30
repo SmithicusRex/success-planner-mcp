@@ -871,7 +871,7 @@ Status:
 
 ~~6.1. Create `CaptureViewModel`.~~
 
-6.2. Create `CaptureView`.
+~~6.2. Create `CaptureView`.~~
 
 6.3. Add task title input.
 

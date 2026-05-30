@@ -1,0 +1,200 @@
+<UserControl x:Class="SuccessPlanner.App.Views.CaptureView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <UserControl.Resources>
+        <SolidColorBrush x:Key="InkBrush" Color="#171717" />
+        <SolidColorBrush x:Key="MutedBrush" Color="#5F656C" />
+        <SolidColorBrush x:Key="PanelBrush" Color="#FFFCF7" />
+        <SolidColorBrush x:Key="SoftBlueBrush" Color="#EAF4FF" />
+
+        <Style x:Key="PanelTitleStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
+            <Setter Property="FontSize" Value="22" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Margin" Value="0,0,0,8" />
+        </Style>
+
+        <Style x:Key="QuietTextStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+            <Setter Property="FontSize" Value="15" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <Border Background="{StaticResource PanelBrush}"
+                BorderBrush="#E5E1D8"
+                BorderThickness="1"
+                CornerRadius="8"
+                Padding="26">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Orientation="Horizontal">
+                    <Border Width="64"
+                            Height="64"
+                            CornerRadius="8"
+                            Background="{Binding AccentColor}"
+                            Margin="0,0,18,0">
+                        <TextBlock Text="{Binding IconGlyph}"
+                                   FontFamily="Segoe MDL2 Assets"
+                                   FontSize="28"
+                                   Foreground="{StaticResource InkBrush}"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center" />
+                    </Border>
+
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Title}"
+                                   FontSize="32"
+                                   FontWeight="SemiBold"
+                                   Foreground="{StaticResource InkBrush}" />
+                        <TextBlock Text="{Binding Subtitle}"
+                                   FontSize="16"
+                                   Foreground="{StaticResource MutedBrush}"
+                                   Margin="0,4,0,0" />
+                    </StackPanel>
+                </StackPanel>
+
+                <Border Grid.Column="1"
+                        Padding="14,8"
+                        CornerRadius="8"
+                        Background="#E6F4EA"
+                        BorderBrush="#CDEAD5"
+                        BorderThickness="1"
+                        VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal">
+                        <Ellipse Width="8"
+                                 Height="8"
+                                 Fill="#24984E"
+                                 Margin="0,0,8,0" />
+                        <TextBlock Text="{Binding StatusText}"
+                                   Foreground="#1E6B3A"
+                                   FontWeight="SemiBold"
+                                   FontSize="13" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="1"
+              Margin="0,18,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="2*" />
+                <ColumnDefinition Width="18" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <Border Background="{StaticResource PanelBrush}"
+                    BorderBrush="#E5E1D8"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    Padding="26">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <StackPanel>
+                        <TextBlock Text="Quick Capture"
+                                   Style="{StaticResource PanelTitleStyle}" />
+                        <TextBlock Text="One calm place for the next useful thought."
+                                   Style="{StaticResource QuietTextStyle}" />
+                    </StackPanel>
+
+                    <Border Grid.Row="1"
+                            Margin="0,24,0,0"
+                            Background="{StaticResource SoftBlueBrush}"
+                            BorderBrush="#CFE5FF"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Padding="28">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="*" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+
+                            <StackPanel VerticalAlignment="Center"
+                                        HorizontalAlignment="Center">
+                                <TextBlock Text="&#xE710;"
+                                           FontFamily="Segoe MDL2 Assets"
+                                           FontSize="44"
+                                           Foreground="#2F6FED"
+                                           HorizontalAlignment="Center"
+                                           Margin="0,0,0,18" />
+                                <TextBlock Text="Capture pad"
+                                           FontSize="24"
+                                           FontWeight="SemiBold"
+                                           Foreground="{StaticResource InkBrush}"
+                                           HorizontalAlignment="Center" />
+                                <TextBlock Text="Ready"
+                                           FontSize="15"
+                                           Foreground="{StaticResource MutedBrush}"
+                                           HorizontalAlignment="Center"
+                                           Margin="0,7,0,0" />
+                            </StackPanel>
+
+                            <Border Grid.Row="1"
+                                    Height="12"
+                                    CornerRadius="6"
+                                    Background="#D9ECFF" />
+                        </Grid>
+                    </Border>
+                </Grid>
+            </Border>
+
+            <Grid Grid.Column="2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="18" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <Border Background="{StaticResource PanelBrush}"
+                        BorderBrush="#E5E1D8"
+                        BorderThickness="1"
+                        CornerRadius="8"
+                        Padding="22">
+                    <StackPanel>
+                        <TextBlock Text="Tiny Step"
+                                   Style="{StaticResource PanelTitleStyle}" />
+                        <Border Height="10"
+                                CornerRadius="5"
+                                Background="#FFE08A"
+                                Margin="0,4,0,18" />
+                        <TextBlock Text="Small enough to start."
+                                   Style="{StaticResource QuietTextStyle}" />
+                    </StackPanel>
+                </Border>
+
+                <Border Grid.Row="2"
+                        Background="{StaticResource PanelBrush}"
+                        BorderBrush="#E5E1D8"
+                        BorderThickness="1"
+                        CornerRadius="8"
+                        Padding="22">
+                    <StackPanel>
+                        <TextBlock Text="Destination"
+                                   Style="{StaticResource PanelTitleStyle}" />
+                        <Border Height="10"
+                                CornerRadius="5"
+                                Background="#A8E6B1"
+                                Margin="0,4,0,18" />
+                        <TextBlock Text="Local first."
+                                   Style="{StaticResource QuietTextStyle}" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Grid>
+    </Grid>
+</UserControl>

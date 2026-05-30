@@ -82,7 +82,7 @@ public sealed class AppBootstrapper
     private void RegisterScreens()
     {
         _navigationService.Register(AppScreen.Home, () => new HomeScreenViewModel(_navigationService));
-        _navigationService.Register(AppScreen.Capture, () => new InitialScreenViewModel(ScreenCatalog.Capture));
+        _navigationService.Register(AppScreen.Capture, () => new CaptureViewModel());
         _navigationService.Register(AppScreen.Today, () => new InitialScreenViewModel(ScreenCatalog.Today));
         _navigationService.Register(AppScreen.Plan, () => new InitialScreenViewModel(ScreenCatalog.Plan));
         _navigationService.Register(AppScreen.StartWork, () => new InitialScreenViewModel(ScreenCatalog.StartWork));
