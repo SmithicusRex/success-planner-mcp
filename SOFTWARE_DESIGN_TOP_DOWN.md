@@ -845,7 +845,7 @@ Status:
 - ~~Unit tests cover basic object creation and status transitions.~~
 - ~~Build and tests pass.~~
 
-### 5. SQLite Database And Repositories
+### ~~5. SQLite Database And Repositories~~
 
 ~~5.1. Replace the bootstrap local data marker with SQLite.~~
 
@@ -857,15 +857,15 @@ Status:
 
 ~~5.5. Add database health check.~~
 
-5.6. Add app startup migration.
+~~5.6. Add app startup migration.~~
 
-Benchmark gate:
+~~Benchmark gate:~~
 
-- App creates a real local SQLite database.
-- App can restart without losing local data.
-- Repository tests pass.
-- Database failure shows a simple user-facing error.
-- Build and tests pass.
+- ~~App creates a real local SQLite database.~~
+- ~~App can restart without losing local data.~~
+- ~~Repository tests pass.~~
+- ~~Database failure shows a simple user-facing error.~~
+- ~~Build and tests pass.~~
 
 ### 6. Capture Workflow
 

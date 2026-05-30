@@ -10,6 +10,8 @@ TestRunner.RunAll(
     ("DatabaseService creates core application tables", DatabaseServiceCreatesCoreApplicationTables),
     ("DatabaseService reports a healthy database", DatabaseServiceReportsHealthyDatabase),
     ("DatabaseService reports missing migration health failures", DatabaseServiceReportsMissingMigrationHealthFailures),
+    ("DatabaseStartupMigrationService migrates a new database at startup", DatabaseStartupMigrationServiceMigratesNewDatabaseAtStartup),
+    ("DatabaseStartupMigrationService preserves data on restart", DatabaseStartupMigrationServicePreservesDataOnRestart),
     ("AppBootstrapper shows a simple database failure message", AppBootstrapperShowsSimpleDatabaseFailureMessage),
     ("TaskRepository saves and loads task state", TaskRepositorySavesAndLoadsTaskState),
     ("TaskRepository deletes tasks", TaskRepositoryDeletesTasks),
@@ -58,10 +60,13 @@ static async Task DatabaseServiceRecordsRepeatableMigrations()
     DatabaseService database = new(paths);
 
     await database.OpenAsync(CancellationToken.None);
-    await database.MigrateAsync(CancellationToken.None);
-    await database.MigrateAsync(CancellationToken.None);
+    DatabaseMigrationResult firstRun = await database.MigrateAsync(CancellationToken.None);
+    DatabaseMigrationResult secondRun = await database.MigrateAsync(CancellationToken.None);
     await database.CloseAsync(CancellationToken.None);
 
+    Assert.Equal(2, firstRun.AppliedCountThisRun);
+    Assert.Equal(0, secondRun.AppliedCountThisRun);
+    Assert.Equal(2, secondRun.TotalAppliedCount);
     Assert.Equal(2L, await ReadScalarAsync(paths.DatabasePath, "SELECT COUNT(*) FROM schema_migrations;"));
     Assert.Equal(1L, await ReadScalarAsync(paths.DatabasePath, "SELECT version FROM schema_migrations;"));
     Assert.Equal(
@@ -151,6 +156,54 @@ static async Task DatabaseServiceReportsMissingMigrationHealthFailures()
     Assert.Contains("Database migration 1 is missing.", health.Findings);
     Assert.Contains("Required table 'tasks' is missing.", health.Findings);
     Assert.Contains("Local database needs attention.", failure.Message);
+}
+
+static async Task DatabaseStartupMigrationServiceMigratesNewDatabaseAtStartup()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+    DatabaseService database = new(paths);
+    DatabaseStartupMigrationService startupMigration = new(database);
+
+    DatabaseStartupMigrationResult result = await startupMigration.RunAsync(CancellationToken.None);
+    await database.CloseAsync(CancellationToken.None);
+
+    Assert.True(result.Health.IsHealthy, "Startup migration should leave the database healthy.");
+    Assert.True(result.Migration.AppliedMigrations, "New database should apply startup migrations.");
+    Assert.Equal(2, result.Migration.AppliedCountThisRun);
+    Assert.Equal(2, result.Migration.TotalAppliedCount);
+    Assert.Equal(2, result.Migration.LatestAppliedVersion);
+    Assert.Equal("Ready - Data Updated", result.StatusText);
+    Assert.True(await TableExistsAsync(paths.DatabasePath, "tasks"), "Startup migration should create task storage.");
+    Assert.True(await TableExistsAsync(paths.DatabasePath, "settings_metadata"), "Startup migration should create settings metadata storage.");
+}
+
+static async Task DatabaseStartupMigrationServicePreservesDataOnRestart()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+    DatabaseService firstDatabase = new(paths);
+    DatabaseStartupMigrationService firstStartupMigration = new(firstDatabase);
+
+    DatabaseStartupMigrationResult firstResult = await firstStartupMigration.RunAsync(CancellationToken.None);
+    await firstDatabase.CloseAsync(CancellationToken.None);
+
+    TaskRepository repository = new(paths);
+    TaskItem task = TaskItem.Capture("Keep this after restart");
+    await repository.AddAsync(task, CancellationToken.None);
+
+    DatabaseService secondDatabase = new(paths);
+    DatabaseStartupMigrationService secondStartupMigration = new(secondDatabase);
+    DatabaseStartupMigrationResult secondResult = await secondStartupMigration.RunAsync(CancellationToken.None);
+
+    TaskItem? loaded = await repository.GetByIdAsync(task.Id, CancellationToken.None);
+    await secondDatabase.CloseAsync(CancellationToken.None);
+
+    Assert.Equal(2, firstResult.Migration.AppliedCountThisRun);
+    Assert.Equal(0, secondResult.Migration.AppliedCountThisRun);
+    Assert.Equal("Ready - Data OK", secondResult.StatusText);
+    Assert.NotNull(loaded, "Task should remain after startup migration on restart.");
+    Assert.Equal("Keep this after restart", loaded!.Title);
 }
 
 static async Task AppBootstrapperShowsSimpleDatabaseFailureMessage()

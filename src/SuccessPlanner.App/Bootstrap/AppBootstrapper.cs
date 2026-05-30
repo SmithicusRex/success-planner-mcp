@@ -10,6 +10,7 @@ public sealed class AppBootstrapper
     private readonly AppPaths _paths;
     private readonly SettingsService _settingsService;
     private readonly DatabaseService _databaseService;
+    private readonly DatabaseStartupMigrationService _databaseStartupMigrationService;
     private readonly BackgroundWorkerHost _backgroundWorkerHost;
     private readonly NavigationService _navigationService;
     private AppSettings? _loadedSettings;
@@ -26,6 +27,7 @@ public sealed class AppBootstrapper
         _paths = paths;
         _settingsService = new SettingsService(_paths);
         _databaseService = new DatabaseService(_paths);
+        _databaseStartupMigrationService = new DatabaseStartupMigrationService(_databaseService);
         _backgroundWorkerHost = new BackgroundWorkerHost();
         _navigationService = new NavigationService();
         RegisterScreens();
@@ -48,18 +50,13 @@ public sealed class AppBootstrapper
             _loadedSettings = settings;
             _settingsFileStatus = settingsLoadResult.StatusText;
 
-            await _databaseService.OpenAsync(cancellationToken);
-            await _databaseService.MigrateAsync(cancellationToken);
-            DatabaseHealthCheckResult databaseHealth = await _databaseService.CheckHealthAsync(cancellationToken);
-            if (!databaseHealth.IsHealthy)
-            {
-                throw new InvalidOperationException(databaseHealth.ToFailureMessage());
-            }
+            DatabaseStartupMigrationResult databaseStartup =
+                await _databaseStartupMigrationService.RunAsync(cancellationToken);
 
             await _navigationService.GoHomeAsync(cancellationToken);
 
             AppShellViewModel shellViewModel = new(
-                statusText: "Ready - Data OK",
+                statusText: databaseStartup.StatusText,
                 footerText: $"Local control center - {settings.ProfileName}",
                 navigationService: _navigationService);
 

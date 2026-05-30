@@ -16,11 +16,12 @@ public sealed class DatabaseMigrator
         ValidateMigrations(_migrations);
     }
 
-    public async Task MigrateAsync(SqliteConnection connection, CancellationToken cancellationToken)
+    public async Task<DatabaseMigrationResult> MigrateAsync(SqliteConnection connection, CancellationToken cancellationToken)
     {
         await EnsureMigrationTableAsync(connection, cancellationToken);
 
         HashSet<int> appliedVersions = await GetAppliedVersionsAsync(connection, cancellationToken);
+        List<int> appliedVersionsThisRun = [];
 
         foreach (IDatabaseMigration migration in _migrations)
         {
@@ -30,7 +31,24 @@ public sealed class DatabaseMigrator
             }
 
             await ApplyMigrationAsync(connection, migration, cancellationToken);
+            appliedVersions.Add(migration.Version);
+            appliedVersionsThisRun.Add(migration.Version);
         }
+
+        int latestAppliedVersion = appliedVersions.Count == 0
+            ? 0
+            : appliedVersions.Max();
+        int latestRequiredVersion = _migrations.Count == 0
+            ? 0
+            : _migrations.Max(migration => migration.Version);
+
+        return new DatabaseMigrationResult(
+            appliedVersionsThisRun,
+            appliedVersionsThisRun.Count,
+            appliedVersions.Count,
+            latestAppliedVersion,
+            _migrations.Count,
+            latestRequiredVersion);
     }
 
     private static async Task EnsureMigrationTableAsync(SqliteConnection connection, CancellationToken cancellationToken)

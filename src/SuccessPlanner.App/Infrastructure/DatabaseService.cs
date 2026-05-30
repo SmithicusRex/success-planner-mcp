@@ -36,6 +36,11 @@ public sealed class DatabaseService
     public async Task OpenAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        if (_isOpen)
+        {
+            return;
+        }
+
         Directory.CreateDirectory(_paths.AppDataDirectory);
 
         ReplacePlaceholderIfNeeded();
@@ -53,11 +58,11 @@ public sealed class DatabaseService
         _isOpen = true;
     }
 
-    public async Task MigrateAsync(CancellationToken cancellationToken)
+    public async Task<DatabaseMigrationResult> MigrateAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         EnsureOpen();
-        await _migrator.MigrateAsync(_connection!, cancellationToken);
+        return await _migrator.MigrateAsync(_connection!, cancellationToken);
     }
 
     public async Task HealthCheckAsync(CancellationToken cancellationToken)
