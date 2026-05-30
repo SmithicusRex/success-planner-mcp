@@ -4,7 +4,8 @@ using SuccessPlanner.App.Infrastructure;
 TestRunner.RunAll(
     ("DatabaseService creates a real SQLite database", DatabaseServiceCreatesSqliteDatabase),
     ("DatabaseService replaces the legacy bootstrap marker", DatabaseServiceReplacesLegacyMarker),
-    ("DatabaseService records repeatable migrations", DatabaseServiceRecordsRepeatableMigrations));
+    ("DatabaseService records repeatable migrations", DatabaseServiceRecordsRepeatableMigrations),
+    ("DatabaseService creates core application tables", DatabaseServiceCreatesCoreApplicationTables));
 
 static async Task DatabaseServiceCreatesSqliteDatabase()
 {
@@ -53,14 +54,54 @@ static async Task DatabaseServiceRecordsRepeatableMigrations()
     await database.MigrateAsync(CancellationToken.None);
     await database.CloseAsync(CancellationToken.None);
 
-    Assert.Equal(1L, await ReadScalarAsync(paths.DatabasePath, "SELECT COUNT(*) FROM schema_migrations;"));
+    Assert.Equal(2L, await ReadScalarAsync(paths.DatabasePath, "SELECT COUNT(*) FROM schema_migrations;"));
     Assert.Equal(1L, await ReadScalarAsync(paths.DatabasePath, "SELECT version FROM schema_migrations;"));
     Assert.Equal(
         "Create local store metadata",
         await ReadScalarAsync(paths.DatabasePath, "SELECT name FROM schema_migrations WHERE version = 1;"));
     Assert.Equal(
+        "Create core application tables",
+        await ReadScalarAsync(paths.DatabasePath, "SELECT name FROM schema_migrations WHERE version = 2;"));
+    Assert.Equal(
         "Success Planner MCP SQLite local store",
         await ReadScalarAsync(paths.DatabasePath, "SELECT value FROM local_store_metadata WHERE key = 'store_kind';"));
+}
+
+static async Task DatabaseServiceCreatesCoreApplicationTables()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+    DatabaseService database = new(paths);
+
+    await database.OpenAsync(CancellationToken.None);
+    await database.MigrateAsync(CancellationToken.None);
+    await database.CloseAsync(CancellationToken.None);
+
+    string[] expectedTables =
+    [
+        "tasks",
+        "projects",
+        "milestones",
+        "notes",
+        "focus_sessions",
+        "movement_sessions",
+        "source_links",
+        "settings_metadata",
+        "sync_queue"
+    ];
+
+    foreach (string tableName in expectedTables)
+    {
+        Assert.True(await TableExistsAsync(paths.DatabasePath, tableName), $"Expected table '{tableName}' to exist.");
+    }
+
+    Assert.True(await ColumnExistsAsync(paths.DatabasePath, "tasks", "title"), "Tasks should store task titles.");
+    Assert.True(await ColumnExistsAsync(paths.DatabasePath, "projects", "minimum_win"), "Projects should store minimum wins.");
+    Assert.True(await ColumnExistsAsync(paths.DatabasePath, "notes", "owner_type"), "Notes should store owner type.");
+    Assert.True(await ColumnExistsAsync(paths.DatabasePath, "focus_sessions", "planned_minutes"), "Focus sessions should store planned minutes.");
+    Assert.True(await ColumnExistsAsync(paths.DatabasePath, "movement_sessions", "mind_occupier"), "Movement sessions should store mind occupiers.");
+    Assert.True(await ColumnExistsAsync(paths.DatabasePath, "source_links", "sync_state"), "Source links should store sync state.");
+    Assert.True(await ColumnExistsAsync(paths.DatabasePath, "sync_queue", "payload_json"), "Sync queue should store payload JSON.");
 }
 
 static async Task<object?> ReadScalarAsync(string databasePath, string commandText)
@@ -71,6 +112,35 @@ static async Task<object?> ReadScalarAsync(string databasePath, string commandTe
     await using SqliteCommand command = connection.CreateCommand();
     command.CommandText = commandText;
     return await command.ExecuteScalarAsync();
+}
+
+static async Task<bool> TableExistsAsync(string databasePath, string tableName)
+{
+    object? count = await ReadScalarAsync(
+        databasePath,
+        $"SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = '{tableName}';");
+
+    return Convert.ToInt64(count) == 1;
+}
+
+static async Task<bool> ColumnExistsAsync(string databasePath, string tableName, string columnName)
+{
+    await using SqliteConnection connection = new($"Data Source={databasePath};Pooling=False");
+    await connection.OpenAsync();
+
+    await using SqliteCommand command = connection.CreateCommand();
+    command.CommandText = $"PRAGMA table_info({tableName});";
+
+    await using SqliteDataReader reader = await command.ExecuteReaderAsync();
+    while (await reader.ReadAsync())
+    {
+        if (string.Equals(reader.GetString(1), columnName, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 static bool IsSqliteDatabase(string path)
