@@ -855,7 +855,7 @@ Status:
 
 ~~5.4. Implement repositories for tasks and settings metadata first.~~
 
-5.5. Add database health check.
+~~5.5. Add database health check.~~
 
 5.6. Add app startup migration.
 

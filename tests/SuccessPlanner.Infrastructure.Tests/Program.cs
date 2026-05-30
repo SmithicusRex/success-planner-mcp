@@ -1,4 +1,5 @@
 using Microsoft.Data.Sqlite;
+using SuccessPlanner.App.Bootstrap;
 using SuccessPlanner.App.Domain;
 using SuccessPlanner.App.Infrastructure;
 
@@ -7,6 +8,9 @@ TestRunner.RunAll(
     ("DatabaseService replaces the legacy bootstrap marker", DatabaseServiceReplacesLegacyMarker),
     ("DatabaseService records repeatable migrations", DatabaseServiceRecordsRepeatableMigrations),
     ("DatabaseService creates core application tables", DatabaseServiceCreatesCoreApplicationTables),
+    ("DatabaseService reports a healthy database", DatabaseServiceReportsHealthyDatabase),
+    ("DatabaseService reports missing migration health failures", DatabaseServiceReportsMissingMigrationHealthFailures),
+    ("AppBootstrapper shows a simple database failure message", AppBootstrapperShowsSimpleDatabaseFailureMessage),
     ("TaskRepository saves and loads task state", TaskRepositorySavesAndLoadsTaskState),
     ("TaskRepository deletes tasks", TaskRepositoryDeletesTasks),
     ("SettingsMetadataRepository upserts and deletes metadata", SettingsMetadataRepositoryUpsertsAndDeletesMetadata));
@@ -106,6 +110,62 @@ static async Task DatabaseServiceCreatesCoreApplicationTables()
     Assert.True(await ColumnExistsAsync(paths.DatabasePath, "movement_sessions", "mind_occupier"), "Movement sessions should store mind occupiers.");
     Assert.True(await ColumnExistsAsync(paths.DatabasePath, "source_links", "sync_state"), "Source links should store sync state.");
     Assert.True(await ColumnExistsAsync(paths.DatabasePath, "sync_queue", "payload_json"), "Sync queue should store payload JSON.");
+}
+
+static async Task DatabaseServiceReportsHealthyDatabase()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+    DatabaseService database = new(paths);
+
+    await database.OpenAsync(CancellationToken.None);
+    await database.MigrateAsync(CancellationToken.None);
+    DatabaseHealthCheckResult health = await database.CheckHealthAsync(CancellationToken.None);
+    await database.HealthCheckAsync(CancellationToken.None);
+    await database.CloseAsync(CancellationToken.None);
+
+    Assert.True(health.IsHealthy, "Migrated database should report healthy.");
+    Assert.Equal("Local database is healthy.", health.Summary);
+    Assert.Equal("ok", health.QuickCheckResult);
+    Assert.Equal(2, health.AppliedMigrationCount);
+    Assert.Equal(2, health.LatestAppliedMigration);
+    Assert.Equal(2, health.RequiredMigrationCount);
+    Assert.Equal(2, health.LatestRequiredMigration);
+    Assert.Equal(0, health.Findings.Count);
+}
+
+static async Task DatabaseServiceReportsMissingMigrationHealthFailures()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+    DatabaseService database = new(paths);
+
+    await database.OpenAsync(CancellationToken.None);
+    DatabaseHealthCheckResult health = await database.CheckHealthAsync(CancellationToken.None);
+    InvalidOperationException failure = await Assert.ThrowsAsync<InvalidOperationException>(
+        () => database.HealthCheckAsync(CancellationToken.None));
+    await database.CloseAsync(CancellationToken.None);
+
+    Assert.False(health.IsHealthy, "Database should report unhealthy before migrations run.");
+    Assert.Equal("Local database needs attention.", health.Summary);
+    Assert.Contains("Database migration 1 is missing.", health.Findings);
+    Assert.Contains("Required table 'tasks' is missing.", health.Findings);
+    Assert.Contains("Local database needs attention.", failure.Message);
+}
+
+static async Task AppBootstrapperShowsSimpleDatabaseFailureMessage()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+    Directory.CreateDirectory(paths.AppDataDirectory);
+    await File.WriteAllTextAsync(paths.DatabasePath, "not a Success Planner database");
+
+    AppBootstrapper bootstrapper = new(paths);
+    BootstrapResult result = await bootstrapper.StartAsync(CancellationToken.None);
+
+    Assert.False(result.Success, "Bootstrap should fail for an invalid local data file.");
+    Assert.Null(result.MainWindow, "Failed bootstrap should not create a main window.");
+    Assert.Contains("could not start", result.UserMessage);
 }
 
 static async Task TaskRepositorySavesAndLoadsTaskState()
@@ -357,6 +417,14 @@ internal static class Assert
         }
     }
 
+    public static void False(bool condition, string message)
+    {
+        if (condition)
+        {
+            throw new InvalidOperationException(message);
+        }
+    }
+
     public static void Null(object? value, string message)
     {
         if (value is not null)
@@ -379,5 +447,28 @@ internal static class Assert
         {
             throw new InvalidOperationException($"Expected collection to contain '{expected}'.");
         }
+    }
+
+    public static void Contains(string expectedSubstring, string value)
+    {
+        if (!value.Contains(expectedSubstring, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException($"Expected '{value}' to contain '{expectedSubstring}'.");
+        }
+    }
+
+    public static async Task<TException> ThrowsAsync<TException>(Func<Task> action)
+        where TException : Exception
+    {
+        try
+        {
+            await action();
+        }
+        catch (TException ex)
+        {
+            return ex;
+        }
+
+        throw new InvalidOperationException($"Expected exception of type '{typeof(TException).Name}'.");
     }
 }

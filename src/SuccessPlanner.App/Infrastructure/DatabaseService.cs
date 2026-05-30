@@ -6,6 +6,21 @@ public sealed class DatabaseService
 {
     private const string PlaceholderText = "Success Planner MCP local data store placeholder.";
     private const string SqliteHeader = "SQLite format 3";
+    private static readonly string[] RequiredCoreTables =
+    [
+        "local_store_metadata",
+        "schema_migrations",
+        "projects",
+        "tasks",
+        "milestones",
+        "notes",
+        "focus_sessions",
+        "success_goals",
+        "movement_sessions",
+        "source_links",
+        "settings_metadata",
+        "sync_queue"
+    ];
 
     private readonly AppPaths _paths;
     private readonly DatabaseMigrator _migrator;
@@ -47,17 +62,79 @@ public sealed class DatabaseService
 
     public async Task HealthCheckAsync(CancellationToken cancellationToken)
     {
+        DatabaseHealthCheckResult result = await CheckHealthAsync(cancellationToken);
+
+        if (!result.IsHealthy)
+        {
+            throw new InvalidOperationException(result.ToFailureMessage());
+        }
+    }
+
+    public async Task<DatabaseHealthCheckResult> CheckHealthAsync(CancellationToken cancellationToken)
+    {
         cancellationToken.ThrowIfCancellationRequested();
         EnsureOpen();
 
-        await using SqliteCommand command = _connection!.CreateCommand();
-        command.CommandText = "PRAGMA quick_check;";
-        object? result = await command.ExecuteScalarAsync(cancellationToken);
+        List<string> findings = [];
+        string quickCheckResult = await ReadScalarTextAsync("PRAGMA quick_check;", cancellationToken);
 
-        if (!string.Equals(result?.ToString(), "ok", StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(quickCheckResult, "ok", StringComparison.OrdinalIgnoreCase))
         {
-            throw new InvalidOperationException("The local SQLite database health check failed.");
+            findings.Add("SQLite quick_check did not return ok.");
         }
+
+        IReadOnlyList<int> appliedMigrations = await ReadAppliedMigrationVersionsAsync(cancellationToken);
+        int requiredMigrationCount = DatabaseMigrations.All.Count;
+        int latestRequiredMigration = DatabaseMigrations.All.Count == 0
+            ? 0
+            : DatabaseMigrations.All.Max(migration => migration.Version);
+        int latestAppliedMigration = appliedMigrations.Count == 0
+            ? 0
+            : appliedMigrations.Max();
+
+        foreach (IDatabaseMigration migration in DatabaseMigrations.All)
+        {
+            if (!appliedMigrations.Contains(migration.Version))
+            {
+                findings.Add($"Database migration {migration.Version} is missing.");
+            }
+        }
+
+        foreach (string tableName in RequiredCoreTables)
+        {
+            if (!await TableExistsAsync(tableName, cancellationToken))
+            {
+                findings.Add($"Required table '{tableName}' is missing.");
+            }
+        }
+
+        if (await TableExistsAsync("local_store_metadata", cancellationToken))
+        {
+            string storeKind = await ReadScalarTextAsync(
+                "SELECT value FROM local_store_metadata WHERE key = 'store_kind';",
+                cancellationToken);
+
+            if (!string.Equals(storeKind, "Success Planner MCP SQLite local store", StringComparison.Ordinal))
+            {
+                findings.Add("Local store metadata is missing or invalid.");
+            }
+        }
+
+        bool isHealthy = findings.Count == 0;
+        string summary = isHealthy
+            ? "Local database is healthy."
+            : "Local database needs attention.";
+
+        return new DatabaseHealthCheckResult(
+            isHealthy,
+            summary,
+            _paths.DatabasePath,
+            quickCheckResult,
+            appliedMigrations.Count,
+            latestAppliedMigration,
+            requiredMigrationCount,
+            latestRequiredMigration,
+            findings);
     }
 
     public async Task CloseAsync(CancellationToken cancellationToken)
@@ -98,6 +175,51 @@ public sealed class DatabaseService
         {
             throw new InvalidOperationException("The local SQLite connection has not been created.");
         }
+    }
+
+    private async Task<IReadOnlyList<int>> ReadAppliedMigrationVersionsAsync(CancellationToken cancellationToken)
+    {
+        if (!await TableExistsAsync("schema_migrations", cancellationToken))
+        {
+            return [];
+        }
+
+        List<int> versions = [];
+
+        await using SqliteCommand command = _connection!.CreateCommand();
+        command.CommandText = "SELECT version FROM schema_migrations ORDER BY version;";
+
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            versions.Add(reader.GetInt32(0));
+        }
+
+        return versions;
+    }
+
+    private async Task<bool> TableExistsAsync(string tableName, CancellationToken cancellationToken)
+    {
+        await using SqliteCommand command = _connection!.CreateCommand();
+        command.CommandText =
+            """
+            SELECT COUNT(*)
+            FROM sqlite_master
+            WHERE type = 'table'
+              AND name = $tableName;
+            """;
+        command.Parameters.AddWithValue("$tableName", tableName);
+
+        object? result = await command.ExecuteScalarAsync(cancellationToken);
+        return Convert.ToInt64(result) == 1;
+    }
+
+    private async Task<string> ReadScalarTextAsync(string commandText, CancellationToken cancellationToken)
+    {
+        await using SqliteCommand command = _connection!.CreateCommand();
+        command.CommandText = commandText;
+        object? result = await command.ExecuteScalarAsync(cancellationToken);
+        return result?.ToString() ?? string.Empty;
     }
 
     private void ReplacePlaceholderIfNeeded()

@@ -50,12 +50,16 @@ public sealed class AppBootstrapper
 
             await _databaseService.OpenAsync(cancellationToken);
             await _databaseService.MigrateAsync(cancellationToken);
-            await _databaseService.HealthCheckAsync(cancellationToken);
+            DatabaseHealthCheckResult databaseHealth = await _databaseService.CheckHealthAsync(cancellationToken);
+            if (!databaseHealth.IsHealthy)
+            {
+                throw new InvalidOperationException(databaseHealth.ToFailureMessage());
+            }
 
             await _navigationService.GoHomeAsync(cancellationToken);
 
             AppShellViewModel shellViewModel = new(
-                statusText: "Ready",
+                statusText: "Ready - Data OK",
                 footerText: $"Local control center - {settings.ProfileName}",
                 navigationService: _navigationService);
 
@@ -71,6 +75,7 @@ public sealed class AppBootstrapper
         }
         catch (Exception ex)
         {
+            await CleanupFailedStartAsync();
             await WriteStartupFailureLogAsync(ex, cancellationToken);
             return BootstrapResult.Failed(
                 "Success Planner MCP could not start. Your local data was not changed. Check the log folder for details.");
@@ -137,6 +142,19 @@ public sealed class AppBootstrapper
         catch
         {
             // Startup is already failing; avoid masking the original error with a logging problem.
+        }
+    }
+
+    private async Task CleanupFailedStartAsync()
+    {
+        try
+        {
+            await _backgroundWorkerHost.StopAsync(CancellationToken.None);
+            await _databaseService.CloseAsync(CancellationToken.None);
+        }
+        catch
+        {
+            // Startup is already failing; avoid masking the original error with cleanup problems.
         }
     }
 }
