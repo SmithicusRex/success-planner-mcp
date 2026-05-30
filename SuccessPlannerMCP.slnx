@@ -4,5 +4,6 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/SuccessPlanner.Core.Tests/SuccessPlanner.Core.Tests.csproj" />
+    <Project Path="tests/SuccessPlanner.Infrastructure.Tests/SuccessPlanner.Infrastructure.Tests.csproj" />
   </Folder>
 </Solution>

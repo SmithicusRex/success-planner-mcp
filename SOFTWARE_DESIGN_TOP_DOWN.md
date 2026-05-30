@@ -847,7 +847,7 @@ Status:
 
 ### 5. SQLite Database And Repositories
 
-5.1. Replace the bootstrap local data marker with SQLite.
+~~5.1. Replace the bootstrap local data marker with SQLite.~~
 
 5.2. Add database migration structure.
 
