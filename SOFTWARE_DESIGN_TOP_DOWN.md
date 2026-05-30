@@ -828,7 +828,7 @@ Status:
 
 ~~4.4. Create `NoteItem`.~~
 
-4.5. Create `FocusSession`.
+~~4.5. Create `FocusSession`.~~
 
 4.6. Create `SuccessGoal`.
 
