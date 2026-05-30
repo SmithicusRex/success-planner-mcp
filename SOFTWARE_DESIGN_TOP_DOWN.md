@@ -873,7 +873,7 @@ Status:
 
 ~~6.2. Create `CaptureView`.~~
 
-6.3. Add task title input.
+~~6.3. Add task title input.~~
 
 6.4. Add date hint buttons.
 
