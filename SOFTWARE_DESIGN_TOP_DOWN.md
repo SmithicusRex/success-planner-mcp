@@ -834,9 +834,9 @@ Status:
 
 ~~4.7. Create `MovementSession`.~~
 
-4.8. Create `SourceLink`.
+~~4.8. Create `SourceLink`.~~
 
-4.9. Add enums for status, priority, source system, and sync state.
+~~4.9. Add enums for status, priority, source system, and sync state.~~
 
 Benchmark gate:
 
