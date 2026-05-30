@@ -1,11 +1,15 @@
 using Microsoft.Data.Sqlite;
+using SuccessPlanner.App.Domain;
 using SuccessPlanner.App.Infrastructure;
 
 TestRunner.RunAll(
     ("DatabaseService creates a real SQLite database", DatabaseServiceCreatesSqliteDatabase),
     ("DatabaseService replaces the legacy bootstrap marker", DatabaseServiceReplacesLegacyMarker),
     ("DatabaseService records repeatable migrations", DatabaseServiceRecordsRepeatableMigrations),
-    ("DatabaseService creates core application tables", DatabaseServiceCreatesCoreApplicationTables));
+    ("DatabaseService creates core application tables", DatabaseServiceCreatesCoreApplicationTables),
+    ("TaskRepository saves and loads task state", TaskRepositorySavesAndLoadsTaskState),
+    ("TaskRepository deletes tasks", TaskRepositoryDeletesTasks),
+    ("SettingsMetadataRepository upserts and deletes metadata", SettingsMetadataRepositoryUpsertsAndDeletesMetadata));
 
 static async Task DatabaseServiceCreatesSqliteDatabase()
 {
@@ -102,6 +106,111 @@ static async Task DatabaseServiceCreatesCoreApplicationTables()
     Assert.True(await ColumnExistsAsync(paths.DatabasePath, "movement_sessions", "mind_occupier"), "Movement sessions should store mind occupiers.");
     Assert.True(await ColumnExistsAsync(paths.DatabasePath, "source_links", "sync_state"), "Source links should store sync state.");
     Assert.True(await ColumnExistsAsync(paths.DatabasePath, "sync_queue", "payload_json"), "Sync queue should store payload JSON.");
+}
+
+static async Task TaskRepositorySavesAndLoadsTaskState()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+    await CreateMigratedDatabaseAsync(paths);
+
+    TaskRepository repository = new(paths);
+    TaskItem task = TaskItem.Capture("  Plan next tiny step  ");
+    task.UpdateNotes("Keep it small.");
+    task.Schedule(new DateOnly(2026, 6, 1), new DateOnly(2026, 5, 31));
+    task.SetPriority(TaskPriority.High);
+    task.SetEstimate(20);
+    task.SetEnergyLevel("Low");
+    task.MarkTinyStep();
+    task.MarkPhysicalActivity();
+    task.AddTag("Focus");
+
+    await repository.AddAsync(task, CancellationToken.None);
+
+    TaskItem? loaded = await repository.GetByIdAsync(task.Id, CancellationToken.None);
+    Assert.NotNull(loaded, "Saved task should load by id.");
+    Assert.Equal(task.Id, loaded!.Id);
+    Assert.Equal("Plan next tiny step", loaded.Title);
+    Assert.Equal("Keep it small.", loaded.Notes);
+    Assert.Equal(TaskItemStatus.Planned, loaded.Status);
+    Assert.Equal(TaskPriority.High, loaded.Priority);
+    Assert.Equal(new DateOnly(2026, 6, 1), loaded.DueDate);
+    Assert.Equal(new DateOnly(2026, 5, 31), loaded.StartDate);
+    Assert.Equal(20, loaded.EstimatedMinutes);
+    Assert.Equal("Low", loaded.EnergyLevel);
+    Assert.True(loaded.IsTinyStep, "Tiny-step flag should round-trip.");
+    Assert.True(loaded.IsPhysicalActivity, "Physical-activity flag should round-trip.");
+    Assert.Contains("Move", loaded.Tags);
+    Assert.Contains("Focus", loaded.Tags);
+
+    task.Start();
+    task.Complete(new DateTimeOffset(2026, 6, 1, 15, 0, 0, TimeSpan.Zero));
+    task.UpdateNotes("Finished with a small win.");
+    await repository.SaveAsync(task, CancellationToken.None);
+
+    TaskItem? updated = await repository.GetByIdAsync(task.Id, CancellationToken.None);
+    Assert.NotNull(updated, "Updated task should load by id.");
+    Assert.Equal(TaskItemStatus.Done, updated!.Status);
+    Assert.Equal("Finished with a small win.", updated.Notes);
+    Assert.True(updated.CompletedAt.HasValue, "Completed time should round-trip.");
+
+    IReadOnlyList<TaskItem> allTasks = await repository.GetAllAsync(CancellationToken.None);
+    Assert.Equal(1, allTasks.Count);
+}
+
+static async Task TaskRepositoryDeletesTasks()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+    await CreateMigratedDatabaseAsync(paths);
+
+    TaskRepository repository = new(paths);
+    TaskItem task = TaskItem.Capture("Delete me");
+    await repository.AddAsync(task, CancellationToken.None);
+
+    await repository.DeleteAsync(task.Id, CancellationToken.None);
+
+    TaskItem? deleted = await repository.GetByIdAsync(task.Id, CancellationToken.None);
+    Assert.Null(deleted, "Deleted task should not load by id.");
+}
+
+static async Task SettingsMetadataRepositoryUpsertsAndDeletesMetadata()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+    await CreateMigratedDatabaseAsync(paths);
+
+    SettingsMetadataRepository repository = new(paths);
+    DateTimeOffset firstUpdate = new(2026, 5, 30, 8, 0, 0, TimeSpan.Zero);
+    DateTimeOffset secondUpdate = new(2026, 5, 30, 9, 0, 0, TimeSpan.Zero);
+
+    await repository.UpsertAsync("last_opened_screen", "Home", firstUpdate, CancellationToken.None);
+    SettingsMetadataEntry? entry = await repository.GetAsync("last_opened_screen", CancellationToken.None);
+    Assert.NotNull(entry, "Metadata should load after insert.");
+    Assert.Equal("last_opened_screen", entry!.Key);
+    Assert.Equal("Home", entry.Value);
+    Assert.Equal(firstUpdate.ToUniversalTime(), entry.UpdatedAt);
+
+    await repository.UpsertAsync("last_opened_screen", "Settings", secondUpdate, CancellationToken.None);
+    SettingsMetadataEntry? updated = await repository.GetAsync("last_opened_screen", CancellationToken.None);
+    Assert.NotNull(updated, "Metadata should load after update.");
+    Assert.Equal("Settings", updated!.Value);
+    Assert.Equal(secondUpdate.ToUniversalTime(), updated.UpdatedAt);
+
+    IReadOnlyList<SettingsMetadataEntry> all = await repository.GetAllAsync(CancellationToken.None);
+    Assert.Equal(1, all.Count);
+
+    await repository.DeleteAsync("last_opened_screen", CancellationToken.None);
+    SettingsMetadataEntry? deleted = await repository.GetAsync("last_opened_screen", CancellationToken.None);
+    Assert.Null(deleted, "Deleted metadata should not load by key.");
+}
+
+static async Task CreateMigratedDatabaseAsync(AppPaths paths)
+{
+    DatabaseService database = new(paths);
+    await database.OpenAsync(CancellationToken.None);
+    await database.MigrateAsync(CancellationToken.None);
+    await database.CloseAsync(CancellationToken.None);
 }
 
 static async Task<object?> ReadScalarAsync(string databasePath, string commandText)
@@ -245,6 +354,30 @@ internal static class Assert
         if (!condition)
         {
             throw new InvalidOperationException(message);
+        }
+    }
+
+    public static void Null(object? value, string message)
+    {
+        if (value is not null)
+        {
+            throw new InvalidOperationException(message);
+        }
+    }
+
+    public static void NotNull(object? value, string message)
+    {
+        if (value is null)
+        {
+            throw new InvalidOperationException(message);
+        }
+    }
+
+    public static void Contains<T>(T expected, IEnumerable<T> values)
+    {
+        if (!values.Contains(expected))
+        {
+            throw new InvalidOperationException($"Expected collection to contain '{expected}'.");
         }
     }
 }

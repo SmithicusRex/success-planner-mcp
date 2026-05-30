@@ -853,7 +853,7 @@ Status:
 
 ~~5.3. Create tables for tasks, projects, milestones, notes, focus sessions, movement sessions, source links, settings metadata, and sync queue.~~
 
-5.4. Implement repositories for tasks and settings metadata first.
+~~5.4. Implement repositories for tasks and settings metadata first.~~
 
 5.5. Add database health check.
 

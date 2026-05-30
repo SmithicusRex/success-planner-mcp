@@ -53,13 +53,40 @@ public sealed class TaskItem
         string title,
         DateTimeOffset createdAt,
         TaskItemStatus status,
-        TaskPriority priority)
+        TaskPriority priority,
+        string? notes = null,
+        DateOnly? dueDate = null,
+        DateOnly? startDate = null,
+        DateTimeOffset? completedAt = null,
+        Guid? projectId = null,
+        int? estimatedMinutes = null,
+        string? energyLevel = null,
+        bool isTinyStep = false,
+        bool isPhysicalActivity = false,
+        IEnumerable<string>? tags = null)
     {
         TaskItem item = new(id, title, createdAt)
         {
             Status = status,
-            Priority = priority
+            Priority = priority,
+            Notes = notes?.Trim() ?? string.Empty,
+            DueDate = dueDate,
+            StartDate = startDate,
+            CompletedAt = completedAt,
+            ProjectId = projectId,
+            EstimatedMinutes = estimatedMinutes,
+            EnergyLevel = string.IsNullOrWhiteSpace(energyLevel) ? "Normal" : energyLevel.Trim(),
+            IsTinyStep = isTinyStep,
+            IsPhysicalActivity = isPhysicalActivity
         };
+
+        if (tags is not null)
+        {
+            foreach (string tag in tags)
+            {
+                item.AddTag(tag);
+            }
+        }
 
         return item;
     }
