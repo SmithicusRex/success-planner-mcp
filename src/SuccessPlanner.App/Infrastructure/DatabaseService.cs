@@ -8,12 +8,14 @@ public sealed class DatabaseService
     private const string SqliteHeader = "SQLite format 3";
 
     private readonly AppPaths _paths;
+    private readonly DatabaseMigrator _migrator;
     private SqliteConnection? _connection;
     private bool _isOpen;
 
     public DatabaseService(AppPaths paths)
     {
         _paths = paths;
+        _migrator = new DatabaseMigrator(DatabaseMigrations.All);
     }
 
     public async Task OpenAsync(CancellationToken cancellationToken)
@@ -33,28 +35,14 @@ public sealed class DatabaseService
         _connection = new SqliteConnection(connectionString.ToString());
         await _connection.OpenAsync(cancellationToken);
         await ExecuteNonQueryAsync("PRAGMA foreign_keys = ON;", cancellationToken);
-        await ExecuteNonQueryAsync(
-            """
-            CREATE TABLE IF NOT EXISTS local_store_metadata (
-                key TEXT NOT NULL PRIMARY KEY,
-                value TEXT NOT NULL
-            );
-            """,
-            cancellationToken);
-        await ExecuteNonQueryAsync(
-            """
-            INSERT OR IGNORE INTO local_store_metadata (key, value)
-            VALUES ('store_kind', 'Success Planner MCP SQLite local store');
-            """,
-            cancellationToken);
         _isOpen = true;
     }
 
-    public Task MigrateAsync(CancellationToken cancellationToken)
+    public async Task MigrateAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         EnsureOpen();
-        return Task.CompletedTask;
+        await _migrator.MigrateAsync(_connection!, cancellationToken);
     }
 
     public async Task HealthCheckAsync(CancellationToken cancellationToken)

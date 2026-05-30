@@ -849,7 +849,7 @@ Status:
 
 ~~5.1. Replace the bootstrap local data marker with SQLite.~~
 
-5.2. Add database migration structure.
+~~5.2. Add database migration structure.~~
 
 5.3. Create tables for tasks, projects, milestones, notes, focus sessions, movement sessions, source links, settings metadata, and sync queue.
 

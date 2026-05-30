@@ -3,7 +3,8 @@ using SuccessPlanner.App.Infrastructure;
 
 TestRunner.RunAll(
     ("DatabaseService creates a real SQLite database", DatabaseServiceCreatesSqliteDatabase),
-    ("DatabaseService replaces the legacy bootstrap marker", DatabaseServiceReplacesLegacyMarker));
+    ("DatabaseService replaces the legacy bootstrap marker", DatabaseServiceReplacesLegacyMarker),
+    ("DatabaseService records repeatable migrations", DatabaseServiceRecordsRepeatableMigrations));
 
 static async Task DatabaseServiceCreatesSqliteDatabase()
 {
@@ -33,11 +34,33 @@ static async Task DatabaseServiceReplacesLegacyMarker()
 
     DatabaseService database = new(paths);
     await database.OpenAsync(CancellationToken.None);
+    await database.MigrateAsync(CancellationToken.None);
     await database.HealthCheckAsync(CancellationToken.None);
     await database.CloseAsync(CancellationToken.None);
 
     Assert.True(IsSqliteDatabase(paths.DatabasePath), "Legacy marker should be replaced by SQLite.");
     Assert.Equal(1, Directory.GetFiles(paths.AppDataDirectory, "*.placeholder-*").Length);
+}
+
+static async Task DatabaseServiceRecordsRepeatableMigrations()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+    DatabaseService database = new(paths);
+
+    await database.OpenAsync(CancellationToken.None);
+    await database.MigrateAsync(CancellationToken.None);
+    await database.MigrateAsync(CancellationToken.None);
+    await database.CloseAsync(CancellationToken.None);
+
+    Assert.Equal(1L, await ReadScalarAsync(paths.DatabasePath, "SELECT COUNT(*) FROM schema_migrations;"));
+    Assert.Equal(1L, await ReadScalarAsync(paths.DatabasePath, "SELECT version FROM schema_migrations;"));
+    Assert.Equal(
+        "Create local store metadata",
+        await ReadScalarAsync(paths.DatabasePath, "SELECT name FROM schema_migrations WHERE version = 1;"));
+    Assert.Equal(
+        "Success Planner MCP SQLite local store",
+        await ReadScalarAsync(paths.DatabasePath, "SELECT value FROM local_store_metadata WHERE key = 'store_kind';"));
 }
 
 static async Task<object?> ReadScalarAsync(string databasePath, string commandText)
