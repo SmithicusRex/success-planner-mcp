@@ -826,7 +826,7 @@ Status:
 
 ~~4.3. Create `MilestoneItem`.~~
 
-4.4. Create `NoteItem`.
+~~4.4. Create `NoteItem`.~~
 
 4.5. Create `FocusSession`.
 
