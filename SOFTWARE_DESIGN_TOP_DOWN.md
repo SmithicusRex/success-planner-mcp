@@ -869,7 +869,7 @@ Status:
 
 ### 6. Capture Workflow
 
-6.1. Create `CaptureViewModel`.
+~~6.1. Create `CaptureViewModel`.~~
 
 6.2. Create `CaptureView`.
 
