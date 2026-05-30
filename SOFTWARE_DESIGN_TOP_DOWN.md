@@ -818,7 +818,7 @@ Status:
 - ~~Corrupt settings file does not prevent launch.~~
 - ~~Build passes.~~
 
-### 4. Core Domain Objects
+### ~~4. Core Domain Objects~~
 
 ~~4.1. Create `TaskItem`.~~
 
@@ -838,12 +838,12 @@ Status:
 
 ~~4.9. Add enums for status, priority, source system, and sync state.~~
 
-Benchmark gate:
+~~Benchmark gate:~~
 
-- Domain objects compile in a separate core area or namespace.
-- Objects represent Capture, Today, Start, Move, and Review needs.
-- Unit tests cover basic object creation and status transitions.
-- Build and tests pass.
+- ~~Domain objects compile in a separate core area or namespace.~~
+- ~~Objects represent Capture, Today, Start, Move, and Review needs.~~
+- ~~Unit tests cover basic object creation and status transitions.~~
+- ~~Build and tests pass.~~
 
 ### 5. SQLite Database And Repositories
 
