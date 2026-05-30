@@ -832,7 +832,7 @@ Status:
 
 ~~4.6. Create `SuccessGoal`.~~
 
-4.7. Create `MovementSession`.
+~~4.7. Create `MovementSession`.~~
 
 4.8. Create `SourceLink`.
 
