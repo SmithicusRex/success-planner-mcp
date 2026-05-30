@@ -9,6 +9,7 @@ TestRunner.RunAll(
     ("CaptureViewModel validates an empty title", CaptureViewModelValidatesEmptyTitle),
     ("CaptureViewModel creates a captured task draft", CaptureViewModelCreatesCapturedTaskDraft),
     ("CaptureViewModel creates a scheduled task draft when date is selected", CaptureViewModelCreatesScheduledTaskDraftWhenDateIsSelected),
+    ("CaptureViewModel saves a captured task locally", CaptureViewModelSavesCapturedTaskLocally),
     ("CaptureViewModel resets the capture form", CaptureViewModelResetsCaptureForm),
     ("CaptureViewModel raises property change notifications", CaptureViewModelRaisesPropertyChangeNotifications));
 
@@ -30,6 +31,7 @@ static void CaptureViewModelStartsReady()
     Assert.Equal(CaptureDestinationPreference.LetMcpChoose, viewModel.SelectedDestination);
     Assert.Equal("Let MCP Choose.", viewModel.DestinationHintText);
     Assert.False(viewModel.CanCreateTask, "Blank capture title should not be ready.");
+    Assert.False(viewModel.SaveTaskCommand.CanExecute(null), "Blank capture title should disable save.");
 }
 
 static void CaptureViewModelAppliesDateHintButtons()
@@ -128,6 +130,37 @@ static void CaptureViewModelCreatesScheduledTaskDraftWhenDateIsSelected()
     Assert.Equal(TaskItemStatus.Planned, task.Status);
 }
 
+static void CaptureViewModelSavesCapturedTaskLocally()
+{
+    List<TaskItem> savedTasks = [];
+    CaptureViewModel viewModel = new((task, _) =>
+    {
+        savedTasks.Add(task);
+        return Task.CompletedTask;
+    })
+    {
+        TaskTitle = "  Save this locally  ",
+        Notes = "  Local first.  "
+    };
+    viewModel.TodayDateCommand.Execute(null);
+
+    viewModel.SaveCapturedTaskAsync().GetAwaiter().GetResult();
+
+    Assert.Equal(1, savedTasks.Count);
+    Assert.Equal("Save this locally", savedTasks[0].Title);
+    Assert.Equal("Local first.", savedTasks[0].Notes);
+    Assert.Equal(DateOnly.FromDateTime(DateTime.Today), savedTasks[0].DueDate);
+    Assert.Equal(TaskItemStatus.Planned, savedTasks[0].Status);
+    Assert.True(viewModel.HasSavedTask, "Successful save should mark the current task saved.");
+    Assert.Equal(savedTasks[0].Id, viewModel.LastSavedTaskId);
+    Assert.Equal("Saved locally.", viewModel.StatusText);
+    Assert.False(viewModel.SaveTaskCommand.CanExecute(null), "Saved task should not save again until changed.");
+
+    viewModel.TaskTitle = "Changed after save";
+    Assert.False(viewModel.HasSavedTask, "Editing after save should clear saved state.");
+    Assert.True(viewModel.SaveTaskCommand.CanExecute(null), "Edited task should be saveable again.");
+}
+
 static void CaptureViewModelResetsCaptureForm()
 {
     CaptureViewModel viewModel = new()
@@ -148,6 +181,8 @@ static void CaptureViewModelResetsCaptureForm()
     Assert.Equal("No date selected.", viewModel.DateHintText);
     Assert.Equal(CaptureDestinationPreference.LetMcpChoose, viewModel.SelectedDestination);
     Assert.Equal("Let MCP Choose.", viewModel.DestinationHintText);
+    Assert.False(viewModel.HasSavedTask, "Reset should clear saved state.");
+    Assert.Null(viewModel.LastSavedTaskId, "Reset should clear the last saved task id.");
     Assert.False(viewModel.CanCreateTask, "Reset form should not be ready to create a task.");
 }
 
@@ -168,6 +203,7 @@ static void CaptureViewModelRaisesPropertyChangeNotifications()
     Assert.Contains(nameof(CaptureViewModel.TaskTitle), changedProperties);
     Assert.Contains(nameof(CaptureViewModel.CanCreateTask), changedProperties);
     Assert.True(viewModel.CanCreateTask, "Nonblank title should be ready to create a task.");
+    Assert.True(viewModel.SaveTaskCommand.CanExecute(null), "Nonblank title should enable save.");
 }
 
 internal static class TestRunner

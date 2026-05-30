@@ -2,6 +2,7 @@ using Microsoft.Data.Sqlite;
 using SuccessPlanner.App.Bootstrap;
 using SuccessPlanner.App.Domain;
 using SuccessPlanner.App.Infrastructure;
+using SuccessPlanner.App.ViewModels;
 
 TestRunner.RunAll(
     ("DatabaseService creates a real SQLite database", DatabaseServiceCreatesSqliteDatabase),
@@ -15,6 +16,7 @@ TestRunner.RunAll(
     ("AppBootstrapper shows a simple database failure message", AppBootstrapperShowsSimpleDatabaseFailureMessage),
     ("TaskRepository saves and loads task state", TaskRepositorySavesAndLoadsTaskState),
     ("TaskRepository deletes tasks", TaskRepositoryDeletesTasks),
+    ("CaptureViewModel saves captured tasks through TaskRepository", CaptureViewModelSavesCapturedTasksThroughTaskRepository),
     ("SettingsMetadataRepository upserts and deletes metadata", SettingsMetadataRepositoryUpsertsAndDeletesMetadata));
 
 static async Task DatabaseServiceCreatesSqliteDatabase()
@@ -285,6 +287,32 @@ static async Task TaskRepositoryDeletesTasks()
 
     TaskItem? deleted = await repository.GetByIdAsync(task.Id, CancellationToken.None);
     Assert.Null(deleted, "Deleted task should not load by id.");
+}
+
+static async Task CaptureViewModelSavesCapturedTasksThroughTaskRepository()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+    await CreateMigratedDatabaseAsync(paths);
+
+    TaskRepository repository = new(paths);
+    CaptureViewModel viewModel = new(repository.AddAsync)
+    {
+        TaskTitle = "  Capture a local task  "
+    };
+    viewModel.TomorrowDateCommand.Execute(null);
+
+    await viewModel.SaveCapturedTaskAsync(CancellationToken.None);
+
+    Assert.True(viewModel.HasSavedTask, "Capture should mark the task saved after repository write.");
+    Assert.True(viewModel.LastSavedTaskId.HasValue, "Capture should expose the saved task id.");
+    Guid savedTaskId = viewModel.LastSavedTaskId.GetValueOrDefault();
+
+    TaskItem? savedTask = await repository.GetByIdAsync(savedTaskId, CancellationToken.None);
+    Assert.NotNull(savedTask, "Saved capture task should load from SQLite.");
+    Assert.Equal("Capture a local task", savedTask!.Title);
+    Assert.Equal(DateOnly.FromDateTime(DateTime.Today).AddDays(1), savedTask.DueDate);
+    Assert.Equal(TaskItemStatus.Planned, savedTask.Status);
 }
 
 static async Task SettingsMetadataRepositoryUpsertsAndDeletesMetadata()

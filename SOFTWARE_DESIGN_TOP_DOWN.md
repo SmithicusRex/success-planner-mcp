@@ -879,7 +879,7 @@ Status:
 
 ~~6.5. Add destination choice with `Let MCP Choose`.~~
 
-6.6. Save captured task locally.
+~~6.6. Save captured task locally.~~
 
 6.7. Show success feedback and Capture Another option.
 
