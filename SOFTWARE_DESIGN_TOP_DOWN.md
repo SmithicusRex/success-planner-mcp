@@ -830,7 +830,7 @@ Status:
 
 ~~4.5. Create `FocusSession`.~~
 
-4.6. Create `SuccessGoal`.
+~~4.6. Create `SuccessGoal`.~~
 
 4.7. Create `MovementSession`.
 
