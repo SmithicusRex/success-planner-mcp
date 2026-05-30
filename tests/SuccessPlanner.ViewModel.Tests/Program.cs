@@ -4,8 +4,10 @@ using SuccessPlanner.App.ViewModels;
 
 TestRunner.RunAll(
     ("CaptureViewModel starts in a simple ready state", CaptureViewModelStartsReady),
+    ("CaptureViewModel applies date hint buttons", CaptureViewModelAppliesDateHintButtons),
     ("CaptureViewModel validates an empty title", CaptureViewModelValidatesEmptyTitle),
     ("CaptureViewModel creates a captured task draft", CaptureViewModelCreatesCapturedTaskDraft),
+    ("CaptureViewModel creates a scheduled task draft when date is selected", CaptureViewModelCreatesScheduledTaskDraftWhenDateIsSelected),
     ("CaptureViewModel resets the capture form", CaptureViewModelResetsCaptureForm),
     ("CaptureViewModel raises property change notifications", CaptureViewModelRaisesPropertyChangeNotifications));
 
@@ -22,7 +24,31 @@ static void CaptureViewModelStartsReady()
     Assert.Equal(string.Empty, viewModel.Notes);
     Assert.Equal(string.Empty, viewModel.ValidationMessage);
     Assert.Equal("Ready to capture.", viewModel.StatusText);
+    Assert.Null(viewModel.DueDate, "New capture should not have a date selected.");
+    Assert.Equal("No date selected.", viewModel.DateHintText);
     Assert.False(viewModel.CanCreateTask, "Blank capture title should not be ready.");
+}
+
+static void CaptureViewModelAppliesDateHintButtons()
+{
+    CaptureViewModel viewModel = new();
+    DateOnly today = DateOnly.FromDateTime(DateTime.Today);
+
+    viewModel.TodayDateCommand.Execute(null);
+    Assert.Equal(today, viewModel.DueDate);
+    Assert.Contains("Today", viewModel.DateHintText);
+
+    viewModel.TomorrowDateCommand.Execute(null);
+    Assert.Equal(today.AddDays(1), viewModel.DueDate);
+    Assert.Contains("Tomorrow", viewModel.DateHintText);
+
+    viewModel.ThisWeekDateCommand.Execute(null);
+    Assert.Equal(today.AddDays(7), viewModel.DueDate);
+    Assert.Contains("This week", viewModel.DateHintText);
+
+    viewModel.ClearDateCommand.Execute(null);
+    Assert.Null(viewModel.DueDate, "No Date should clear the selected date.");
+    Assert.Equal("No date selected.", viewModel.DateHintText);
 }
 
 static void CaptureViewModelValidatesEmptyTitle()
@@ -57,6 +83,22 @@ static void CaptureViewModelCreatesCapturedTaskDraft()
     Assert.Equal("Task ready to save.", viewModel.StatusText);
 }
 
+static void CaptureViewModelCreatesScheduledTaskDraftWhenDateIsSelected()
+{
+    CaptureViewModel viewModel = new()
+    {
+        TaskTitle = "Make a phone call"
+    };
+    viewModel.TomorrowDateCommand.Execute(null);
+
+    bool created = viewModel.TryCreateCapturedTask(out TaskItem? task);
+
+    Assert.True(created, "Valid capture should create a task draft.");
+    Assert.NotNull(task, "Valid capture should return a task.");
+    Assert.Equal(DateOnly.FromDateTime(DateTime.Today).AddDays(1), task!.DueDate);
+    Assert.Equal(TaskItemStatus.Planned, task.Status);
+}
+
 static void CaptureViewModelResetsCaptureForm()
 {
     CaptureViewModel viewModel = new()
@@ -64,6 +106,7 @@ static void CaptureViewModelResetsCaptureForm()
         TaskTitle = "Plan the tiny step",
         Notes = "Notes"
     };
+    viewModel.TodayDateCommand.Execute(null);
     viewModel.TryCreateCapturedTask(out _);
 
     viewModel.ResetCaptureForm();
@@ -72,6 +115,8 @@ static void CaptureViewModelResetsCaptureForm()
     Assert.Equal(string.Empty, viewModel.Notes);
     Assert.Equal(string.Empty, viewModel.ValidationMessage);
     Assert.Equal("Ready to capture.", viewModel.StatusText);
+    Assert.Null(viewModel.DueDate, "Reset should clear the selected date.");
+    Assert.Equal("No date selected.", viewModel.DateHintText);
     Assert.False(viewModel.CanCreateTask, "Reset form should not be ready to create a task.");
 }
 
@@ -168,6 +213,14 @@ internal static class Assert
         if (!values.Contains(expected))
         {
             throw new InvalidOperationException($"Expected collection to contain '{expected}'.");
+        }
+    }
+
+    public static void Contains(string expectedSubstring, string value)
+    {
+        if (!value.Contains(expectedSubstring, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException($"Expected '{value}' to contain '{expectedSubstring}'.");
         }
     }
 }

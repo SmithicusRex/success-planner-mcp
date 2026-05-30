@@ -1,5 +1,7 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using System.Windows.Input;
+using SuccessPlanner.App.Commands;
 using SuccessPlanner.App.Domain;
 using SuccessPlanner.App.Screens;
 
@@ -14,10 +16,32 @@ public sealed class CaptureViewModel : ScreenViewModelBase, INotifyPropertyChang
     private string _notes = string.Empty;
     private string _validationMessage = string.Empty;
     private string _statusText = ReadyStatus;
+    private DateOnly? _dueDate;
+    private string _dateHintText = "No date selected.";
 
     public CaptureViewModel()
         : base(ScreenCatalog.Capture)
     {
+        TodayDateCommand = new AsyncRelayCommand(() =>
+        {
+            SelectDueDate(DateOnly.FromDateTime(DateTime.Today), "Today");
+            return Task.CompletedTask;
+        });
+        TomorrowDateCommand = new AsyncRelayCommand(() =>
+        {
+            SelectDueDate(DateOnly.FromDateTime(DateTime.Today).AddDays(1), "Tomorrow");
+            return Task.CompletedTask;
+        });
+        ThisWeekDateCommand = new AsyncRelayCommand(() =>
+        {
+            SelectDueDate(DateOnly.FromDateTime(DateTime.Today).AddDays(7), "This week");
+            return Task.CompletedTask;
+        });
+        ClearDateCommand = new AsyncRelayCommand(() =>
+        {
+            ClearDueDate();
+            return Task.CompletedTask;
+        });
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -29,6 +53,14 @@ public sealed class CaptureViewModel : ScreenViewModelBase, INotifyPropertyChang
     public string IconGlyph => Descriptor.IconGlyph;
 
     public string AccentColor => Descriptor.AccentColor;
+
+    public ICommand TodayDateCommand { get; }
+
+    public ICommand TomorrowDateCommand { get; }
+
+    public ICommand ThisWeekDateCommand { get; }
+
+    public ICommand ClearDateCommand { get; }
 
     public string TaskTitle
     {
@@ -67,6 +99,18 @@ public sealed class CaptureViewModel : ScreenViewModelBase, INotifyPropertyChang
         private set => SetProperty(ref _statusText, value);
     }
 
+    public DateOnly? DueDate
+    {
+        get => _dueDate;
+        private set => SetProperty(ref _dueDate, value);
+    }
+
+    public string DateHintText
+    {
+        get => _dateHintText;
+        private set => SetProperty(ref _dateHintText, value);
+    }
+
     public bool CanCreateTask => !string.IsNullOrWhiteSpace(TaskTitle);
 
     public bool TryCreateCapturedTask(out TaskItem? task)
@@ -81,6 +125,11 @@ public sealed class CaptureViewModel : ScreenViewModelBase, INotifyPropertyChang
 
         task = TaskItem.Capture(TaskTitle);
         task.UpdateNotes(Notes);
+        if (DueDate.HasValue)
+        {
+            task.Schedule(DueDate);
+        }
+
         ValidationMessage = string.Empty;
         StatusText = "Task ready to save.";
         return true;
@@ -90,7 +139,22 @@ public sealed class CaptureViewModel : ScreenViewModelBase, INotifyPropertyChang
     {
         TaskTitle = string.Empty;
         Notes = string.Empty;
+        ClearDueDate();
         ValidationMessage = string.Empty;
+        StatusText = ReadyStatus;
+    }
+
+    private void SelectDueDate(DateOnly dueDate, string label)
+    {
+        DueDate = dueDate;
+        DateHintText = $"{label}: {dueDate:MMM d}";
+        StatusText = $"Date set for {label.ToLowerInvariant()}.";
+    }
+
+    private void ClearDueDate()
+    {
+        DueDate = null;
+        DateHintText = "No date selected.";
         StatusText = ReadyStatus;
     }
 
