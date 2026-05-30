@@ -5,6 +5,7 @@ using SuccessPlanner.App.ViewModels;
 TestRunner.RunAll(
     ("CaptureViewModel starts in a simple ready state", CaptureViewModelStartsReady),
     ("CaptureViewModel applies date hint buttons", CaptureViewModelAppliesDateHintButtons),
+    ("CaptureViewModel applies destination choices", CaptureViewModelAppliesDestinationChoices),
     ("CaptureViewModel validates an empty title", CaptureViewModelValidatesEmptyTitle),
     ("CaptureViewModel creates a captured task draft", CaptureViewModelCreatesCapturedTaskDraft),
     ("CaptureViewModel creates a scheduled task draft when date is selected", CaptureViewModelCreatesScheduledTaskDraftWhenDateIsSelected),
@@ -26,6 +27,8 @@ static void CaptureViewModelStartsReady()
     Assert.Equal("Ready to capture.", viewModel.StatusText);
     Assert.Null(viewModel.DueDate, "New capture should not have a date selected.");
     Assert.Equal("No date selected.", viewModel.DateHintText);
+    Assert.Equal(CaptureDestinationPreference.LetMcpChoose, viewModel.SelectedDestination);
+    Assert.Equal("Let MCP Choose.", viewModel.DestinationHintText);
     Assert.False(viewModel.CanCreateTask, "Blank capture title should not be ready.");
 }
 
@@ -49,6 +52,32 @@ static void CaptureViewModelAppliesDateHintButtons()
     viewModel.ClearDateCommand.Execute(null);
     Assert.Null(viewModel.DueDate, "No Date should clear the selected date.");
     Assert.Equal("No date selected.", viewModel.DateHintText);
+}
+
+static void CaptureViewModelAppliesDestinationChoices()
+{
+    CaptureViewModel viewModel = new();
+
+    viewModel.LocalInboxDestinationCommand.Execute(null);
+    Assert.Equal(CaptureDestinationPreference.LocalInbox, viewModel.SelectedDestination);
+    Assert.Equal("Local.", viewModel.DestinationHintText);
+    Assert.Equal("Destination set to Local.", viewModel.StatusText);
+
+    viewModel.MicrosoftToDoDestinationCommand.Execute(null);
+    Assert.Equal(CaptureDestinationPreference.MicrosoftToDo, viewModel.SelectedDestination);
+    Assert.Equal("To Do.", viewModel.DestinationHintText);
+
+    viewModel.MicrosoftPlannerDestinationCommand.Execute(null);
+    Assert.Equal(CaptureDestinationPreference.MicrosoftPlanner, viewModel.SelectedDestination);
+    Assert.Equal("Planner.", viewModel.DestinationHintText);
+
+    viewModel.MicrosoftProjectDestinationCommand.Execute(null);
+    Assert.Equal(CaptureDestinationPreference.MicrosoftProject, viewModel.SelectedDestination);
+    Assert.Equal("Project.", viewModel.DestinationHintText);
+
+    viewModel.LetMcpChooseDestinationCommand.Execute(null);
+    Assert.Equal(CaptureDestinationPreference.LetMcpChoose, viewModel.SelectedDestination);
+    Assert.Equal("Let MCP Choose.", viewModel.DestinationHintText);
 }
 
 static void CaptureViewModelValidatesEmptyTitle()
@@ -117,6 +146,8 @@ static void CaptureViewModelResetsCaptureForm()
     Assert.Equal("Ready to capture.", viewModel.StatusText);
     Assert.Null(viewModel.DueDate, "Reset should clear the selected date.");
     Assert.Equal("No date selected.", viewModel.DateHintText);
+    Assert.Equal(CaptureDestinationPreference.LetMcpChoose, viewModel.SelectedDestination);
+    Assert.Equal("Let MCP Choose.", viewModel.DestinationHintText);
     Assert.False(viewModel.CanCreateTask, "Reset form should not be ready to create a task.");
 }
 

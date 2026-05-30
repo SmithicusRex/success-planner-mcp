@@ -877,7 +877,7 @@ Status:
 
 ~~6.4. Add date hint buttons.~~
 
-6.5. Add destination choice with `Let MCP Choose`.
+~~6.5. Add destination choice with `Let MCP Choose`.~~
 
 6.6. Save captured task locally.
 
