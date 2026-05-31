@@ -91,7 +91,7 @@ public sealed class AppBootstrapper
             _taskRepository.GetTodayAsync,
             _taskRepository.SaveAsync));
         _navigationService.Register(AppScreen.Plan, () => new InitialScreenViewModel(ScreenCatalog.Plan));
-        _navigationService.Register(AppScreen.StartWork, () => new InitialScreenViewModel(ScreenCatalog.StartWork));
+        _navigationService.Register(AppScreen.StartWork, () => new StartWorkViewModel(_taskRepository.GetTodayAsync));
         _navigationService.Register(AppScreen.Done, () => new DoneViewModel(
             _taskRepository.GetRecentActiveAsync,
             _taskRepository.SaveAsync,

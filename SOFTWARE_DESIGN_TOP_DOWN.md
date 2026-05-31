@@ -938,7 +938,7 @@ Status:
 
 ~~9.1. Create `StartWorkViewModel`.~~
 
-9.2. Create `StartWorkView`.
+~~9.2. Create `StartWorkView`.~~
 
 9.3. Suggest a best next action.
 
