@@ -41,7 +41,8 @@ TestRunner.RunAll(
     ("StartWorkViewModel creates task option display state", StartWorkViewModelCreatesTaskOptionDisplayState),
     ("StartWorkViewModel shows an empty focus state", StartWorkViewModelShowsEmptyFocusState),
     ("StartWorkViewModel reports load failures", StartWorkViewModelReportsLoadFailures),
-    ("MoveViewModel starts in a simple ready state", MoveViewModelStartsReady));
+    ("MoveViewModel starts in a simple ready state", MoveViewModelStartsReady),
+    ("MoveViewModel applies movement activity choices", MoveViewModelAppliesMovementActivityChoices));
 
 static void CaptureViewModelStartsReady()
 {
@@ -1229,12 +1230,81 @@ static void MoveViewModelStartsReady()
     Assert.Null(viewModel.SelectedActivityType, "Move should wait for a movement activity choice.");
     Assert.False(viewModel.HasSelectedActivity, "Move should start without a selected activity.");
     Assert.False(viewModel.HasMovementDraft, "Move should start without a movement draft.");
+    Assert.False(viewModel.IsWalkSelected, "Walk should start unselected.");
+    Assert.False(viewModel.IsWorkoutSelected, "Workout should start unselected.");
+    Assert.False(viewModel.IsStretchSelected, "Stretch should start unselected.");
+    Assert.Equal("Choose", viewModel.WalkChoiceStatusText);
+    Assert.Equal("Choose", viewModel.WorkoutChoiceStatusText);
+    Assert.Equal("Choose", viewModel.StretchChoiceStatusText);
+    Assert.True(viewModel.ChooseWalkCommand.CanExecute(null), "Walk choice should be available.");
+    Assert.True(viewModel.ChooseWorkoutCommand.CanExecute(null), "Workout choice should be available.");
+    Assert.True(viewModel.ChooseStretchCommand.CanExecute(null), "Stretch choice should be available.");
     Assert.Equal("Choose one small movement activity.", viewModel.EmptyStateText);
     Assert.Equal("Movement is local-first and not saved yet.", viewModel.SaveStatusText);
 
     viewModel.OnNavigatedToAsync(CancellationToken.None).GetAwaiter().GetResult();
 
     Assert.Equal("Ready to plan movement.", viewModel.StatusText);
+}
+
+static void MoveViewModelAppliesMovementActivityChoices()
+{
+    MoveViewModel viewModel = new();
+
+    viewModel.ChooseWalkCommand.Execute(null);
+
+    AssertMovementChoice(
+        viewModel,
+        MovementActivityType.Walk,
+        "Walk",
+        walkSelected: true,
+        workoutSelected: false,
+        stretchSelected: false);
+
+    viewModel.ChooseWorkoutCommand.Execute(null);
+
+    AssertMovementChoice(
+        viewModel,
+        MovementActivityType.Workout,
+        "Workout",
+        walkSelected: false,
+        workoutSelected: true,
+        stretchSelected: false);
+
+    viewModel.ChooseStretchCommand.Execute(null);
+
+    AssertMovementChoice(
+        viewModel,
+        MovementActivityType.Stretch,
+        "Stretch",
+        walkSelected: false,
+        workoutSelected: false,
+        stretchSelected: true);
+}
+
+static void AssertMovementChoice(
+    MoveViewModel viewModel,
+    MovementActivityType expectedActivityType,
+    string activityName,
+    bool walkSelected,
+    bool workoutSelected,
+    bool stretchSelected)
+{
+    Assert.Equal(expectedActivityType, viewModel.SelectedActivityType);
+    Assert.True(viewModel.HasSelectedActivity, "Selected movement activity should be visible.");
+    Assert.True(viewModel.HasMovementDraft, "Selected movement activity should create a movement draft.");
+    Assert.Equal($"{activityName} selected.", viewModel.SelectedActivityText);
+    Assert.Equal($"{activityName} Ready", viewModel.MovementPanelTitle);
+    Assert.Equal($"{activityName} is ready for a 20 minute movement plan.", viewModel.MovementPanelText);
+    Assert.Equal($"{activityName} draft ready.", viewModel.MovementDraftStatusText);
+    Assert.Equal($"{activityName} selected.", viewModel.StatusText);
+    Assert.Equal("Choose Now or Schedule next.", viewModel.EmptyStateText);
+    Assert.Equal(walkSelected, viewModel.IsWalkSelected);
+    Assert.Equal(workoutSelected, viewModel.IsWorkoutSelected);
+    Assert.Equal(stretchSelected, viewModel.IsStretchSelected);
+    Assert.Equal(walkSelected ? "Selected" : "Choose", viewModel.WalkChoiceStatusText);
+    Assert.Equal(workoutSelected ? "Selected" : "Choose", viewModel.WorkoutChoiceStatusText);
+    Assert.Equal(stretchSelected ? "Selected" : "Choose", viewModel.StretchChoiceStatusText);
 }
 
 static TaskItem CreateTask(

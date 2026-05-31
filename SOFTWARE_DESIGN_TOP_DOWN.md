@@ -964,7 +964,7 @@ Status:
 
 ~~10.2. Create `MoveView`.~~
 
-10.3. Add Walk, Workout, and Stretch choices.
+~~10.3. Add Walk, Workout, and Stretch choices.~~
 
 10.4. Add Now and Schedule choices.
 

@@ -37,6 +37,43 @@
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="TextWrapping" Value="Wrap" />
         </Style>
+
+        <Style x:Key="MoveChoiceButtonStyle" TargetType="Button">
+            <Setter Property="MinHeight" Value="132" />
+            <Setter Property="Padding" Value="18" />
+            <Setter Property="Background" Value="#FFFFFF" />
+            <Setter Property="BorderBrush" Value="#E6BE95" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chrome"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="8">
+                            <ContentPresenter HorizontalAlignment="Stretch"
+                                              VerticalAlignment="Stretch" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{StaticResource MoveSoftBrush}" />
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="#C56A24" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="#FAD5AD" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Chrome" Property="Opacity" Value="0.52" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </UserControl.Resources>
 
     <Grid>
@@ -201,92 +238,181 @@
                             </Grid>
                         </Border>
 
-                        <UniformGrid Grid.Row="2"
-                                     Columns="3">
-                            <Border Background="#FFFFFF"
-                                    BorderBrush="#E6BE95"
-                                    BorderThickness="1"
-                                    CornerRadius="8"
-                                    Padding="18"
-                                    Margin="0,0,12,0"
-                                    MinHeight="180">
-                                <StackPanel>
-                                    <Border Width="44"
-                                            Height="44"
-                                            CornerRadius="8"
-                                            Background="{StaticResource MoveBrush}">
-                                        <TextBlock Text="&#xE805;"
-                                                   FontFamily="Segoe MDL2 Assets"
-                                                   FontSize="18"
-                                                   Foreground="{StaticResource InkBrush}"
-                                                   HorizontalAlignment="Center"
-                                                   VerticalAlignment="Center" />
-                                    </Border>
-                                    <TextBlock Text="Activity"
-                                               Style="{StaticResource StateLabelStyle}"
-                                               Margin="0,16,0,6" />
-                                    <TextBlock Text="{Binding SelectedActivityText}"
-                                               Style="{StaticResource StateValueStyle}" />
-                                </StackPanel>
-                            </Border>
+                        <Grid Grid.Row="2">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="16" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
 
-                            <Border Background="#FFFFFF"
-                                    BorderBrush="#CFE5FF"
-                                    BorderThickness="1"
-                                    CornerRadius="8"
-                                    Padding="18"
-                                    Margin="0,0,12,0"
-                                    MinHeight="180">
-                                <StackPanel>
-                                    <Border Width="44"
-                                            Height="44"
-                                            CornerRadius="8"
-                                            Background="{StaticResource BlueSoftBrush}"
-                                            BorderBrush="#B7D8FF"
-                                            BorderThickness="1">
-                                        <TextBlock Text="&#xE823;"
-                                                   FontFamily="Segoe MDL2 Assets"
-                                                   FontSize="18"
-                                                   Foreground="#245EC9"
-                                                   HorizontalAlignment="Center"
-                                                   VerticalAlignment="Center" />
-                                    </Border>
-                                    <TextBlock Text="Timing"
-                                               Style="{StaticResource StateLabelStyle}"
-                                               Margin="0,16,0,6" />
-                                    <TextBlock Text="{Binding TimingText}"
-                                               Style="{StaticResource StateValueStyle}" />
-                                </StackPanel>
-                            </Border>
+                            <UniformGrid Columns="3">
+                                <Button Command="{Binding ChooseWalkCommand}"
+                                        Margin="0,0,12,0"
+                                        ToolTip="Walk">
+                                    <Button.Style>
+                                        <Style TargetType="Button" BasedOn="{StaticResource MoveChoiceButtonStyle}">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsWalkSelected}" Value="True">
+                                                    <Setter Property="Background" Value="{StaticResource MoveBrush}" />
+                                                    <Setter Property="BorderBrush" Value="#A74E0C" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                    <StackPanel>
+                                        <Border Width="46"
+                                                Height="46"
+                                                CornerRadius="8"
+                                                Background="{StaticResource MoveSoftBrush}"
+                                                BorderBrush="#E6BE95"
+                                                BorderThickness="1"
+                                                HorizontalAlignment="Left">
+                                            <TextBlock Text="&#xE805;"
+                                                       FontFamily="Segoe MDL2 Assets"
+                                                       FontSize="19"
+                                                       Foreground="{StaticResource MoveInkBrush}"
+                                                       HorizontalAlignment="Center"
+                                                       VerticalAlignment="Center" />
+                                        </Border>
+                                        <TextBlock Text="Walk"
+                                                   Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                                   FontSize="22"
+                                                   FontWeight="SemiBold"
+                                                   Margin="0,14,0,2" />
+                                        <TextBlock Text="{Binding WalkChoiceStatusText}"
+                                                   Foreground="{StaticResource MoveInkBrush}"
+                                                   FontSize="12"
+                                                   FontWeight="SemiBold" />
+                                    </StackPanel>
+                                </Button>
 
-                            <Border Background="#FFFFFF"
-                                    BorderBrush="#CDEAD5"
-                                    BorderThickness="1"
-                                    CornerRadius="8"
-                                    Padding="18"
-                                    MinHeight="180">
-                                <StackPanel>
-                                    <Border Width="44"
-                                            Height="44"
-                                            CornerRadius="8"
-                                            Background="{StaticResource GreenSoftBrush}"
-                                            BorderBrush="#CDEAD5"
-                                            BorderThickness="1">
-                                        <TextBlock Text="&#xE9D2;"
-                                                   FontFamily="Segoe MDL2 Assets"
-                                                   FontSize="18"
-                                                   Foreground="#1E6B3A"
-                                                   HorizontalAlignment="Center"
-                                                   VerticalAlignment="Center" />
-                                    </Border>
-                                    <TextBlock Text="Mind"
-                                               Style="{StaticResource StateLabelStyle}"
-                                               Margin="0,16,0,6" />
-                                    <TextBlock Text="{Binding MindOccupierText}"
-                                               Style="{StaticResource StateValueStyle}" />
-                                </StackPanel>
-                            </Border>
-                        </UniformGrid>
+                                <Button Command="{Binding ChooseWorkoutCommand}"
+                                        Margin="0,0,12,0"
+                                        ToolTip="Workout">
+                                    <Button.Style>
+                                        <Style TargetType="Button" BasedOn="{StaticResource MoveChoiceButtonStyle}">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsWorkoutSelected}" Value="True">
+                                                    <Setter Property="Background" Value="{StaticResource MoveBrush}" />
+                                                    <Setter Property="BorderBrush" Value="#A74E0C" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                    <StackPanel>
+                                        <Border Width="46"
+                                                Height="46"
+                                                CornerRadius="8"
+                                                Background="{StaticResource GreenSoftBrush}"
+                                                BorderBrush="#CDEAD5"
+                                                BorderThickness="1"
+                                                HorizontalAlignment="Left">
+                                            <TextBlock Text="&#xE9D2;"
+                                                       FontFamily="Segoe MDL2 Assets"
+                                                       FontSize="19"
+                                                       Foreground="#1E6B3A"
+                                                       HorizontalAlignment="Center"
+                                                       VerticalAlignment="Center" />
+                                        </Border>
+                                        <TextBlock Text="Workout"
+                                                   Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                                   FontSize="22"
+                                                   FontWeight="SemiBold"
+                                                   Margin="0,14,0,2" />
+                                        <TextBlock Text="{Binding WorkoutChoiceStatusText}"
+                                                   Foreground="{StaticResource MoveInkBrush}"
+                                                   FontSize="12"
+                                                   FontWeight="SemiBold" />
+                                    </StackPanel>
+                                </Button>
+
+                                <Button Command="{Binding ChooseStretchCommand}"
+                                        ToolTip="Stretch">
+                                    <Button.Style>
+                                        <Style TargetType="Button" BasedOn="{StaticResource MoveChoiceButtonStyle}">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsStretchSelected}" Value="True">
+                                                    <Setter Property="Background" Value="{StaticResource MoveBrush}" />
+                                                    <Setter Property="BorderBrush" Value="#A74E0C" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                    <StackPanel>
+                                        <Border Width="46"
+                                                Height="46"
+                                                CornerRadius="8"
+                                                Background="{StaticResource BlueSoftBrush}"
+                                                BorderBrush="#B7D8FF"
+                                                BorderThickness="1"
+                                                HorizontalAlignment="Left">
+                                            <TextBlock Text="&#xE787;"
+                                                       FontFamily="Segoe MDL2 Assets"
+                                                       FontSize="19"
+                                                       Foreground="#245EC9"
+                                                       HorizontalAlignment="Center"
+                                                       VerticalAlignment="Center" />
+                                        </Border>
+                                        <TextBlock Text="Stretch"
+                                                   Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                                   FontSize="22"
+                                                   FontWeight="SemiBold"
+                                                   Margin="0,14,0,2" />
+                                        <TextBlock Text="{Binding StretchChoiceStatusText}"
+                                                   Foreground="{StaticResource MoveInkBrush}"
+                                                   FontSize="12"
+                                                   FontWeight="SemiBold" />
+                                    </StackPanel>
+                                </Button>
+                            </UniformGrid>
+
+                            <UniformGrid Grid.Row="2"
+                                         Columns="3">
+                                <Border Background="#FFFFFF"
+                                        BorderBrush="#E6BE95"
+                                        BorderThickness="1"
+                                        CornerRadius="8"
+                                        Padding="18"
+                                        Margin="0,0,12,0"
+                                        MinHeight="146">
+                                    <StackPanel>
+                                        <TextBlock Text="Activity"
+                                                   Style="{StaticResource StateLabelStyle}" />
+                                        <TextBlock Text="{Binding SelectedActivityText}"
+                                                   Style="{StaticResource StateValueStyle}" />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Background="#FFFFFF"
+                                        BorderBrush="#CFE5FF"
+                                        BorderThickness="1"
+                                        CornerRadius="8"
+                                        Padding="18"
+                                        Margin="0,0,12,0"
+                                        MinHeight="146">
+                                    <StackPanel>
+                                        <TextBlock Text="Timing"
+                                                   Style="{StaticResource StateLabelStyle}" />
+                                        <TextBlock Text="{Binding TimingText}"
+                                                   Style="{StaticResource StateValueStyle}" />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Background="#FFFFFF"
+                                        BorderBrush="#CDEAD5"
+                                        BorderThickness="1"
+                                        CornerRadius="8"
+                                        Padding="18"
+                                        MinHeight="146">
+                                    <StackPanel>
+                                        <TextBlock Text="Mind"
+                                                   Style="{StaticResource StateLabelStyle}" />
+                                        <TextBlock Text="{Binding MindOccupierText}"
+                                                   Style="{StaticResource StateValueStyle}" />
+                                    </StackPanel>
+                                </Border>
+                            </UniformGrid>
+                        </Grid>
                     </Grid>
                 </Grid>
             </Border>
