@@ -196,9 +196,9 @@
                         </Grid.ColumnDefinitions>
 
                         <StackPanel>
-                            <TextBlock Text="Ready To Finish"
+                            <TextBlock Text="Recent Active"
                                        Style="{StaticResource SectionTitleStyle}" />
-                            <TextBlock Text="Choose a task that can become a small visible win."
+                            <TextBlock Text="Recent starts, due dates, and blocked items that may be ready for a win."
                                        Style="{StaticResource QuietTextStyle}" />
                         </StackPanel>
 

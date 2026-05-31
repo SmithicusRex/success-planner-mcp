@@ -252,6 +252,79 @@ public sealed class TaskRepository
         return tasks;
     }
 
+    public async Task<IReadOnlyList<TaskItem>> GetRecentActiveAsync(
+        DateOnly today,
+        CancellationToken cancellationToken = default)
+    {
+        List<TaskItem> tasks = [];
+        DateOnly cutoff = today.AddDays(-14);
+
+        await using SqliteConnection connection = await SqliteConnectionFactory.OpenAsync(_paths, cancellationToken);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT
+                id,
+                title,
+                notes,
+                status,
+                priority,
+                due_date,
+                start_date,
+                created_at,
+                completed_at,
+                project_id,
+                estimated_minutes,
+                energy_level,
+                is_tiny_step,
+                is_physical_activity,
+                tags_json
+            FROM tasks
+            WHERE status <> $doneStatus
+                AND (
+                    status = $inProgressStatus
+                    OR status = $blockedStatus
+                    OR (due_date IS NOT NULL AND due_date >= $cutoff AND due_date <= $today)
+                    OR (start_date IS NOT NULL AND start_date >= $cutoff AND start_date <= $today)
+                )
+            ORDER BY
+                CASE status
+                    WHEN 'InProgress' THEN 0
+                    WHEN 'Planned' THEN 1
+                    WHEN 'Blocked' THEN 2
+                    WHEN 'Captured' THEN 3
+                    ELSE 4
+                END,
+                CASE
+                    WHEN due_date IS NOT NULL AND due_date <= $today THEN due_date
+                    WHEN start_date IS NOT NULL AND start_date <= $today THEN start_date
+                    ELSE '0001-01-01'
+                END DESC,
+                CASE priority
+                    WHEN 'Critical' THEN 0
+                    WHEN 'High' THEN 1
+                    WHEN 'Normal' THEN 2
+                    WHEN 'Low' THEN 3
+                    ELSE 4
+                END,
+                title COLLATE NOCASE;
+            """;
+
+        command.Parameters.AddWithValue("$today", today.ToString("yyyy-MM-dd"));
+        command.Parameters.AddWithValue("$cutoff", cutoff.ToString("yyyy-MM-dd"));
+        command.Parameters.AddWithValue("$doneStatus", TaskItemStatus.Done.ToString());
+        command.Parameters.AddWithValue("$inProgressStatus", TaskItemStatus.InProgress.ToString());
+        command.Parameters.AddWithValue("$blockedStatus", TaskItemStatus.Blocked.ToString());
+
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            tasks.Add(ReadTask(reader));
+        }
+
+        return tasks;
+    }
+
     public async Task DeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
         await using SqliteConnection connection = await SqliteConnectionFactory.OpenAsync(_paths, cancellationToken);

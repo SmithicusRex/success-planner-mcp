@@ -16,6 +16,7 @@ TestRunner.RunAll(
     ("AppBootstrapper shows a simple database failure message", AppBootstrapperShowsSimpleDatabaseFailureMessage),
     ("TaskRepository saves and loads task state", TaskRepositorySavesAndLoadsTaskState),
     ("TaskRepository loads today tasks", TaskRepositoryLoadsTodayTasks),
+    ("TaskRepository loads recent active tasks", TaskRepositoryLoadsRecentActiveTasks),
     ("TodayViewModel saves task actions through TaskRepository", TodayViewModelSavesTaskActionsThroughTaskRepository),
     ("TaskRepository deletes tasks", TaskRepositoryDeletesTasks),
     ("CaptureViewModel saves captured tasks through TaskRepository", CaptureViewModelSavesCapturedTasksThroughTaskRepository),
@@ -323,6 +324,43 @@ static async Task TaskRepositoryLoadsTodayTasks()
     Assert.False(todayTasks.Any(task => task.Title == "Future task"), "Future tasks should not load into Today.");
     Assert.False(todayTasks.Any(task => task.Title == "Already done"), "Completed tasks should not load into Today.");
     Assert.False(todayTasks.Any(task => task.Title == "Loose capture"), "Undated captured tasks should not load into Today.");
+}
+
+static async Task TaskRepositoryLoadsRecentActiveTasks()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+    await CreateMigratedDatabaseAsync(paths);
+
+    DateOnly today = new(2026, 5, 30);
+    TaskItem dueToday = CreateRepositoryTask("Pay the bill", dueDate: today, priority: TaskPriority.High);
+    TaskItem selectedYesterday = CreateRepositoryTask("Review notes", dueDate: today.AddDays(5), startDate: today.AddDays(-1));
+    TaskItem inProgress = CreateRepositoryTask("Finish active task", inProgress: true);
+    TaskItem blocked = CreateRepositoryTask("Resolve blocked item");
+    blocked.MarkBlocked();
+    TaskItem oldOverdue = CreateRepositoryTask("Old stale task", dueDate: today.AddDays(-15));
+    TaskItem future = CreateRepositoryTask("Future task", dueDate: today.AddDays(1));
+    TaskItem doneToday = CreateRepositoryTask("Already done", dueDate: today, done: true);
+    TaskItem looseCapture = CreateRepositoryTask("Loose capture");
+
+    TaskRepository repository = new(paths);
+    TaskItem[] tasks = [future, selectedYesterday, doneToday, dueToday, inProgress, oldOverdue, blocked, looseCapture];
+    foreach (TaskItem task in tasks)
+    {
+        await repository.AddAsync(task, CancellationToken.None);
+    }
+
+    IReadOnlyList<TaskItem> recentActiveTasks = await repository.GetRecentActiveAsync(today, CancellationToken.None);
+
+    Assert.Equal(4, recentActiveTasks.Count);
+    Assert.Equal("Finish active task", recentActiveTasks[0].Title);
+    Assert.Equal("Pay the bill", recentActiveTasks[1].Title);
+    Assert.Equal("Review notes", recentActiveTasks[2].Title);
+    Assert.Equal("Resolve blocked item", recentActiveTasks[3].Title);
+    Assert.False(recentActiveTasks.Any(task => task.Title == "Old stale task"), "Older inactive tasks should not load into Done.");
+    Assert.False(recentActiveTasks.Any(task => task.Title == "Future task"), "Future tasks should not load into Done.");
+    Assert.False(recentActiveTasks.Any(task => task.Title == "Already done"), "Completed tasks should not load into Done.");
+    Assert.False(recentActiveTasks.Any(task => task.Title == "Loose capture"), "Undated captured tasks should not load into Done.");
 }
 
 static async Task TodayViewModelSavesTaskActionsThroughTaskRepository()

@@ -9,8 +9,9 @@ namespace SuccessPlanner.App.ViewModels;
 
 public sealed class DoneViewModel : ScreenViewModelBase, INotifyPropertyChanged
 {
+    private const int RecentActiveLookbackDays = 14;
     private const string ReadyStatus = "Ready to choose a win.";
-    private readonly Func<CancellationToken, Task<IReadOnlyList<TaskItem>>> _loadTasksAsync;
+    private readonly Func<DateOnly, CancellationToken, Task<IReadOnlyList<TaskItem>>> _loadTasksAsync;
     private readonly Func<DateOnly> _todayProvider;
     private bool _isLoading;
     private string _statusText = ReadyStatus;
@@ -18,12 +19,19 @@ public sealed class DoneViewModel : ScreenViewModelBase, INotifyPropertyChanged
     private string _taskCountText = "0 tasks";
 
     public DoneViewModel()
-        : this(_ => Task.FromResult<IReadOnlyList<TaskItem>>([]))
+        : this((_, _) => Task.FromResult<IReadOnlyList<TaskItem>>([]))
     {
     }
 
     public DoneViewModel(
         Func<CancellationToken, Task<IReadOnlyList<TaskItem>>> loadTasksAsync,
+        Func<DateOnly>? todayProvider = null)
+        : this(CreateRecentActiveLoader(loadTasksAsync), todayProvider)
+    {
+    }
+
+    public DoneViewModel(
+        Func<DateOnly, CancellationToken, Task<IReadOnlyList<TaskItem>>> loadTasksAsync,
         Func<DateOnly>? todayProvider = null)
         : base(ScreenCatalog.Done)
     {
@@ -97,11 +105,11 @@ public sealed class DoneViewModel : ScreenViewModelBase, INotifyPropertyChanged
         try
         {
             DateOnly today = _todayProvider();
-            IReadOnlyList<TaskItem> loadedTasks = await _loadTasksAsync(cancellationToken);
+            IReadOnlyList<TaskItem> loadedTasks = await _loadTasksAsync(today, cancellationToken);
             IReadOnlyList<DoneTaskCardViewModel> readyTasks = loadedTasks
-                .Where(ShouldShowTask)
+                .Where(task => ShouldShowTask(task, today))
                 .OrderBy(task => StatusSortValue(task.Status))
-                .ThenBy(task => DateSortValue(task))
+                .ThenByDescending(task => RecentActivityDate(task, today))
                 .ThenBy(task => PrioritySortValue(task.Priority))
                 .ThenBy(task => task.Title, StringComparer.OrdinalIgnoreCase)
                 .Select(task => DoneTaskCardViewModel.FromTask(task, today))
@@ -117,7 +125,7 @@ public sealed class DoneViewModel : ScreenViewModelBase, INotifyPropertyChanged
             StatusText = HasTasks ? "Choose one task to complete." : "No active tasks ready.";
             EmptyStateText = HasTasks
                 ? "Pick one finished action and record the win."
-                : "Start from Today or Capture when a new small win is ready.";
+                : "Recent active tasks will appear here when a small win is ready.";
         }
         catch (OperationCanceledException)
         {
@@ -136,10 +144,23 @@ public sealed class DoneViewModel : ScreenViewModelBase, INotifyPropertyChanged
         }
     }
 
-    public static bool ShouldShowTask(TaskItem task)
+    public static bool ShouldShowTask(TaskItem task, DateOnly today)
     {
         ArgumentNullException.ThrowIfNull(task);
-        return task.Status != TaskItemStatus.Done;
+
+        if (task.Status == TaskItemStatus.Done)
+        {
+            return false;
+        }
+
+        if (task.Status is TaskItemStatus.InProgress or TaskItemStatus.Blocked)
+        {
+            return true;
+        }
+
+        DateOnly cutoff = today.AddDays(-RecentActiveLookbackDays);
+        return IsInRecentWindow(task.DueDate, cutoff, today)
+            || IsInRecentWindow(task.StartDate, cutoff, today);
     }
 
     private static int StatusSortValue(TaskItemStatus status)
@@ -154,11 +175,20 @@ public sealed class DoneViewModel : ScreenViewModelBase, INotifyPropertyChanged
         };
     }
 
-    private static DateOnly DateSortValue(TaskItem task)
+    private static DateOnly RecentActivityDate(TaskItem task, DateOnly today)
     {
-        return task.DueDate
-            ?? task.StartDate
-            ?? DateOnly.MaxValue;
+        DateOnly latest = DateOnly.MinValue;
+        if (task.DueDate.HasValue && task.DueDate.Value <= today)
+        {
+            latest = task.DueDate.Value;
+        }
+
+        if (task.StartDate.HasValue && task.StartDate.Value <= today && task.StartDate.Value > latest)
+        {
+            latest = task.StartDate.Value;
+        }
+
+        return latest;
     }
 
     private static int PrioritySortValue(TaskPriority priority)
@@ -171,6 +201,20 @@ public sealed class DoneViewModel : ScreenViewModelBase, INotifyPropertyChanged
             TaskPriority.Low => 3,
             _ => 4
         };
+    }
+
+    private static bool IsInRecentWindow(DateOnly? date, DateOnly cutoff, DateOnly today)
+    {
+        return date.HasValue
+            && date.Value >= cutoff
+            && date.Value <= today;
+    }
+
+    private static Func<DateOnly, CancellationToken, Task<IReadOnlyList<TaskItem>>> CreateRecentActiveLoader(
+        Func<CancellationToken, Task<IReadOnlyList<TaskItem>>> loadTasksAsync)
+    {
+        ArgumentNullException.ThrowIfNull(loadTasksAsync);
+        return (_, cancellationToken) => loadTasksAsync(cancellationToken);
     }
 
     private void UpdateTaskSummary()

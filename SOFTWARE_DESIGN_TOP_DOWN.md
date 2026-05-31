@@ -919,7 +919,7 @@ Status:
 
 ~~8.2. Create `DoneView`.~~
 
-8.3. Show recent active tasks.
+~~8.3. Show recent active tasks.~~
 
 8.4. Complete selected task.
 

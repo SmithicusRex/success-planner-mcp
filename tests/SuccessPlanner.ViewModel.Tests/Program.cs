@@ -20,7 +20,7 @@ TestRunner.RunAll(
     ("TodayViewModel shows an empty today state", TodayViewModelShowsEmptyTodayState),
     ("TodayViewModel reports load failures", TodayViewModelReportsLoadFailures),
     ("DoneViewModel starts in a simple ready state", DoneViewModelStartsReady),
-    ("DoneViewModel loads tasks ready to complete", DoneViewModelLoadsTasksReadyToComplete),
+    ("DoneViewModel loads recent active tasks", DoneViewModelLoadsRecentActiveTasks),
     ("DoneViewModel creates task card display state", DoneViewModelCreatesTaskCardDisplayState),
     ("DoneViewModel shows an empty done state", DoneViewModelShowsEmptyDoneState),
     ("DoneViewModel reports load failures", DoneViewModelReportsLoadFailures));
@@ -464,17 +464,21 @@ static void DoneViewModelStartsReady()
     Assert.True(viewModel.RefreshCommand.CanExecute(null), "Refresh should be available when Done is idle.");
 }
 
-static void DoneViewModelLoadsTasksReadyToComplete()
+static void DoneViewModelLoadsRecentActiveTasks()
 {
     DateOnly today = new(2026, 5, 30);
     TaskItem captured = CreateTask("Quick captured thought");
     TaskItem planned = CreateTask("Pay the bill", dueDate: today, priority: TaskPriority.High);
+    TaskItem selectedYesterday = CreateTask("Review notes", dueDate: today.AddDays(5), startDate: today.AddDays(-1));
     TaskItem inProgress = CreateTask("Finish active task", inProgress: true);
     TaskItem blocked = CreateTask("Resolve blocked item");
     blocked.MarkBlocked();
+    TaskItem oldOverdue = CreateTask("Old stale task", dueDate: today.AddDays(-15));
+    TaskItem future = CreateTask("Future task", dueDate: today.AddDays(1));
     TaskItem alreadyDone = CreateTask("Already complete", done: true);
     DoneViewModel viewModel = new(
-        _ => Task.FromResult<IReadOnlyList<TaskItem>>([captured, alreadyDone, planned, blocked, inProgress]),
+        _ => Task.FromResult<IReadOnlyList<TaskItem>>(
+            [captured, alreadyDone, planned, selectedYesterday, blocked, inProgress, oldOverdue, future]),
         () => today);
 
     viewModel.LoadTasksAsync().GetAwaiter().GetResult();
@@ -485,9 +489,12 @@ static void DoneViewModelLoadsTasksReadyToComplete()
     Assert.True(viewModel.Tasks[0].IsInProgress, "In-progress task should sort first.");
     Assert.Equal("Pay the bill", viewModel.Tasks[1].Title);
     Assert.True(viewModel.Tasks[1].IsDueToday, "Due-today task should be identified.");
-    Assert.Equal("Resolve blocked item", viewModel.Tasks[2].Title);
-    Assert.True(viewModel.Tasks[2].IsBlocked, "Blocked task should keep visible status.");
-    Assert.Equal("Quick captured thought", viewModel.Tasks[3].Title);
+    Assert.Equal("Review notes", viewModel.Tasks[2].Title);
+    Assert.Equal("Resolve blocked item", viewModel.Tasks[3].Title);
+    Assert.True(viewModel.Tasks[3].IsBlocked, "Blocked task should keep visible status.");
+    Assert.False(viewModel.Tasks.Any(task => task.Title == "Quick captured thought"), "Loose captures should not load into recent active tasks.");
+    Assert.False(viewModel.Tasks.Any(task => task.Title == "Old stale task"), "Older inactive tasks should not load into recent active tasks.");
+    Assert.False(viewModel.Tasks.Any(task => task.Title == "Future task"), "Future tasks should not load into recent active tasks.");
     Assert.False(viewModel.Tasks.Any(task => task.Title == "Already complete"), "Done tasks should not load into Done candidates.");
     Assert.True(viewModel.HasTasks, "Loaded Done tasks should set HasTasks.");
     Assert.Equal("4 tasks", viewModel.TaskCountText);
@@ -533,7 +540,7 @@ static void DoneViewModelShowsEmptyDoneState()
     Assert.False(viewModel.HasTasks, "Done-only task list should leave Done candidates empty.");
     Assert.Equal("0 tasks", viewModel.TaskCountText);
     Assert.Equal("No active tasks ready.", viewModel.StatusText);
-    Assert.Contains("Start from Today", viewModel.EmptyStateText);
+    Assert.Contains("Recent active tasks", viewModel.EmptyStateText);
 }
 
 static void DoneViewModelReportsLoadFailures()
