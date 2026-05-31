@@ -968,7 +968,7 @@ Status:
 
 ~~10.4. Add Now and Schedule choices.~~
 
-10.5. Add mind occupier options.
+~~10.5. Add mind occupier options.~~
 
 10.6. Add spouse option.
 
