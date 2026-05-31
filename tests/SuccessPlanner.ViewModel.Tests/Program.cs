@@ -42,7 +42,8 @@ TestRunner.RunAll(
     ("StartWorkViewModel shows an empty focus state", StartWorkViewModelShowsEmptyFocusState),
     ("StartWorkViewModel reports load failures", StartWorkViewModelReportsLoadFailures),
     ("MoveViewModel starts in a simple ready state", MoveViewModelStartsReady),
-    ("MoveViewModel applies movement activity choices", MoveViewModelAppliesMovementActivityChoices));
+    ("MoveViewModel applies movement activity choices", MoveViewModelAppliesMovementActivityChoices),
+    ("MoveViewModel applies now and schedule choices", MoveViewModelAppliesNowAndScheduleChoices));
 
 static void CaptureViewModelStartsReady()
 {
@@ -1230,15 +1231,25 @@ static void MoveViewModelStartsReady()
     Assert.Null(viewModel.SelectedActivityType, "Move should wait for a movement activity choice.");
     Assert.False(viewModel.HasSelectedActivity, "Move should start without a selected activity.");
     Assert.False(viewModel.HasMovementDraft, "Move should start without a movement draft.");
+    Assert.Null(viewModel.SelectedTimingChoice, "Move should wait for a timing choice.");
+    Assert.Null(viewModel.SelectedScheduledFor, "Move should start without a scheduled movement time.");
+    Assert.False(viewModel.HasSelectedTiming, "Move should start without selected timing.");
+    Assert.False(viewModel.CanChooseTiming, "Timing choices should wait for a movement activity.");
     Assert.False(viewModel.IsWalkSelected, "Walk should start unselected.");
     Assert.False(viewModel.IsWorkoutSelected, "Workout should start unselected.");
     Assert.False(viewModel.IsStretchSelected, "Stretch should start unselected.");
+    Assert.False(viewModel.IsNowSelected, "Now should start unselected.");
+    Assert.False(viewModel.IsScheduleSelected, "Schedule should start unselected.");
     Assert.Equal("Choose", viewModel.WalkChoiceStatusText);
     Assert.Equal("Choose", viewModel.WorkoutChoiceStatusText);
     Assert.Equal("Choose", viewModel.StretchChoiceStatusText);
+    Assert.Equal("Pick activity", viewModel.NowChoiceStatusText);
+    Assert.Equal("Pick activity", viewModel.ScheduleChoiceStatusText);
     Assert.True(viewModel.ChooseWalkCommand.CanExecute(null), "Walk choice should be available.");
     Assert.True(viewModel.ChooseWorkoutCommand.CanExecute(null), "Workout choice should be available.");
     Assert.True(viewModel.ChooseStretchCommand.CanExecute(null), "Stretch choice should be available.");
+    Assert.False(viewModel.ChooseNowCommand.CanExecute(null), "Now should wait for a selected activity.");
+    Assert.False(viewModel.ChooseScheduleCommand.CanExecute(null), "Schedule should wait for a selected activity.");
     Assert.Equal("Choose one small movement activity.", viewModel.EmptyStateText);
     Assert.Equal("Movement is local-first and not saved yet.", viewModel.SaveStatusText);
 
@@ -1282,6 +1293,62 @@ static void MoveViewModelAppliesMovementActivityChoices()
         stretchSelected: true);
 }
 
+static void MoveViewModelAppliesNowAndScheduleChoices()
+{
+    DateTimeOffset now = new(2026, 5, 31, 14, 15, 0, TimeSpan.FromHours(-5));
+    MoveViewModel viewModel = new(() => now);
+
+    Assert.False(viewModel.ChooseNowCommand.CanExecute(null), "Now should wait for an activity.");
+    Assert.False(viewModel.ChooseScheduleCommand.CanExecute(null), "Schedule should wait for an activity.");
+
+    viewModel.ChooseWalkCommand.Execute(null);
+
+    Assert.True(viewModel.ChooseNowCommand.CanExecute(null), "Now should unlock after activity selection.");
+    Assert.True(viewModel.ChooseScheduleCommand.CanExecute(null), "Schedule should unlock after activity selection.");
+    Assert.Equal("Choose", viewModel.NowChoiceStatusText);
+    Assert.Equal("Choose", viewModel.ScheduleChoiceStatusText);
+
+    viewModel.ChooseNowCommand.Execute(null);
+
+    Assert.Equal(MovementTimingChoice.Now, viewModel.SelectedTimingChoice);
+    Assert.Equal(now, viewModel.SelectedScheduledFor);
+    Assert.True(viewModel.HasSelectedTiming, "Now should count as selected movement timing.");
+    Assert.True(viewModel.IsNowSelected, "Now button should become selected.");
+    Assert.False(viewModel.IsScheduleSelected, "Schedule should clear when Now is selected.");
+    Assert.Equal("Now selected.", viewModel.TimingText);
+    Assert.Equal("Walk Now", viewModel.MovementPanelTitle);
+    Assert.Equal("Walk is ready to start now for 20 minutes.", viewModel.MovementPanelText);
+    Assert.Equal("Walk now draft ready.", viewModel.MovementDraftStatusText);
+    Assert.Equal("Walk set for now.", viewModel.StatusText);
+    Assert.Equal("Selected", viewModel.NowChoiceStatusText);
+    Assert.Equal("Choose", viewModel.ScheduleChoiceStatusText);
+    Assert.Equal("Choose a mind occupier next.", viewModel.EmptyStateText);
+
+    viewModel.ChooseScheduleCommand.Execute(null);
+
+    DateTimeOffset scheduledFor = now.AddHours(1);
+    Assert.Equal(MovementTimingChoice.Schedule, viewModel.SelectedTimingChoice);
+    Assert.Equal(scheduledFor, viewModel.SelectedScheduledFor);
+    Assert.False(viewModel.IsNowSelected, "Now should clear when Schedule is selected.");
+    Assert.True(viewModel.IsScheduleSelected, "Schedule button should become selected.");
+    Assert.Equal("Scheduled for May 31, 3:15 PM.", viewModel.TimingText);
+    Assert.Equal("Walk Scheduled", viewModel.MovementPanelTitle);
+    Assert.Equal("Walk is scheduled for May 31, 3:15 PM.", viewModel.MovementPanelText);
+    Assert.Equal("Walk scheduled draft ready.", viewModel.MovementDraftStatusText);
+    Assert.Equal("Walk scheduled.", viewModel.StatusText);
+    Assert.Equal("Choose", viewModel.NowChoiceStatusText);
+    Assert.Equal("Selected", viewModel.ScheduleChoiceStatusText);
+    Assert.Equal("Choose a mind occupier next.", viewModel.EmptyStateText);
+
+    viewModel.ChooseStretchCommand.Execute(null);
+
+    Assert.Equal(MovementActivityType.Stretch, viewModel.SelectedActivityType);
+    Assert.Equal(MovementTimingChoice.Schedule, viewModel.SelectedTimingChoice);
+    Assert.Equal("Stretch Scheduled", viewModel.MovementPanelTitle);
+    Assert.Equal("Stretch is scheduled for May 31, 3:15 PM.", viewModel.MovementPanelText);
+    Assert.Equal("Stretch scheduled draft ready.", viewModel.MovementDraftStatusText);
+}
+
 static void AssertMovementChoice(
     MoveViewModel viewModel,
     MovementActivityType expectedActivityType,
@@ -1293,6 +1360,10 @@ static void AssertMovementChoice(
     Assert.Equal(expectedActivityType, viewModel.SelectedActivityType);
     Assert.True(viewModel.HasSelectedActivity, "Selected movement activity should be visible.");
     Assert.True(viewModel.HasMovementDraft, "Selected movement activity should create a movement draft.");
+    Assert.Null(viewModel.SelectedTimingChoice, "Selecting only an activity should not choose timing.");
+    Assert.Null(viewModel.SelectedScheduledFor, "Selecting only an activity should not set a scheduled time.");
+    Assert.False(viewModel.HasSelectedTiming, "Selecting only an activity should not complete timing.");
+    Assert.True(viewModel.CanChooseTiming, "Activity selection should unlock timing.");
     Assert.Equal($"{activityName} selected.", viewModel.SelectedActivityText);
     Assert.Equal($"{activityName} Ready", viewModel.MovementPanelTitle);
     Assert.Equal($"{activityName} is ready for a 20 minute movement plan.", viewModel.MovementPanelText);
@@ -1305,6 +1376,8 @@ static void AssertMovementChoice(
     Assert.Equal(walkSelected ? "Selected" : "Choose", viewModel.WalkChoiceStatusText);
     Assert.Equal(workoutSelected ? "Selected" : "Choose", viewModel.WorkoutChoiceStatusText);
     Assert.Equal(stretchSelected ? "Selected" : "Choose", viewModel.StretchChoiceStatusText);
+    Assert.Equal("Choose", viewModel.NowChoiceStatusText);
+    Assert.Equal("Choose", viewModel.ScheduleChoiceStatusText);
 }
 
 static TaskItem CreateTask(

@@ -74,6 +74,43 @@
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <Style x:Key="MoveTimingButtonStyle" TargetType="Button">
+            <Setter Property="MinHeight" Value="76" />
+            <Setter Property="Padding" Value="16,12" />
+            <Setter Property="Background" Value="#FFFFFF" />
+            <Setter Property="BorderBrush" Value="#D7DADF" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chrome"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="8">
+                            <ContentPresenter HorizontalAlignment="Stretch"
+                                              VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{StaticResource MoveSoftBrush}" />
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="#C56A24" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="#FAD5AD" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Chrome" Property="Opacity" Value="0.52" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </UserControl.Resources>
 
     <Grid>
@@ -241,6 +278,8 @@
                         <Grid Grid.Row="2">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto" />
+                                <RowDefinition Height="12" />
+                                <RowDefinition Height="Auto" />
                                 <RowDefinition Height="16" />
                                 <RowDefinition Height="*" />
                             </Grid.RowDefinitions>
@@ -367,6 +406,106 @@
                             </UniformGrid>
 
                             <UniformGrid Grid.Row="2"
+                                         Columns="2">
+                                <Button Command="{Binding ChooseNowCommand}"
+                                        Margin="0,0,12,0"
+                                        ToolTip="Choose Now">
+                                    <Button.Style>
+                                        <Style TargetType="Button" BasedOn="{StaticResource MoveTimingButtonStyle}">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsNowSelected}" Value="True">
+                                                    <Setter Property="Background" Value="{StaticResource MoveBrush}" />
+                                                    <Setter Property="BorderBrush" Value="#A74E0C" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="12" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+
+                                        <Border Width="42"
+                                                Height="42"
+                                                CornerRadius="8"
+                                                Background="{StaticResource MoveSoftBrush}"
+                                                BorderBrush="#E6BE95"
+                                                BorderThickness="1">
+                                            <TextBlock Text="&#xE768;"
+                                                       FontFamily="Segoe MDL2 Assets"
+                                                       FontSize="17"
+                                                       Foreground="{StaticResource MoveInkBrush}"
+                                                       HorizontalAlignment="Center"
+                                                       VerticalAlignment="Center" />
+                                        </Border>
+
+                                        <StackPanel Grid.Column="2"
+                                                    VerticalAlignment="Center">
+                                            <TextBlock Text="Now"
+                                                       Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                                       FontSize="18"
+                                                       FontWeight="SemiBold" />
+                                            <TextBlock Text="{Binding NowChoiceStatusText}"
+                                                       Foreground="{StaticResource MoveInkBrush}"
+                                                       FontSize="12"
+                                                       FontWeight="SemiBold"
+                                                       Margin="0,2,0,0" />
+                                        </StackPanel>
+                                    </Grid>
+                                </Button>
+
+                                <Button Command="{Binding ChooseScheduleCommand}"
+                                        ToolTip="Choose Schedule">
+                                    <Button.Style>
+                                        <Style TargetType="Button" BasedOn="{StaticResource MoveTimingButtonStyle}">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsScheduleSelected}" Value="True">
+                                                    <Setter Property="Background" Value="{StaticResource MoveBrush}" />
+                                                    <Setter Property="BorderBrush" Value="#A74E0C" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="12" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+
+                                        <Border Width="42"
+                                                Height="42"
+                                                CornerRadius="8"
+                                                Background="{StaticResource BlueSoftBrush}"
+                                                BorderBrush="#B7D8FF"
+                                                BorderThickness="1">
+                                            <TextBlock Text="&#xE823;"
+                                                       FontFamily="Segoe MDL2 Assets"
+                                                       FontSize="17"
+                                                       Foreground="#245EC9"
+                                                       HorizontalAlignment="Center"
+                                                       VerticalAlignment="Center" />
+                                        </Border>
+
+                                        <StackPanel Grid.Column="2"
+                                                    VerticalAlignment="Center">
+                                            <TextBlock Text="Schedule"
+                                                       Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                                       FontSize="18"
+                                                       FontWeight="SemiBold" />
+                                            <TextBlock Text="{Binding ScheduleChoiceStatusText}"
+                                                       Foreground="{StaticResource MoveInkBrush}"
+                                                       FontSize="12"
+                                                       FontWeight="SemiBold"
+                                                       Margin="0,2,0,0" />
+                                        </StackPanel>
+                                    </Grid>
+                                </Button>
+                            </UniformGrid>
+
+                            <UniformGrid Grid.Row="4"
                                          Columns="3">
                                 <Border Background="#FFFFFF"
                                         BorderBrush="#E6BE95"

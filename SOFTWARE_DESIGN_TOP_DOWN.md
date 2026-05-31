@@ -966,7 +966,7 @@ Status:
 
 ~~10.3. Add Walk, Workout, and Stretch choices.~~
 
-10.4. Add Now and Schedule choices.
+~~10.4. Add Now and Schedule choices.~~
 
 10.5. Add mind occupier options.
 
