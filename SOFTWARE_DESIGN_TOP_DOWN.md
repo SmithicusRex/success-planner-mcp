@@ -913,7 +913,7 @@ Status:
 - ~~Changes survive restart.~~
 - ~~Build and tests pass.~~
 
-### 8. Done Workflow
+### ~~8. Done Workflow~~
 
 ~~8.1. Create `DoneViewModel`.~~
 
@@ -925,14 +925,14 @@ Status:
 
 ~~8.5. Record completion as a small win.~~
 
-8.6. Show brief success feedback.
+~~8.6. Show brief success feedback.~~
 
-Benchmark gate:
+~~Benchmark gate:~~
 
-- User can complete a task from Done screen.
-- Completed task appears in Review data.
-- Completing twice does not corrupt data.
-- Build and tests pass.
+- ~~User can complete a task from Done screen.~~
+- ~~Completed task appears in Review data.~~
+- ~~Completing twice does not corrupt data.~~
+- ~~Build and tests pass.~~
 
 ### 9. Start Work Timer Workflow
 

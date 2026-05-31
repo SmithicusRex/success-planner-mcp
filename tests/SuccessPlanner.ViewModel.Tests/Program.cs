@@ -23,6 +23,7 @@ TestRunner.RunAll(
     ("DoneViewModel loads recent active tasks", DoneViewModelLoadsRecentActiveTasks),
     ("DoneViewModel creates task card display state", DoneViewModelCreatesTaskCardDisplayState),
     ("DoneViewModel completes selected task", DoneViewModelCompletesSelectedTask),
+    ("DoneViewModel shows brief success feedback", DoneViewModelShowsBriefSuccessFeedback),
     ("DoneViewModel shows an empty done state", DoneViewModelShowsEmptyDoneState),
     ("DoneViewModel reports load failures", DoneViewModelReportsLoadFailures));
 
@@ -464,6 +465,9 @@ static void DoneViewModelStartsReady()
     Assert.Equal("Choose a recent active task, then mark it complete.", viewModel.CompletionPanelText);
     Assert.Null(viewModel.LastSmallWinNoteId, "Done should start without a small win note.");
     Assert.Equal("No small win recorded yet.", viewModel.LastSmallWinText);
+    Assert.False(viewModel.HasSuccessFeedback, "Done should start without success feedback visible.");
+    Assert.Equal("Small Win Recorded", viewModel.SuccessFeedbackTitle);
+    Assert.Equal("Complete a task to see the win here.", viewModel.SuccessFeedbackText);
     Assert.False(viewModel.HasTasks, "Done should start with no loaded tasks.");
     Assert.False(viewModel.IsLoading, "Done should not start in a loading state.");
     Assert.False(viewModel.IsCompleting, "Done should not start in a completing state.");
@@ -590,6 +594,36 @@ static void DoneViewModelCompletesSelectedTask()
     Assert.Equal("1 task", viewModel.TaskCountText);
     Assert.True(viewModel.HasTasks, "Remaining task should keep Done non-empty.");
     Assert.False(viewModel.IsCompleting, "Completing flag should clear after save.");
+}
+
+static void DoneViewModelShowsBriefSuccessFeedback()
+{
+    DateOnly today = new(2026, 5, 30);
+    TaskItem completedTask = CreateTask("Finish active task", inProgress: true);
+    DoneViewModel viewModel = new(
+        (_, _) => Task.FromResult<IReadOnlyList<TaskItem>>([completedTask]),
+        (_, _) => Task.CompletedTask,
+        (task, _) =>
+        {
+            NoteItem smallWin = NoteItem.Create(NoteOwnerType.Task, task.Id, $"Small win: {task.Title}");
+            smallWin.MarkReviewHighlight();
+            smallWin.AddTag("Win");
+            smallWin.AddTag("Small Win");
+            return Task.FromResult(smallWin);
+        },
+        () => today);
+
+    viewModel.LoadTasksAsync().GetAwaiter().GetResult();
+    viewModel.CompleteSelectedTaskAsync(viewModel.TaskCards[0]).GetAwaiter().GetResult();
+
+    Assert.True(viewModel.HasSuccessFeedback, "Completing a task should show brief success feedback.");
+    Assert.Equal("Small Win Recorded", viewModel.SuccessFeedbackTitle);
+    Assert.Contains("Finish active task", viewModel.SuccessFeedbackText);
+    Assert.Contains("Small win: Finish active task", viewModel.SuccessFeedbackText);
+
+    viewModel.DismissSuccessFeedback();
+
+    Assert.False(viewModel.HasSuccessFeedback, "Dismiss should hide brief success feedback.");
 }
 
 static void DoneViewModelShowsEmptyDoneState()

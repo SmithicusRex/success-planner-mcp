@@ -18,6 +18,7 @@ public sealed class DoneViewModel : ScreenViewModelBase, INotifyPropertyChanged
     private readonly Dictionary<Guid, TaskItem> _loadedTasksById = [];
     private bool _isLoading;
     private bool _isCompleting;
+    private bool _hasSuccessFeedback;
     private string _statusText = ReadyStatus;
     private string _emptyStateText = "No active tasks ready to finish.";
     private string _taskCountText = "0 tasks";
@@ -26,6 +27,8 @@ public sealed class DoneViewModel : ScreenViewModelBase, INotifyPropertyChanged
     private string _selectedTaskTitle = "No task selected.";
     private string _completionPanelText = "Choose a recent active task, then mark it complete.";
     private string _lastSmallWinText = "No small win recorded yet.";
+    private string _successFeedbackTitle = "Small Win Recorded";
+    private string _successFeedbackText = "Complete a task to see the win here.";
 
     public DoneViewModel()
         : this((_, _) => Task.FromResult<IReadOnlyList<TaskItem>>([]))
@@ -71,6 +74,7 @@ public sealed class DoneViewModel : ScreenViewModelBase, INotifyPropertyChanged
         RefreshCommand = new AsyncRelayCommand(
             () => LoadTasksAsync(CancellationToken.None),
             () => !IsLoading);
+        DismissSuccessFeedbackCommand = new AsyncRelayCommand(DismissSuccessFeedbackAsync);
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -88,6 +92,8 @@ public sealed class DoneViewModel : ScreenViewModelBase, INotifyPropertyChanged
     public ObservableCollection<DoneTaskCardViewModel> Tasks => TaskCards;
 
     public AsyncRelayCommand RefreshCommand { get; }
+
+    public AsyncRelayCommand DismissSuccessFeedbackCommand { get; }
 
     public bool IsLoading
     {
@@ -151,6 +157,24 @@ public sealed class DoneViewModel : ScreenViewModelBase, INotifyPropertyChanged
         private set => SetProperty(ref _lastSmallWinText, value);
     }
 
+    public bool HasSuccessFeedback
+    {
+        get => _hasSuccessFeedback;
+        private set => SetProperty(ref _hasSuccessFeedback, value);
+    }
+
+    public string SuccessFeedbackTitle
+    {
+        get => _successFeedbackTitle;
+        private set => SetProperty(ref _successFeedbackTitle, value);
+    }
+
+    public string SuccessFeedbackText
+    {
+        get => _successFeedbackText;
+        private set => SetProperty(ref _successFeedbackText, value);
+    }
+
     public string CompletionPanelText
     {
         get => _completionPanelText;
@@ -167,6 +191,7 @@ public sealed class DoneViewModel : ScreenViewModelBase, INotifyPropertyChanged
         cancellationToken.ThrowIfCancellationRequested();
         IsLoading = true;
         StatusText = "Loading possible wins.";
+        ClearSuccessFeedback();
 
         try
         {
@@ -255,6 +280,7 @@ public sealed class DoneViewModel : ScreenViewModelBase, INotifyPropertyChanged
             LastSmallWinNoteId = smallWin.Id;
             LastSmallWinText = smallWin.Text;
             RemoveTaskCard(task.Id);
+            ShowSuccessFeedback(task.Title, smallWin.Text);
             StatusText = "Small win recorded locally.";
             CompletionPanelText = $"{task.Title} was marked complete and recorded as a small win.";
         }
@@ -266,6 +292,7 @@ public sealed class DoneViewModel : ScreenViewModelBase, INotifyPropertyChanged
         {
             StatusText = "Complete save failed.";
             CompletionPanelText = "The task could not be saved locally. Refresh Done and try again.";
+            ClearSuccessFeedback();
         }
         finally
         {
@@ -365,6 +392,29 @@ public sealed class DoneViewModel : ScreenViewModelBase, INotifyPropertyChanged
         SelectedTaskId = taskCard.Id;
         SelectedTaskTitle = taskCard.Title;
         CompletionPanelText = $"{taskCard.Title} is selected.";
+    }
+
+    private Task DismissSuccessFeedbackAsync()
+    {
+        DismissSuccessFeedback();
+        return Task.CompletedTask;
+    }
+
+    public void DismissSuccessFeedback()
+    {
+        ClearSuccessFeedback();
+    }
+
+    private void ShowSuccessFeedback(string taskTitle, string smallWinText)
+    {
+        SuccessFeedbackTitle = "Small Win Recorded";
+        SuccessFeedbackText = $"{taskTitle} is complete. {smallWinText}";
+        HasSuccessFeedback = true;
+    }
+
+    private void ClearSuccessFeedback()
+    {
+        HasSuccessFeedback = false;
     }
 
     private void RemoveTaskCard(Guid taskId)

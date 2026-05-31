@@ -126,6 +126,15 @@
                 </DataTrigger>
             </Style.Triggers>
         </Style>
+
+        <Style x:Key="SuccessFeedbackVisibilityStyle" TargetType="Border">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding HasSuccessFeedback}" Value="True">
+                    <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
     </UserControl.Resources>
 
     <Grid>
@@ -449,6 +458,58 @@
                                 Margin="0,4,0,16" />
                         <TextBlock Text="{Binding CompletionPanelText}"
                                    Style="{StaticResource QuietTextStyle}" />
+
+                        <Border Background="#E6F4EA"
+                                BorderBrush="#CDEAD5"
+                                BorderThickness="1"
+                                CornerRadius="8"
+                                Padding="14"
+                                Margin="0,16,0,0"
+                                Style="{StaticResource SuccessFeedbackVisibilityStyle}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="&#xE73E;"
+                                                   FontFamily="Segoe MDL2 Assets"
+                                                   FontSize="15"
+                                                   Foreground="#1E6B3A"
+                                                   Margin="0,0,8,0"
+                                                   VerticalAlignment="Center" />
+                                        <TextBlock Text="{Binding SuccessFeedbackTitle}"
+                                                   Foreground="#1E6B3A"
+                                                   FontSize="14"
+                                                   FontWeight="SemiBold"
+                                                   TextWrapping="Wrap" />
+                                    </StackPanel>
+                                    <TextBlock Text="{Binding SuccessFeedbackText}"
+                                               Foreground="#355D42"
+                                               FontSize="13"
+                                               TextWrapping="Wrap"
+                                               Margin="0,8,8,0" />
+                                </StackPanel>
+
+                                <Button Grid.Column="1"
+                                        Command="{Binding DismissSuccessFeedbackCommand}"
+                                        Style="{StaticResource CardActionButtonStyle}"
+                                        MinWidth="34"
+                                        Width="34"
+                                        Height="34"
+                                        Padding="0"
+                                        Margin="12,0,0,0"
+                                        ToolTip="Dismiss feedback">
+                                    <TextBlock Text="&#xE711;"
+                                               FontFamily="Segoe MDL2 Assets"
+                                               FontSize="12"
+                                               VerticalAlignment="Center"
+                                               HorizontalAlignment="Center" />
+                                </Button>
+                            </Grid>
+                        </Border>
                     </StackPanel>
                 </Border>
 
