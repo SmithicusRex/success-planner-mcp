@@ -37,6 +37,10 @@
             <views:DoneView />
         </DataTemplate>
 
+        <DataTemplate DataType="{x:Type viewModels:MoveViewModel}">
+            <views:MoveView />
+        </DataTemplate>
+
         <DataTemplate DataType="{x:Type viewModels:InitialScreenViewModel}">
             <views:InitialScreenView />
         </DataTemplate>

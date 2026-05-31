@@ -962,7 +962,7 @@ Status:
 
 ~~10.1. Create `MoveViewModel`.~~
 
-10.2. Create `MoveView`.
+~~10.2. Create `MoveView`.~~
 
 10.3. Add Walk, Workout, and Stretch choices.
 

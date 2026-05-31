@@ -1,0 +1,361 @@
+<UserControl x:Class="SuccessPlanner.App.Views.MoveView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <UserControl.Resources>
+        <SolidColorBrush x:Key="InkBrush" Color="#171717" />
+        <SolidColorBrush x:Key="MutedBrush" Color="#5F656C" />
+        <SolidColorBrush x:Key="PanelBrush" Color="#FFFCF7" />
+        <SolidColorBrush x:Key="MoveBrush" Color="#FFBE7A" />
+        <SolidColorBrush x:Key="MoveSoftBrush" Color="#FFF0DF" />
+        <SolidColorBrush x:Key="MoveInkBrush" Color="#8A3D00" />
+        <SolidColorBrush x:Key="BlueSoftBrush" Color="#EAF4FF" />
+        <SolidColorBrush x:Key="GreenSoftBrush" Color="#ECF8EE" />
+
+        <Style x:Key="SectionTitleStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
+            <Setter Property="FontSize" Value="22" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Margin" Value="0,0,0,6" />
+        </Style>
+
+        <Style x:Key="QuietTextStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+            <Setter Property="FontSize" Value="15" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+
+        <Style x:Key="StateLabelStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Margin" Value="0,0,0,6" />
+        </Style>
+
+        <Style x:Key="StateValueStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
+            <Setter Property="FontSize" Value="17" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <Border Background="{StaticResource PanelBrush}"
+                BorderBrush="#E5E1D8"
+                BorderThickness="1"
+                CornerRadius="8"
+                Padding="26">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Orientation="Horizontal">
+                    <Border Width="64"
+                            Height="64"
+                            CornerRadius="8"
+                            Background="{Binding AccentColor}"
+                            Margin="0,0,18,0">
+                        <TextBlock Text="{Binding IconGlyph}"
+                                   FontFamily="Segoe MDL2 Assets"
+                                   FontSize="28"
+                                   Foreground="{StaticResource InkBrush}"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center" />
+                    </Border>
+
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Title}"
+                                   FontSize="32"
+                                   FontWeight="SemiBold"
+                                   Foreground="{StaticResource InkBrush}" />
+                        <TextBlock Text="{Binding Subtitle}"
+                                   FontSize="16"
+                                   Foreground="{StaticResource MutedBrush}"
+                                   Margin="0,4,0,0" />
+                    </StackPanel>
+                </StackPanel>
+
+                <Border Grid.Column="1"
+                        Padding="14,8"
+                        CornerRadius="8"
+                        Background="#E6F4EA"
+                        BorderBrush="#CDEAD5"
+                        BorderThickness="1"
+                        VerticalAlignment="Center"
+                        Margin="18,0,0,0">
+                    <StackPanel Orientation="Horizontal">
+                        <Ellipse Width="8"
+                                 Height="8"
+                                 Fill="#24984E"
+                                 Margin="0,0,8,0" />
+                        <TextBlock Text="{Binding StatusText}"
+                                   Foreground="#1E6B3A"
+                                   FontWeight="SemiBold"
+                                   FontSize="13" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="1"
+              Margin="0,18,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="2*" />
+                <ColumnDefinition Width="18" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <Border Background="{StaticResource PanelBrush}"
+                    BorderBrush="#E5E1D8"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    Padding="24">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel>
+                            <TextBlock Text="{Binding MovementPanelTitle}"
+                                       Style="{StaticResource SectionTitleStyle}" />
+                            <TextBlock Text="{Binding MovementPanelText}"
+                                       Style="{StaticResource QuietTextStyle}" />
+                        </StackPanel>
+
+                        <Border Grid.Column="1"
+                                Background="{StaticResource MoveSoftBrush}"
+                                BorderBrush="#E6BE95"
+                                BorderThickness="1"
+                                CornerRadius="8"
+                                Padding="12,8"
+                                MaxWidth="220"
+                                VerticalAlignment="Top">
+                            <TextBlock Text="{Binding MovementDraftStatusText}"
+                                       Foreground="{StaticResource MoveInkBrush}"
+                                       FontSize="13"
+                                       FontWeight="SemiBold"
+                                       TextWrapping="Wrap" />
+                        </Border>
+                    </Grid>
+
+                    <Grid Grid.Row="1"
+                          Margin="0,22,0,0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="18" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <Border Background="{StaticResource MoveSoftBrush}"
+                                BorderBrush="#E6BE95"
+                                BorderThickness="1"
+                                CornerRadius="8"
+                                Padding="24">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="18" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+
+                                <Border Width="72"
+                                        Height="72"
+                                        CornerRadius="8"
+                                        Background="{StaticResource MoveBrush}">
+                                    <TextBlock Text="&#xE805;"
+                                               FontFamily="Segoe MDL2 Assets"
+                                               FontSize="30"
+                                               Foreground="{StaticResource InkBrush}"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center" />
+                                </Border>
+
+                                <StackPanel Grid.Column="2"
+                                            VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding PlannedMinutesText}"
+                                               Foreground="{StaticResource InkBrush}"
+                                               FontSize="28"
+                                               FontWeight="SemiBold"
+                                               TextWrapping="Wrap" />
+                                    <TextBlock Text="{Binding EmptyStateText}"
+                                               Foreground="{StaticResource MoveInkBrush}"
+                                               FontSize="15"
+                                               FontWeight="SemiBold"
+                                               TextWrapping="Wrap"
+                                               Margin="0,6,0,0" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <UniformGrid Grid.Row="2"
+                                     Columns="3">
+                            <Border Background="#FFFFFF"
+                                    BorderBrush="#E6BE95"
+                                    BorderThickness="1"
+                                    CornerRadius="8"
+                                    Padding="18"
+                                    Margin="0,0,12,0"
+                                    MinHeight="180">
+                                <StackPanel>
+                                    <Border Width="44"
+                                            Height="44"
+                                            CornerRadius="8"
+                                            Background="{StaticResource MoveBrush}">
+                                        <TextBlock Text="&#xE805;"
+                                                   FontFamily="Segoe MDL2 Assets"
+                                                   FontSize="18"
+                                                   Foreground="{StaticResource InkBrush}"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center" />
+                                    </Border>
+                                    <TextBlock Text="Activity"
+                                               Style="{StaticResource StateLabelStyle}"
+                                               Margin="0,16,0,6" />
+                                    <TextBlock Text="{Binding SelectedActivityText}"
+                                               Style="{StaticResource StateValueStyle}" />
+                                </StackPanel>
+                            </Border>
+
+                            <Border Background="#FFFFFF"
+                                    BorderBrush="#CFE5FF"
+                                    BorderThickness="1"
+                                    CornerRadius="8"
+                                    Padding="18"
+                                    Margin="0,0,12,0"
+                                    MinHeight="180">
+                                <StackPanel>
+                                    <Border Width="44"
+                                            Height="44"
+                                            CornerRadius="8"
+                                            Background="{StaticResource BlueSoftBrush}"
+                                            BorderBrush="#B7D8FF"
+                                            BorderThickness="1">
+                                        <TextBlock Text="&#xE823;"
+                                                   FontFamily="Segoe MDL2 Assets"
+                                                   FontSize="18"
+                                                   Foreground="#245EC9"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center" />
+                                    </Border>
+                                    <TextBlock Text="Timing"
+                                               Style="{StaticResource StateLabelStyle}"
+                                               Margin="0,16,0,6" />
+                                    <TextBlock Text="{Binding TimingText}"
+                                               Style="{StaticResource StateValueStyle}" />
+                                </StackPanel>
+                            </Border>
+
+                            <Border Background="#FFFFFF"
+                                    BorderBrush="#CDEAD5"
+                                    BorderThickness="1"
+                                    CornerRadius="8"
+                                    Padding="18"
+                                    MinHeight="180">
+                                <StackPanel>
+                                    <Border Width="44"
+                                            Height="44"
+                                            CornerRadius="8"
+                                            Background="{StaticResource GreenSoftBrush}"
+                                            BorderBrush="#CDEAD5"
+                                            BorderThickness="1">
+                                        <TextBlock Text="&#xE9D2;"
+                                                   FontFamily="Segoe MDL2 Assets"
+                                                   FontSize="18"
+                                                   Foreground="#1E6B3A"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center" />
+                                    </Border>
+                                    <TextBlock Text="Mind"
+                                               Style="{StaticResource StateLabelStyle}"
+                                               Margin="0,16,0,6" />
+                                    <TextBlock Text="{Binding MindOccupierText}"
+                                               Style="{StaticResource StateValueStyle}" />
+                                </StackPanel>
+                            </Border>
+                        </UniformGrid>
+                    </Grid>
+                </Grid>
+            </Border>
+
+            <Grid Grid.Column="2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="18" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="18" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <Border Background="{StaticResource PanelBrush}"
+                        BorderBrush="#E5E1D8"
+                        BorderThickness="1"
+                        CornerRadius="8"
+                        Padding="22">
+                    <StackPanel>
+                        <TextBlock Text="Support"
+                                   Style="{StaticResource SectionTitleStyle}" />
+                        <Border Height="10"
+                                CornerRadius="5"
+                                Background="{StaticResource MoveBrush}"
+                                Margin="0,4,0,16" />
+                        <TextBlock Text="{Binding SpouseText}"
+                                   Foreground="{StaticResource InkBrush}"
+                                   FontSize="17"
+                                   FontWeight="SemiBold"
+                                   TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
+
+                <Border Grid.Row="2"
+                        Background="{StaticResource PanelBrush}"
+                        BorderBrush="#E5E1D8"
+                        BorderThickness="1"
+                        CornerRadius="8"
+                        Padding="22">
+                    <StackPanel>
+                        <TextBlock Text="Local Status"
+                                   Style="{StaticResource SectionTitleStyle}" />
+                        <Border Height="10"
+                                CornerRadius="5"
+                                Background="#A8E6B1"
+                                Margin="0,4,0,16" />
+                        <TextBlock Text="{Binding SaveStatusText}"
+                                   Style="{StaticResource QuietTextStyle}" />
+                    </StackPanel>
+                </Border>
+
+                <Border Grid.Row="4"
+                        Background="{StaticResource PanelBrush}"
+                        BorderBrush="#E5E1D8"
+                        BorderThickness="1"
+                        CornerRadius="8"
+                        Padding="22">
+                    <StackPanel>
+                        <TextBlock Text="Movement Draft"
+                                   Style="{StaticResource SectionTitleStyle}" />
+                        <Border Height="10"
+                                CornerRadius="5"
+                                Background="#9DCCFF"
+                                Margin="0,4,0,16" />
+                        <TextBlock Text="{Binding MovementDraftStatusText}"
+                                   Style="{StaticResource QuietTextStyle}" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Grid>
+    </Grid>
+</UserControl>
