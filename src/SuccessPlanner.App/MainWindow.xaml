@@ -25,6 +25,10 @@
             <views:CaptureView />
         </DataTemplate>
 
+        <DataTemplate DataType="{x:Type viewModels:TodayViewModel}">
+            <views:TodayView />
+        </DataTemplate>
+
         <DataTemplate DataType="{x:Type viewModels:InitialScreenViewModel}">
             <views:InitialScreenView />
         </DataTemplate>

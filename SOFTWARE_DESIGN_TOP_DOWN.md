@@ -895,7 +895,7 @@ Status:
 
 ~~7.1. Create `TodayViewModel`.~~
 
-7.2. Create `TodayView`.
+~~7.2. Create `TodayView`.~~
 
 7.3. Load tasks due today or selected for today.
 
