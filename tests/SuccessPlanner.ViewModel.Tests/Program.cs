@@ -27,6 +27,7 @@ TestRunner.RunAll(
     ("DoneViewModel shows an empty done state", DoneViewModelShowsEmptyDoneState),
     ("DoneViewModel reports load failures", DoneViewModelReportsLoadFailures),
     ("StartWorkViewModel starts in a simple ready state", StartWorkViewModelStartsReady),
+    ("StartWorkViewModel applies session choices", StartWorkViewModelAppliesSessionChoices),
     ("StartWorkViewModel loads focus task options", StartWorkViewModelLoadsFocusTaskOptions),
     ("StartWorkViewModel suggests a best next action", StartWorkViewModelSuggestsBestNextAction),
     ("StartWorkViewModel uses the suggested action", StartWorkViewModelUsesSuggestedAction),
@@ -688,11 +689,61 @@ static void StartWorkViewModelStartsReady()
     Assert.Equal("No focus options loaded.", viewModel.SuggestionReasonText);
     Assert.Equal(FocusSession.DefaultPlannedMinutes, viewModel.PlannedMinutes);
     Assert.Equal("20 minute focus", viewModel.PlannedMinutesText);
+    Assert.Equal("20 minute session selected.", viewModel.SessionChoiceSummaryText);
+    Assert.False(viewModel.IsTenMinuteSessionSelected, "Ten minute session should not start selected.");
+    Assert.False(viewModel.IsFifteenMinuteSessionSelected, "Fifteen minute session should not start selected.");
+    Assert.True(viewModel.IsTwentyMinuteSessionSelected, "Twenty minute session should start selected.");
+    Assert.True(viewModel.ChooseTenMinuteSessionCommand.CanExecute(null), "Ten minute choice should be available.");
+    Assert.True(viewModel.ChooseFifteenMinuteSessionCommand.CanExecute(null), "Fifteen minute choice should be available.");
+    Assert.True(viewModel.ChooseTwentyMinuteSessionCommand.CanExecute(null), "Twenty minute choice should be available.");
     Assert.False(viewModel.HasTaskOptions, "Start should begin with no loaded focus options.");
     Assert.False(viewModel.HasSelectedTask, "Start should begin without a selected focus task.");
     Assert.False(viewModel.IsLoading, "Start should not begin in a loading state.");
     Assert.True(viewModel.RefreshCommand.CanExecute(null), "Refresh should be available when Start is idle.");
     Assert.False(viewModel.UseSuggestionCommand.CanExecute(null), "Use Suggestion should wait for a suggestion.");
+}
+
+static void StartWorkViewModelAppliesSessionChoices()
+{
+    DateOnly today = new(2026, 5, 30);
+    TaskItem focusTask = CreateTask("Draft the first Start screen", dueDate: today);
+    StartWorkViewModel viewModel = new(
+        (_, _) => Task.FromResult<IReadOnlyList<TaskItem>>([focusTask]),
+        () => today);
+
+    viewModel.ChooseTenMinuteSessionCommand.Execute(null);
+
+    Assert.Equal(10, viewModel.PlannedMinutes);
+    Assert.Equal("10 minute focus", viewModel.PlannedMinutesText);
+    Assert.Equal("10 minute session selected.", viewModel.SessionChoiceSummaryText);
+    Assert.True(viewModel.IsTenMinuteSessionSelected, "Ten minute session should be selected.");
+    Assert.False(viewModel.IsFifteenMinuteSessionSelected, "Fifteen minute session should not be selected.");
+    Assert.False(viewModel.IsTwentyMinuteSessionSelected, "Twenty minute session should not be selected.");
+    Assert.Contains("10 minute focus session", viewModel.FocusPanelText);
+    Assert.Equal("10 minute focus selected.", viewModel.StatusText);
+
+    viewModel.LoadTasksAsync().GetAwaiter().GetResult();
+    viewModel.UseSuggestedTaskAsync().GetAwaiter().GetResult();
+    Assert.Contains("10 minute focus session", viewModel.FocusPanelText);
+
+    viewModel.ChooseFifteenMinuteSessionCommand.Execute(null);
+
+    Assert.Equal(15, viewModel.PlannedMinutes);
+    Assert.Equal("15 minute focus", viewModel.PlannedMinutesText);
+    Assert.Equal("15 minute session selected.", viewModel.SessionChoiceSummaryText);
+    Assert.True(viewModel.IsFifteenMinuteSessionSelected, "Fifteen minute session should be selected.");
+    Assert.False(viewModel.IsTenMinuteSessionSelected, "Ten minute session should no longer be selected.");
+    Assert.False(viewModel.IsTwentyMinuteSessionSelected, "Twenty minute session should not be selected.");
+    Assert.Contains("15 minute focus session", viewModel.FocusPanelText);
+    Assert.Equal("15 minute focus selected.", viewModel.StatusText);
+
+    viewModel.SetSessionLength(FocusSession.DefaultPlannedMinutes);
+
+    Assert.Equal(20, viewModel.PlannedMinutes);
+    Assert.Equal("20 minute focus", viewModel.PlannedMinutesText);
+    Assert.True(viewModel.IsTwentyMinuteSessionSelected, "Twenty minute session should be selected.");
+    Assert.Contains("20 minute focus session", viewModel.FocusPanelText);
+    Assert.Equal("20 minute focus selected.", viewModel.StatusText);
 }
 
 static void StartWorkViewModelLoadsFocusTaskOptions()

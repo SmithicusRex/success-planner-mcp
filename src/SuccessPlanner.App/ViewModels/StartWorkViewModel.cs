@@ -10,14 +10,18 @@ namespace SuccessPlanner.App.ViewModels;
 public sealed class StartWorkViewModel : ScreenViewModelBase, INotifyPropertyChanged
 {
     private const string ReadyStatus = "Ready to choose focus.";
+    private const int ShortSessionMinutes = 10;
+    private const int MediumSessionMinutes = 15;
     private readonly Func<DateOnly, CancellationToken, Task<IReadOnlyList<TaskItem>>> _loadTasksAsync;
     private readonly Func<DateOnly> _todayProvider;
     private readonly Dictionary<Guid, TaskItem> _loadedTasksById = [];
     private bool _isLoading;
+    private int _plannedMinutes = FocusSession.DefaultPlannedMinutes;
     private string _statusText = ReadyStatus;
     private string _emptyStateText = "No focus options loaded.";
     private string _taskCountText = "0 options";
     private Guid? _selectedTaskId;
+    private bool _selectedTaskIsSuggested;
     private string _selectedTaskTitle = "No focus selected.";
     private string _focusPanelTitle = "Choose Focus";
     private string _focusPanelText = "Pick one small action for a 20 minute focus session.";
@@ -56,6 +60,9 @@ public sealed class StartWorkViewModel : ScreenViewModelBase, INotifyPropertyCha
         UseSuggestionCommand = new AsyncRelayCommand(
             () => UseSuggestedTaskAsync(CancellationToken.None),
             () => HasSuggestedTask && !IsLoading);
+        ChooseTenMinuteSessionCommand = new AsyncRelayCommand(() => ChooseSessionLengthAsync(ShortSessionMinutes));
+        ChooseFifteenMinuteSessionCommand = new AsyncRelayCommand(() => ChooseSessionLengthAsync(MediumSessionMinutes));
+        ChooseTwentyMinuteSessionCommand = new AsyncRelayCommand(() => ChooseSessionLengthAsync(FocusSession.DefaultPlannedMinutes));
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -75,6 +82,12 @@ public sealed class StartWorkViewModel : ScreenViewModelBase, INotifyPropertyCha
     public AsyncRelayCommand RefreshCommand { get; }
 
     public AsyncRelayCommand UseSuggestionCommand { get; }
+
+    public AsyncRelayCommand ChooseTenMinuteSessionCommand { get; }
+
+    public AsyncRelayCommand ChooseFifteenMinuteSessionCommand { get; }
+
+    public AsyncRelayCommand ChooseTwentyMinuteSessionCommand { get; }
 
     public bool IsLoading
     {
@@ -200,9 +213,31 @@ public sealed class StartWorkViewModel : ScreenViewModelBase, INotifyPropertyCha
         private set => SetProperty(ref _suggestionBadgeText, value);
     }
 
-    public int PlannedMinutes => FocusSession.DefaultPlannedMinutes;
+    public int PlannedMinutes
+    {
+        get => _plannedMinutes;
+        private set
+        {
+            if (SetProperty(ref _plannedMinutes, value))
+            {
+                OnPropertyChanged(nameof(PlannedMinutesText));
+                OnPropertyChanged(nameof(SessionChoiceSummaryText));
+                OnPropertyChanged(nameof(IsTenMinuteSessionSelected));
+                OnPropertyChanged(nameof(IsFifteenMinuteSessionSelected));
+                OnPropertyChanged(nameof(IsTwentyMinuteSessionSelected));
+            }
+        }
+    }
 
     public string PlannedMinutesText => $"{PlannedMinutes} minute focus";
+
+    public string SessionChoiceSummaryText => $"{PlannedMinutes} minute session selected.";
+
+    public bool IsTenMinuteSessionSelected => PlannedMinutes == ShortSessionMinutes;
+
+    public bool IsFifteenMinuteSessionSelected => PlannedMinutes == MediumSessionMinutes;
+
+    public bool IsTwentyMinuteSessionSelected => PlannedMinutes == FocusSession.DefaultPlannedMinutes;
 
     public override Task OnNavigatedToAsync(CancellationToken cancellationToken)
     {
@@ -285,13 +320,38 @@ public sealed class StartWorkViewModel : ScreenViewModelBase, INotifyPropertyCha
         ArgumentNullException.ThrowIfNull(taskOption);
 
         SelectedTaskId = taskOption.Id;
+        _selectedTaskIsSuggested = taskOption.IsSuggestedAction;
         SelectedTaskTitle = taskOption.Title;
         FocusIntention = taskOption.Title;
         FocusPanelTitle = "Focus Selected";
-        FocusPanelText = taskOption.IsSuggestedAction
-            ? $"{taskOption.Title} is the suggested next action for a {PlannedMinutes} minute focus session."
-            : $"{taskOption.Title} is ready for a {PlannedMinutes} minute focus session.";
+        FocusPanelText = BuildSelectedFocusPanelText(taskOption.Title, taskOption.IsSuggestedAction);
         StatusText = taskOption.IsSuggestedAction ? "Suggested focus selected." : "Focus selected.";
+    }
+
+    public Task ChooseSessionLengthAsync(int minutes)
+    {
+        SetSessionLength(minutes);
+        return Task.CompletedTask;
+    }
+
+    public void SetSessionLength(int minutes)
+    {
+        if (minutes is not ShortSessionMinutes and not MediumSessionMinutes and not FocusSession.DefaultPlannedMinutes)
+        {
+            throw new ArgumentOutOfRangeException(nameof(minutes), "Start focus sessions must be 10, 15, or 20 minutes.");
+        }
+
+        PlannedMinutes = minutes;
+        if (HasSelectedTask)
+        {
+            FocusPanelText = BuildSelectedFocusPanelText(SelectedTaskTitle, _selectedTaskIsSuggested);
+        }
+        else
+        {
+            FocusPanelText = $"Pick one small action for a {PlannedMinutes} minute focus session.";
+        }
+
+        StatusText = $"{PlannedMinutes} minute focus selected.";
     }
 
     public Task UseSuggestedTaskAsync(CancellationToken cancellationToken = default)
@@ -346,10 +406,18 @@ public sealed class StartWorkViewModel : ScreenViewModelBase, INotifyPropertyCha
     private void ClearSelection()
     {
         SelectedTaskId = null;
+        _selectedTaskIsSuggested = false;
         SelectedTaskTitle = "No focus selected.";
         FocusIntention = "Choose one small action.";
         FocusPanelTitle = "Choose Focus";
-        FocusPanelText = "Pick one small action for a 20 minute focus session.";
+        FocusPanelText = $"Pick one small action for a {PlannedMinutes} minute focus session.";
+    }
+
+    private string BuildSelectedFocusPanelText(string taskTitle, bool isSuggestedAction)
+    {
+        return isSuggestedAction
+            ? $"{taskTitle} is the suggested next action for a {PlannedMinutes} minute focus session."
+            : $"{taskTitle} is ready for a {PlannedMinutes} minute focus session.";
     }
 
     private void ApplySuggestion(StartWorkSuggestion? suggestion)

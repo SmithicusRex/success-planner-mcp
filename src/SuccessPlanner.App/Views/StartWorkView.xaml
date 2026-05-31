@@ -100,6 +100,42 @@
             </Setter>
         </Style>
 
+        <Style x:Key="SessionChoiceButtonStyle" TargetType="Button">
+            <Setter Property="Height" Value="44" />
+            <Setter Property="MinWidth" Value="64" />
+            <Setter Property="Margin" Value="0,0,8,0" />
+            <Setter Property="Background" Value="#FFFFFF" />
+            <Setter Property="BorderBrush" Value="#D7DADF" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chrome"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="8">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{StaticResource StartSoftBrush}" />
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="#B7DEDB" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="#D2F1EE" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style x:Key="TaskListVisibilityStyle" TargetType="ScrollViewer">
             <Setter Property="Visibility" Value="Visible" />
             <Style.Triggers>
@@ -511,6 +547,65 @@
                                 Margin="0,4,0,16" />
                         <TextBlock Text="{Binding FocusPanelText}"
                                    Style="{StaticResource QuietTextStyle}" />
+
+                        <StackPanel Margin="0,18,0,0">
+                            <TextBlock Text="Session Length"
+                                       Foreground="{StaticResource InkBrush}"
+                                       FontSize="15"
+                                       FontWeight="SemiBold" />
+                            <UniformGrid Columns="3"
+                                         Margin="0,10,0,0">
+                                <Button Command="{Binding ChooseTenMinuteSessionCommand}"
+                                        ToolTip="10 minute focus">
+                                    <Button.Style>
+                                        <Style TargetType="Button" BasedOn="{StaticResource SessionChoiceButtonStyle}">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsTenMinuteSessionSelected}" Value="True">
+                                                    <Setter Property="Background" Value="{StaticResource StartBrush}" />
+                                                    <Setter Property="BorderBrush" Value="#65BFB8" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                    <TextBlock Text="10" />
+                                </Button>
+                                <Button Command="{Binding ChooseFifteenMinuteSessionCommand}"
+                                        ToolTip="15 minute focus">
+                                    <Button.Style>
+                                        <Style TargetType="Button" BasedOn="{StaticResource SessionChoiceButtonStyle}">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsFifteenMinuteSessionSelected}" Value="True">
+                                                    <Setter Property="Background" Value="{StaticResource StartBrush}" />
+                                                    <Setter Property="BorderBrush" Value="#65BFB8" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                    <TextBlock Text="15" />
+                                </Button>
+                                <Button Command="{Binding ChooseTwentyMinuteSessionCommand}"
+                                        Margin="0"
+                                        ToolTip="20 minute focus">
+                                    <Button.Style>
+                                        <Style TargetType="Button" BasedOn="{StaticResource SessionChoiceButtonStyle}">
+                                            <Setter Property="Margin" Value="0" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsTwentyMinuteSessionSelected}" Value="True">
+                                                    <Setter Property="Background" Value="{StaticResource StartBrush}" />
+                                                    <Setter Property="BorderBrush" Value="#65BFB8" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                    <TextBlock Text="20" />
+                                </Button>
+                            </UniformGrid>
+                            <TextBlock Text="{Binding SessionChoiceSummaryText}"
+                                       Foreground="{StaticResource MutedBrush}"
+                                       FontSize="13"
+                                       FontWeight="SemiBold"
+                                       Margin="0,8,0,0" />
+                        </StackPanel>
 
                         <Border Background="{StaticResource StartSoftBrush}"
                                 BorderBrush="#B7DEDB"

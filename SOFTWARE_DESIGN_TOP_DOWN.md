@@ -942,7 +942,7 @@ Status:
 
 ~~9.3. Suggest a best next action.~~
 
-9.4. Add 10, 15, and 20 minute session choices.
+~~9.4. Add 10, 15, and 20 minute session choices.~~
 
 9.5. Implement start, pause, resume, complete, and blocked states.
 
