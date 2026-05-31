@@ -38,6 +38,12 @@ public sealed class StartWorkViewModel : ScreenViewModelBase, INotifyPropertyCha
     private string _focusSessionStorageText = "Session not saved yet.";
     private Guid? _lastSavedFocusSessionId;
     private string _blockedReasonDraft = string.Empty;
+    private bool _hasBreakSuggestion;
+    private int _breakSuggestionMinutes;
+    private string _breakSuggestionTitle = "Break After Focus";
+    private string _breakSuggestionText = "Complete a focus session and MCP will suggest a reset before the next action.";
+    private string _breakSuggestionBadgeText = "Waiting";
+    private string _breakSuggestionActionText = "Finish the current focus block first.";
     private Guid? _suggestedTaskId;
     private int _suggestedTaskScore;
     private string _suggestedTaskTitle = "No suggestion yet.";
@@ -319,6 +325,58 @@ public sealed class StartWorkViewModel : ScreenViewModelBase, INotifyPropertyCha
 
     public bool CanBlockFocus => HasActiveFocusSession && !IsLoading;
 
+    public bool HasBreakSuggestion
+    {
+        get => _hasBreakSuggestion;
+        private set
+        {
+            if (SetProperty(ref _hasBreakSuggestion, value))
+            {
+                OnPropertyChanged(nameof(BreakSuggestionDurationText));
+            }
+        }
+    }
+
+    public int BreakSuggestionMinutes
+    {
+        get => _breakSuggestionMinutes;
+        private set
+        {
+            if (SetProperty(ref _breakSuggestionMinutes, value))
+            {
+                OnPropertyChanged(nameof(BreakSuggestionDurationText));
+            }
+        }
+    }
+
+    public string BreakSuggestionDurationText => HasBreakSuggestion
+        ? $"{BreakSuggestionMinutes} minute reset"
+        : "Break pending";
+
+    public string BreakSuggestionTitle
+    {
+        get => _breakSuggestionTitle;
+        private set => SetProperty(ref _breakSuggestionTitle, value);
+    }
+
+    public string BreakSuggestionText
+    {
+        get => _breakSuggestionText;
+        private set => SetProperty(ref _breakSuggestionText, value);
+    }
+
+    public string BreakSuggestionBadgeText
+    {
+        get => _breakSuggestionBadgeText;
+        private set => SetProperty(ref _breakSuggestionBadgeText, value);
+    }
+
+    public string BreakSuggestionActionText
+    {
+        get => _breakSuggestionActionText;
+        private set => SetProperty(ref _breakSuggestionActionText, value);
+    }
+
     public Guid? SuggestedTaskId
     {
         get => _suggestedTaskId;
@@ -556,6 +614,7 @@ public sealed class StartWorkViewModel : ScreenViewModelBase, INotifyPropertyCha
 
         _activeFocusSession = FocusSession.StartForTask(SelectedTaskId, FocusIntention, PlannedMinutes);
         LastSavedFocusSessionId = null;
+        ClearBreakSuggestion();
         TaskItem? selectedTask = null;
         if (SelectedTaskId.HasValue && _loadedTasksById.TryGetValue(SelectedTaskId.Value, out TaskItem? loadedTask))
         {
@@ -619,6 +678,7 @@ public sealed class StartWorkViewModel : ScreenViewModelBase, INotifyPropertyCha
 
         FocusSession session = _activeFocusSession!;
         session.Complete($"Completed {session.PlannedMinutes} minute focus: {session.Intention}");
+        ApplyBreakSuggestion(session);
         UpdateFocusSessionState("Saving focus session.");
         await SaveCurrentFocusSessionAsync(
             taskToSave: null,
@@ -641,6 +701,7 @@ public sealed class StartWorkViewModel : ScreenViewModelBase, INotifyPropertyCha
             : BlockedReasonDraft.Trim();
         _activeFocusSession!.MarkBlocked(reason);
         BlockedReasonDraft = reason;
+        ClearBreakSuggestion("Blocked sessions wait for a next tiny step before a break suggestion.");
         UpdateFocusSessionState("Saving focus session.");
         await SaveCurrentFocusSessionAsync(
             taskToSave: null,
@@ -1061,6 +1122,36 @@ public sealed class StartWorkViewModel : ScreenViewModelBase, INotifyPropertyCha
         };
 
         return $"Saved locally: {statusText} focus session.";
+    }
+
+    private void ApplyBreakSuggestion(FocusSession session)
+    {
+        BreakSuggestionMinutes = CalculateBreakMinutes(session.PlannedMinutes);
+        HasBreakSuggestion = true;
+        BreakSuggestionTitle = "Take a Reset";
+        BreakSuggestionBadgeText = "Break";
+        BreakSuggestionText = $"You finished {session.PlannedMinutes} minutes of focus. Take {BreakSuggestionMinutes} minutes away from the screen before the next action.";
+        BreakSuggestionActionText = "Stand up, drink water, stretch, or take a short walk.";
+    }
+
+    private void ClearBreakSuggestion(string? actionText = null)
+    {
+        HasBreakSuggestion = false;
+        BreakSuggestionMinutes = 0;
+        BreakSuggestionTitle = "Break After Focus";
+        BreakSuggestionBadgeText = "Waiting";
+        BreakSuggestionText = "Complete a focus session and MCP will suggest a reset before the next action.";
+        BreakSuggestionActionText = actionText ?? "Finish the current focus block first.";
+    }
+
+    private static int CalculateBreakMinutes(int plannedMinutes)
+    {
+        return plannedMinutes switch
+        {
+            >= FocusSession.DefaultPlannedMinutes => 5,
+            >= MediumSessionMinutes => 4,
+            _ => 3
+        };
     }
 
     private void RaiseFocusCommandStatesChanged()

@@ -37,6 +37,7 @@ TestRunner.RunAll(
     ("StartWorkViewModel completes a focus session", StartWorkViewModelCompletesFocusSession),
     ("StartWorkViewModel blocks a focus session without completing the task", StartWorkViewModelBlocksFocusSessionWithoutCompletingTask),
     ("StartWorkViewModel saves focus session state changes", StartWorkViewModelSavesFocusSessionStateChanges),
+    ("StartWorkViewModel suggests a break after completion", StartWorkViewModelSuggestsBreakAfterCompletion),
     ("StartWorkViewModel creates task option display state", StartWorkViewModelCreatesTaskOptionDisplayState),
     ("StartWorkViewModel shows an empty focus state", StartWorkViewModelShowsEmptyFocusState),
     ("StartWorkViewModel reports load failures", StartWorkViewModelReportsLoadFailures));
@@ -710,6 +711,12 @@ static void StartWorkViewModelStartsReady()
     Assert.Equal("Session not saved yet.", viewModel.FocusSessionStorageText);
     Assert.False(viewModel.HasSavedFocusSession, "Start should not begin with a saved focus session.");
     Assert.Null(viewModel.LastSavedFocusSessionId, "Start should not begin with a saved focus session id.");
+    Assert.False(viewModel.HasBreakSuggestion, "Start should not begin with a break suggestion.");
+    Assert.Equal("Break After Focus", viewModel.BreakSuggestionTitle);
+    Assert.Equal("Waiting", viewModel.BreakSuggestionBadgeText);
+    Assert.Equal("Break pending", viewModel.BreakSuggestionDurationText);
+    Assert.Contains("Complete a focus session", viewModel.BreakSuggestionText);
+    Assert.Contains("Finish the current focus block", viewModel.BreakSuggestionActionText);
     Assert.False(viewModel.CanStartFocus, "Start Focus should wait for a selected task.");
     Assert.False(viewModel.StartFocusCommand.CanExecute(null), "Start Focus command should wait for a selected task.");
     Assert.False(viewModel.PauseFocusCommand.CanExecute(null), "Pause should wait for a running session.");
@@ -989,6 +996,12 @@ static void StartWorkViewModelCompletesFocusSession()
     Assert.Equal("Done", viewModel.FocusSessionBadgeText);
     Assert.Contains("recorded", viewModel.FocusTimerText);
     Assert.Contains("Completed 20 minute focus", viewModel.FocusSessionWinText);
+    Assert.True(viewModel.HasBreakSuggestion, "Completing focus should suggest a break.");
+    Assert.Equal(5, viewModel.BreakSuggestionMinutes);
+    Assert.Equal("5 minute reset", viewModel.BreakSuggestionDurationText);
+    Assert.Equal("Take a Reset", viewModel.BreakSuggestionTitle);
+    Assert.Equal("Break", viewModel.BreakSuggestionBadgeText);
+    Assert.Contains("away from the screen", viewModel.BreakSuggestionText);
     Assert.Equal(TaskItemStatus.InProgress, focusTask.Status);
     Assert.True(viewModel.CanStartFocus, "A completed focus session should allow a new session.");
     Assert.False(viewModel.CanPauseFocus, "Pause should disable after completion.");
@@ -1018,6 +1031,9 @@ static void StartWorkViewModelBlocksFocusSessionWithoutCompletingTask()
     Assert.Equal("Focus Blocked", viewModel.FocusSessionPanelTitle);
     Assert.Equal("Waiting on a return call", viewModel.FocusSessionBlockedReason);
     Assert.Contains("Blocked: Waiting on a return call", viewModel.FocusSessionWinText);
+    Assert.False(viewModel.HasBreakSuggestion, "Blocked focus should not suggest the completion break.");
+    Assert.Equal("Waiting", viewModel.BreakSuggestionBadgeText);
+    Assert.Contains("Blocked sessions wait", viewModel.BreakSuggestionActionText);
     Assert.Equal(TaskItemStatus.InProgress, focusTask.Status);
     Assert.False(focusTask.Status == TaskItemStatus.Done, "Blocked session must not mark the task complete.");
     Assert.True(viewModel.CanStartFocus, "A blocked focus session should allow a new session.");
@@ -1076,6 +1092,37 @@ static void StartWorkViewModelSavesFocusSessionStateChanges()
     Assert.Equal(FocusSessionStatus.Completed, savedSessions[^1].Status);
     Assert.Equal("Saved locally: completed focus session.", viewModel.FocusSessionStorageText);
     Assert.Equal("Focus session completed and saved locally.", viewModel.StatusText);
+}
+
+static void StartWorkViewModelSuggestsBreakAfterCompletion()
+{
+    DateOnly today = new(2026, 5, 30);
+    TaskItem focusTask = CreateTask("Finish a short focus", dueDate: today);
+    StartWorkViewModel viewModel = new(
+        (_, _) => Task.FromResult<IReadOnlyList<TaskItem>>([focusTask]),
+        () => today);
+
+    viewModel.LoadTasksAsync().GetAwaiter().GetResult();
+    viewModel.UseSuggestedTaskAsync().GetAwaiter().GetResult();
+    viewModel.SetSessionLength(10);
+    viewModel.StartFocusAsync().GetAwaiter().GetResult();
+    Assert.False(viewModel.HasBreakSuggestion, "Starting focus should keep break suggestion pending.");
+
+    viewModel.CompleteFocusAsync().GetAwaiter().GetResult();
+
+    Assert.True(viewModel.HasBreakSuggestion, "Completing focus should create a break suggestion.");
+    Assert.Equal(3, viewModel.BreakSuggestionMinutes);
+    Assert.Equal("3 minute reset", viewModel.BreakSuggestionDurationText);
+    Assert.Equal("Take a Reset", viewModel.BreakSuggestionTitle);
+    Assert.Equal("Break", viewModel.BreakSuggestionBadgeText);
+    Assert.Contains("You finished 10 minutes", viewModel.BreakSuggestionText);
+    Assert.Contains("drink water", viewModel.BreakSuggestionActionText);
+
+    viewModel.StartFocusAsync().GetAwaiter().GetResult();
+
+    Assert.False(viewModel.HasBreakSuggestion, "Starting the next focus should clear the last break suggestion.");
+    Assert.Equal("Break pending", viewModel.BreakSuggestionDurationText);
+    Assert.Equal("Waiting", viewModel.BreakSuggestionBadgeText);
 }
 
 static void StartWorkViewModelCreatesTaskOptionDisplayState()

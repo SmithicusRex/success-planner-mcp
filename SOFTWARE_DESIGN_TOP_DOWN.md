@@ -948,7 +948,7 @@ Status:
 
 ~~9.6. Record focus session locally.~~
 
-9.7. Suggest a break after session completion.
+~~9.7. Suggest a break after session completion.~~
 
 Benchmark gate:
 
