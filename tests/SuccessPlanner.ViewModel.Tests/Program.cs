@@ -44,7 +44,8 @@ TestRunner.RunAll(
     ("MoveViewModel starts in a simple ready state", MoveViewModelStartsReady),
     ("MoveViewModel applies movement activity choices", MoveViewModelAppliesMovementActivityChoices),
     ("MoveViewModel applies now and schedule choices", MoveViewModelAppliesNowAndScheduleChoices),
-    ("MoveViewModel applies mind occupier choices", MoveViewModelAppliesMindOccupierChoices));
+    ("MoveViewModel applies mind occupier choices", MoveViewModelAppliesMindOccupierChoices),
+    ("MoveViewModel applies spouse option choices", MoveViewModelAppliesSpouseOptionChoices));
 
 static void CaptureViewModelStartsReady()
 {
@@ -1235,10 +1236,13 @@ static void MoveViewModelStartsReady()
     Assert.Null(viewModel.SelectedTimingChoice, "Move should wait for a timing choice.");
     Assert.Null(viewModel.SelectedScheduledFor, "Move should start without a scheduled movement time.");
     Assert.Null(viewModel.SelectedMindOccupierChoice, "Move should wait for a mind occupier choice.");
+    Assert.Null(viewModel.SelectedSpouseChoice, "Move should wait for a spouse option choice.");
     Assert.False(viewModel.HasSelectedTiming, "Move should start without selected timing.");
     Assert.False(viewModel.HasSelectedMindOccupier, "Move should start without a mind occupier.");
+    Assert.False(viewModel.HasSelectedSpouseOption, "Move should start without a spouse option.");
     Assert.False(viewModel.CanChooseTiming, "Timing choices should wait for a movement activity.");
     Assert.False(viewModel.CanChooseMindOccupier, "Mind occupier choices should wait for timing.");
+    Assert.False(viewModel.CanChooseSpouseOption, "Spouse option should wait for mind occupier.");
     Assert.False(viewModel.IsWalkSelected, "Walk should start unselected.");
     Assert.False(viewModel.IsWorkoutSelected, "Workout should start unselected.");
     Assert.False(viewModel.IsStretchSelected, "Stretch should start unselected.");
@@ -1247,6 +1251,8 @@ static void MoveViewModelStartsReady()
     Assert.False(viewModel.IsMusicSelected, "Music should start unselected.");
     Assert.False(viewModel.IsPodcastSelected, "Podcast should start unselected.");
     Assert.False(viewModel.IsAudiobookSelected, "Audiobook should start unselected.");
+    Assert.False(viewModel.IsSoloSelected, "Solo should start unselected.");
+    Assert.False(viewModel.IsWithSpouseSelected, "With Spouse should start unselected.");
     Assert.Equal("Choose", viewModel.WalkChoiceStatusText);
     Assert.Equal("Choose", viewModel.WorkoutChoiceStatusText);
     Assert.Equal("Choose", viewModel.StretchChoiceStatusText);
@@ -1255,6 +1261,8 @@ static void MoveViewModelStartsReady()
     Assert.Equal("Pick timing", viewModel.MusicChoiceStatusText);
     Assert.Equal("Pick timing", viewModel.PodcastChoiceStatusText);
     Assert.Equal("Pick timing", viewModel.AudiobookChoiceStatusText);
+    Assert.Equal("Pick mind", viewModel.SoloChoiceStatusText);
+    Assert.Equal("Pick mind", viewModel.WithSpouseChoiceStatusText);
     Assert.True(viewModel.ChooseWalkCommand.CanExecute(null), "Walk choice should be available.");
     Assert.True(viewModel.ChooseWorkoutCommand.CanExecute(null), "Workout choice should be available.");
     Assert.True(viewModel.ChooseStretchCommand.CanExecute(null), "Stretch choice should be available.");
@@ -1263,6 +1271,8 @@ static void MoveViewModelStartsReady()
     Assert.False(viewModel.ChooseMusicCommand.CanExecute(null), "Music should wait for timing.");
     Assert.False(viewModel.ChoosePodcastCommand.CanExecute(null), "Podcast should wait for timing.");
     Assert.False(viewModel.ChooseAudiobookCommand.CanExecute(null), "Audiobook should wait for timing.");
+    Assert.False(viewModel.ChooseSoloCommand.CanExecute(null), "Solo should wait for mind occupier.");
+    Assert.False(viewModel.ChooseWithSpouseCommand.CanExecute(null), "With Spouse should wait for mind occupier.");
     Assert.Equal("Choose one small movement activity.", viewModel.EmptyStateText);
     Assert.Equal("Movement is local-first and not saved yet.", viewModel.SaveStatusText);
 
@@ -1338,6 +1348,8 @@ static void MoveViewModelAppliesNowAndScheduleChoices()
     Assert.Equal("Choose", viewModel.MusicChoiceStatusText);
     Assert.Equal("Choose", viewModel.PodcastChoiceStatusText);
     Assert.Equal("Choose", viewModel.AudiobookChoiceStatusText);
+    Assert.Equal("Pick mind", viewModel.SoloChoiceStatusText);
+    Assert.Equal("Pick mind", viewModel.WithSpouseChoiceStatusText);
     Assert.Equal("Choose a mind occupier next.", viewModel.EmptyStateText);
 
     viewModel.ChooseScheduleCommand.Execute(null);
@@ -1357,6 +1369,8 @@ static void MoveViewModelAppliesNowAndScheduleChoices()
     Assert.Equal("Choose", viewModel.MusicChoiceStatusText);
     Assert.Equal("Choose", viewModel.PodcastChoiceStatusText);
     Assert.Equal("Choose", viewModel.AudiobookChoiceStatusText);
+    Assert.Equal("Pick mind", viewModel.SoloChoiceStatusText);
+    Assert.Equal("Pick mind", viewModel.WithSpouseChoiceStatusText);
     Assert.Equal("Choose a mind occupier next.", viewModel.EmptyStateText);
 
     viewModel.ChooseStretchCommand.Execute(null);
@@ -1433,6 +1447,82 @@ static void MoveViewModelAppliesMindOccupierChoices()
         audiobookSelected: true);
 }
 
+static void MoveViewModelAppliesSpouseOptionChoices()
+{
+    DateTimeOffset now = new(2026, 5, 31, 14, 15, 0, TimeSpan.FromHours(-5));
+    MoveViewModel viewModel = new(() => now);
+
+    Assert.False(viewModel.ChooseSoloCommand.CanExecute(null), "Solo should wait for mind occupier.");
+    Assert.False(viewModel.ChooseWithSpouseCommand.CanExecute(null), "With Spouse should wait for mind occupier.");
+
+    viewModel.ChooseWalkCommand.Execute(null);
+    viewModel.ChooseScheduleCommand.Execute(null);
+
+    Assert.False(viewModel.ChooseSoloCommand.CanExecute(null), "Solo should still wait for mind occupier.");
+
+    viewModel.ChoosePodcastCommand.Execute(null);
+
+    Assert.True(viewModel.ChooseSoloCommand.CanExecute(null), "Solo should unlock after mind occupier.");
+    Assert.True(viewModel.ChooseWithSpouseCommand.CanExecute(null), "With Spouse should unlock after mind occupier.");
+    Assert.Equal("Choose", viewModel.SoloChoiceStatusText);
+    Assert.Equal("Choose", viewModel.WithSpouseChoiceStatusText);
+
+    viewModel.ChooseSoloCommand.Execute(null);
+
+    AssertSpouseOptionChoice(
+        viewModel,
+        MovementSpouseChoice.Solo,
+        "Solo movement selected.",
+        "Solo selected.",
+        "Walk is scheduled for May 31, 3:15 PM with podcast as a solo movement.",
+        "Walk scheduled with Podcast solo ready.",
+        soloSelected: true,
+        withSpouseSelected: false);
+
+    viewModel.ChooseWithSpouseCommand.Execute(null);
+
+    AssertSpouseOptionChoice(
+        viewModel,
+        MovementSpouseChoice.WithSpouse,
+        "With spouse selected.",
+        "With spouse selected.",
+        "Walk is scheduled for May 31, 3:15 PM with podcast and spouse support.",
+        "Walk scheduled with Podcast and spouse ready.",
+        soloSelected: false,
+        withSpouseSelected: true);
+
+    viewModel.ChooseNowCommand.Execute(null);
+
+    Assert.Equal(MovementTimingChoice.Now, viewModel.SelectedTimingChoice);
+    Assert.Equal("Walk Now", viewModel.MovementPanelTitle);
+    Assert.Equal("Walk is ready to start now with podcast and spouse support.", viewModel.MovementPanelText);
+    Assert.Equal("Walk now with Podcast and spouse ready.", viewModel.MovementDraftStatusText);
+}
+
+static void AssertSpouseOptionChoice(
+    MoveViewModel viewModel,
+    MovementSpouseChoice expectedSpouseChoice,
+    string expectedSpouseText,
+    string expectedStatusText,
+    string expectedPanelText,
+    string expectedDraftStatus,
+    bool soloSelected,
+    bool withSpouseSelected)
+{
+    Assert.Equal(expectedSpouseChoice, viewModel.SelectedSpouseChoice);
+    Assert.True(viewModel.HasSelectedSpouseOption, "Spouse option should be visible after selection.");
+    Assert.Equal(expectedSpouseText, viewModel.SpouseText);
+    Assert.Equal(expectedStatusText, viewModel.StatusText);
+    Assert.Equal("Walk Scheduled", viewModel.MovementPanelTitle);
+    Assert.Equal(expectedPanelText, viewModel.MovementPanelText);
+    Assert.Equal(expectedDraftStatus, viewModel.MovementDraftStatusText);
+    Assert.Equal("Ready to save movement activity.", viewModel.EmptyStateText);
+    Assert.Equal(soloSelected, viewModel.IsSoloSelected);
+    Assert.Equal(withSpouseSelected, viewModel.IsWithSpouseSelected);
+    Assert.Equal(soloSelected ? "Selected" : "Choose", viewModel.SoloChoiceStatusText);
+    Assert.Equal(withSpouseSelected ? "Selected" : "Choose", viewModel.WithSpouseChoiceStatusText);
+}
+
 static void AssertMindOccupierChoice(
     MoveViewModel viewModel,
     MovementMindOccupierChoice expectedMindOccupierChoice,
@@ -1452,12 +1542,17 @@ static void AssertMindOccupierChoice(
     Assert.Equal(expectedDraftStatus, viewModel.MovementDraftStatusText);
     Assert.Equal($"{mindOccupierName} selected.", viewModel.StatusText);
     Assert.Equal("Choose spouse option next.", viewModel.EmptyStateText);
+    Assert.Null(viewModel.SelectedSpouseChoice, "Mind occupier alone should not choose a spouse option.");
+    Assert.False(viewModel.HasSelectedSpouseOption, "Mind occupier alone should not complete spouse option.");
+    Assert.True(viewModel.CanChooseSpouseOption, "Mind occupier should unlock spouse option.");
     Assert.Equal(musicSelected, viewModel.IsMusicSelected);
     Assert.Equal(podcastSelected, viewModel.IsPodcastSelected);
     Assert.Equal(audiobookSelected, viewModel.IsAudiobookSelected);
     Assert.Equal(musicSelected ? "Selected" : "Choose", viewModel.MusicChoiceStatusText);
     Assert.Equal(podcastSelected ? "Selected" : "Choose", viewModel.PodcastChoiceStatusText);
     Assert.Equal(audiobookSelected ? "Selected" : "Choose", viewModel.AudiobookChoiceStatusText);
+    Assert.Equal("Choose", viewModel.SoloChoiceStatusText);
+    Assert.Equal("Choose", viewModel.WithSpouseChoiceStatusText);
 }
 
 static void AssertMovementChoice(
@@ -1474,10 +1569,13 @@ static void AssertMovementChoice(
     Assert.Null(viewModel.SelectedTimingChoice, "Selecting only an activity should not choose timing.");
     Assert.Null(viewModel.SelectedScheduledFor, "Selecting only an activity should not set a scheduled time.");
     Assert.Null(viewModel.SelectedMindOccupierChoice, "Selecting only an activity should not choose a mind occupier.");
+    Assert.Null(viewModel.SelectedSpouseChoice, "Selecting only an activity should not choose a spouse option.");
     Assert.False(viewModel.HasSelectedTiming, "Selecting only an activity should not complete timing.");
     Assert.False(viewModel.HasSelectedMindOccupier, "Selecting only an activity should not complete mind occupier.");
+    Assert.False(viewModel.HasSelectedSpouseOption, "Selecting only an activity should not complete spouse option.");
     Assert.True(viewModel.CanChooseTiming, "Activity selection should unlock timing.");
     Assert.False(viewModel.CanChooseMindOccupier, "Activity selection should not unlock mind occupier yet.");
+    Assert.False(viewModel.CanChooseSpouseOption, "Activity selection should not unlock spouse option yet.");
     Assert.Equal($"{activityName} selected.", viewModel.SelectedActivityText);
     Assert.Equal($"{activityName} Ready", viewModel.MovementPanelTitle);
     Assert.Equal($"{activityName} is ready for a 20 minute movement plan.", viewModel.MovementPanelText);
@@ -1495,6 +1593,8 @@ static void AssertMovementChoice(
     Assert.Equal("Pick timing", viewModel.MusicChoiceStatusText);
     Assert.Equal("Pick timing", viewModel.PodcastChoiceStatusText);
     Assert.Equal("Pick timing", viewModel.AudiobookChoiceStatusText);
+    Assert.Equal("Pick mind", viewModel.SoloChoiceStatusText);
+    Assert.Equal("Pick mind", viewModel.WithSpouseChoiceStatusText);
 }
 
 static TaskItem CreateTask(

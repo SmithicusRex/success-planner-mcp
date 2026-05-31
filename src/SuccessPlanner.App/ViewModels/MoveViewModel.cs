@@ -25,6 +25,7 @@ public sealed class MoveViewModel : ScreenViewModelBase, INotifyPropertyChanged
     private MovementActivityType? _selectedActivityType;
     private MovementTimingChoice? _selectedTimingChoice;
     private MovementMindOccupierChoice? _selectedMindOccupierChoice;
+    private MovementSpouseChoice? _selectedSpouseChoice;
     private DateTimeOffset? _selectedScheduledFor;
 
     public MoveViewModel(Func<DateTimeOffset>? nowProvider = null)
@@ -49,6 +50,12 @@ public sealed class MoveViewModel : ScreenViewModelBase, INotifyPropertyChanged
         ChooseAudiobookCommand = new AsyncRelayCommand(
             () => ChooseMindOccupierAsync(MovementMindOccupierChoice.Audiobook),
             () => CanChooseMindOccupier);
+        ChooseSoloCommand = new AsyncRelayCommand(
+            () => ChooseSpouseAsync(MovementSpouseChoice.Solo),
+            () => CanChooseSpouseOption);
+        ChooseWithSpouseCommand = new AsyncRelayCommand(
+            () => ChooseSpouseAsync(MovementSpouseChoice.WithSpouse),
+            () => CanChooseSpouseOption);
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -76,6 +83,10 @@ public sealed class MoveViewModel : ScreenViewModelBase, INotifyPropertyChanged
     public AsyncRelayCommand ChoosePodcastCommand { get; }
 
     public AsyncRelayCommand ChooseAudiobookCommand { get; }
+
+    public AsyncRelayCommand ChooseSoloCommand { get; }
+
+    public AsyncRelayCommand ChooseWithSpouseCommand { get; }
 
     public string StatusText
     {
@@ -161,9 +172,12 @@ public sealed class MoveViewModel : ScreenViewModelBase, INotifyPropertyChanged
                 OnPropertyChanged(nameof(MusicChoiceStatusText));
                 OnPropertyChanged(nameof(PodcastChoiceStatusText));
                 OnPropertyChanged(nameof(AudiobookChoiceStatusText));
+                OnPropertyChanged(nameof(SoloChoiceStatusText));
+                OnPropertyChanged(nameof(WithSpouseChoiceStatusText));
                 ChooseNowCommand.RaiseCanExecuteChanged();
                 ChooseScheduleCommand.RaiseCanExecuteChanged();
                 RaiseMindOccupierCommandStatesChanged();
+                RaiseSpouseCommandStatesChanged();
             }
         }
     }
@@ -184,8 +198,11 @@ public sealed class MoveViewModel : ScreenViewModelBase, INotifyPropertyChanged
                 OnPropertyChanged(nameof(MusicChoiceStatusText));
                 OnPropertyChanged(nameof(PodcastChoiceStatusText));
                 OnPropertyChanged(nameof(AudiobookChoiceStatusText));
+                OnPropertyChanged(nameof(SoloChoiceStatusText));
+                OnPropertyChanged(nameof(WithSpouseChoiceStatusText));
                 OnPropertyChanged(nameof(EmptyStateText));
                 RaiseMindOccupierCommandStatesChanged();
+                RaiseSpouseCommandStatesChanged();
             }
         }
     }
@@ -204,6 +221,27 @@ public sealed class MoveViewModel : ScreenViewModelBase, INotifyPropertyChanged
                 OnPropertyChanged(nameof(MusicChoiceStatusText));
                 OnPropertyChanged(nameof(PodcastChoiceStatusText));
                 OnPropertyChanged(nameof(AudiobookChoiceStatusText));
+                OnPropertyChanged(nameof(CanChooseSpouseOption));
+                OnPropertyChanged(nameof(SoloChoiceStatusText));
+                OnPropertyChanged(nameof(WithSpouseChoiceStatusText));
+                RaiseSpouseCommandStatesChanged();
+                OnPropertyChanged(nameof(EmptyStateText));
+            }
+        }
+    }
+
+    public MovementSpouseChoice? SelectedSpouseChoice
+    {
+        get => _selectedSpouseChoice;
+        private set
+        {
+            if (SetProperty(ref _selectedSpouseChoice, value))
+            {
+                OnPropertyChanged(nameof(HasSelectedSpouseOption));
+                OnPropertyChanged(nameof(IsSoloSelected));
+                OnPropertyChanged(nameof(IsWithSpouseSelected));
+                OnPropertyChanged(nameof(SoloChoiceStatusText));
+                OnPropertyChanged(nameof(WithSpouseChoiceStatusText));
                 OnPropertyChanged(nameof(EmptyStateText));
             }
         }
@@ -223,9 +261,13 @@ public sealed class MoveViewModel : ScreenViewModelBase, INotifyPropertyChanged
 
     public bool HasSelectedMindOccupier => SelectedMindOccupierChoice.HasValue;
 
+    public bool HasSelectedSpouseOption => SelectedSpouseChoice.HasValue;
+
     public bool CanChooseTiming => HasSelectedActivity;
 
     public bool CanChooseMindOccupier => HasSelectedTiming;
+
+    public bool CanChooseSpouseOption => HasSelectedMindOccupier;
 
     public bool IsWalkSelected => SelectedActivityType == MovementActivityType.Walk;
 
@@ -242,6 +284,10 @@ public sealed class MoveViewModel : ScreenViewModelBase, INotifyPropertyChanged
     public bool IsPodcastSelected => SelectedMindOccupierChoice == MovementMindOccupierChoice.Podcast;
 
     public bool IsAudiobookSelected => SelectedMindOccupierChoice == MovementMindOccupierChoice.Audiobook;
+
+    public bool IsSoloSelected => SelectedSpouseChoice == MovementSpouseChoice.Solo;
+
+    public bool IsWithSpouseSelected => SelectedSpouseChoice == MovementSpouseChoice.WithSpouse;
 
     public string WalkChoiceStatusText => IsWalkSelected ? "Selected" : "Choose";
 
@@ -269,12 +315,21 @@ public sealed class MoveViewModel : ScreenViewModelBase, INotifyPropertyChanged
         ? "Selected"
         : HasSelectedTiming ? "Choose" : "Pick timing";
 
+    public string SoloChoiceStatusText => IsSoloSelected
+        ? "Selected"
+        : HasSelectedMindOccupier ? "Choose" : "Pick mind";
+
+    public string WithSpouseChoiceStatusText => IsWithSpouseSelected
+        ? "Selected"
+        : HasSelectedMindOccupier ? "Choose" : "Pick mind";
+
     public string EmptyStateText => HasSelectedActivity switch
     {
         false => "Choose one small movement activity.",
         true when !HasSelectedTiming => "Choose Now or Schedule next.",
         true when !HasSelectedMindOccupier => "Choose a mind occupier next.",
-        _ => "Choose spouse option next."
+        true when !HasSelectedSpouseOption => "Choose spouse option next.",
+        _ => "Ready to save movement activity."
     };
 
     public string SaveStatusText => "Movement is local-first and not saved yet.";
@@ -335,6 +390,19 @@ public sealed class MoveViewModel : ScreenViewModelBase, INotifyPropertyChanged
         return Task.CompletedTask;
     }
 
+    private Task ChooseSpouseAsync(MovementSpouseChoice spouseChoice)
+    {
+        if (!HasSelectedMindOccupier)
+        {
+            return Task.CompletedTask;
+        }
+
+        SelectedSpouseChoice = spouseChoice;
+        RefreshMovementDraftText();
+
+        return Task.CompletedTask;
+    }
+
     private void RefreshMovementDraftText()
     {
         if (!SelectedActivityType.HasValue)
@@ -351,18 +419,24 @@ public sealed class MoveViewModel : ScreenViewModelBase, INotifyPropertyChanged
         {
             MindOccupierText = $"{mindOccupierName} selected.";
         }
+        if (SelectedSpouseChoice.HasValue)
+        {
+            SpouseText = GetSpouseText(SelectedSpouseChoice.Value);
+        }
 
         if (SelectedTimingChoice == MovementTimingChoice.Now)
         {
             TimingText = "Now selected.";
             MovementPanelTitle = $"{activityName} Now";
             MovementPanelText = SelectedMindOccupierChoice.HasValue
-                ? $"{activityName} is ready to start now with {mindOccupierName.ToLowerInvariant()}."
+                ? $"{activityName} is ready to start now {BuildMindOccupierAndSpousePhrase(mindOccupierName)}."
                 : $"{activityName} is ready to start now for {PlannedMinutes} minutes.";
             MovementDraftStatusText = SelectedMindOccupierChoice.HasValue
-                ? $"{activityName} now with {mindOccupierName} ready."
+                ? $"{activityName} now {BuildDraftSupportPhrase(mindOccupierName)} ready."
                 : $"{activityName} now draft ready.";
-            StatusText = SelectedMindOccupierChoice.HasValue
+            StatusText = SelectedSpouseChoice.HasValue
+                ? GetSpouseStatusText(SelectedSpouseChoice.Value)
+                : SelectedMindOccupierChoice.HasValue
                 ? $"{mindOccupierName} selected."
                 : $"{activityName} set for now.";
             return;
@@ -374,12 +448,14 @@ public sealed class MoveViewModel : ScreenViewModelBase, INotifyPropertyChanged
             TimingText = $"Scheduled for {scheduledText}.";
             MovementPanelTitle = $"{activityName} Scheduled";
             MovementPanelText = SelectedMindOccupierChoice.HasValue
-                ? $"{activityName} is scheduled for {scheduledText} with {mindOccupierName.ToLowerInvariant()}."
+                ? $"{activityName} is scheduled for {scheduledText} {BuildMindOccupierAndSpousePhrase(mindOccupierName)}."
                 : $"{activityName} is scheduled for {scheduledText}.";
             MovementDraftStatusText = SelectedMindOccupierChoice.HasValue
-                ? $"{activityName} scheduled with {mindOccupierName} ready."
+                ? $"{activityName} scheduled {BuildDraftSupportPhrase(mindOccupierName)} ready."
                 : $"{activityName} scheduled draft ready.";
-            StatusText = SelectedMindOccupierChoice.HasValue
+            StatusText = SelectedSpouseChoice.HasValue
+                ? GetSpouseStatusText(SelectedSpouseChoice.Value)
+                : SelectedMindOccupierChoice.HasValue
                 ? $"{mindOccupierName} selected."
                 : $"{activityName} scheduled.";
             return;
@@ -397,6 +473,33 @@ public sealed class MoveViewModel : ScreenViewModelBase, INotifyPropertyChanged
         ChooseMusicCommand.RaiseCanExecuteChanged();
         ChoosePodcastCommand.RaiseCanExecuteChanged();
         ChooseAudiobookCommand.RaiseCanExecuteChanged();
+    }
+
+    private void RaiseSpouseCommandStatesChanged()
+    {
+        ChooseSoloCommand.RaiseCanExecuteChanged();
+        ChooseWithSpouseCommand.RaiseCanExecuteChanged();
+    }
+
+    private string BuildMindOccupierAndSpousePhrase(string mindOccupierName)
+    {
+        string mindOccupier = mindOccupierName.ToLowerInvariant();
+        return SelectedSpouseChoice switch
+        {
+            MovementSpouseChoice.Solo => $"with {mindOccupier} as a solo movement",
+            MovementSpouseChoice.WithSpouse => $"with {mindOccupier} and spouse support",
+            _ => $"with {mindOccupier}"
+        };
+    }
+
+    private string BuildDraftSupportPhrase(string mindOccupierName)
+    {
+        return SelectedSpouseChoice switch
+        {
+            MovementSpouseChoice.Solo => $"with {mindOccupierName} solo",
+            MovementSpouseChoice.WithSpouse => $"with {mindOccupierName} and spouse",
+            _ => $"with {mindOccupierName}"
+        };
     }
 
     private static string FormatScheduledFor(DateTimeOffset scheduledFor)
@@ -423,6 +526,26 @@ public sealed class MoveViewModel : ScreenViewModelBase, INotifyPropertyChanged
             MovementMindOccupierChoice.Podcast => "Podcast",
             MovementMindOccupierChoice.Audiobook => "Audiobook",
             _ => throw new ArgumentOutOfRangeException(nameof(mindOccupierChoice), mindOccupierChoice, "Unsupported mind occupier.")
+        };
+    }
+
+    private static string GetSpouseText(MovementSpouseChoice spouseChoice)
+    {
+        return spouseChoice switch
+        {
+            MovementSpouseChoice.Solo => "Solo movement selected.",
+            MovementSpouseChoice.WithSpouse => "With spouse selected.",
+            _ => throw new ArgumentOutOfRangeException(nameof(spouseChoice), spouseChoice, "Unsupported spouse option.")
+        };
+    }
+
+    private static string GetSpouseStatusText(MovementSpouseChoice spouseChoice)
+    {
+        return spouseChoice switch
+        {
+            MovementSpouseChoice.Solo => "Solo selected.",
+            MovementSpouseChoice.WithSpouse => "With spouse selected.",
+            _ => throw new ArgumentOutOfRangeException(nameof(spouseChoice), spouseChoice, "Unsupported spouse option.")
         };
     }
 

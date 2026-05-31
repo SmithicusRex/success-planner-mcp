@@ -733,6 +733,104 @@
                                    FontSize="17"
                                    FontWeight="SemiBold"
                                    TextWrapping="Wrap" />
+                        <StackPanel Margin="0,14,0,0">
+                            <Button Command="{Binding ChooseSoloCommand}"
+                                    Margin="0,0,0,8"
+                                    ToolTip="Choose Solo">
+                                <Button.Style>
+                                    <Style TargetType="Button" BasedOn="{StaticResource MoveTimingButtonStyle}">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsSoloSelected}" Value="True">
+                                                <Setter Property="Background" Value="{StaticResource MoveBrush}" />
+                                                <Setter Property="BorderBrush" Value="#A74E0C" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="10" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <Border Width="38"
+                                            Height="38"
+                                            CornerRadius="8"
+                                            Background="{StaticResource MoveSoftBrush}"
+                                            BorderBrush="#E6BE95"
+                                            BorderThickness="1">
+                                        <TextBlock Text="&#xE77B;"
+                                                   FontFamily="Segoe MDL2 Assets"
+                                                   FontSize="16"
+                                                   Foreground="{StaticResource MoveInkBrush}"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center" />
+                                    </Border>
+
+                                    <StackPanel Grid.Column="2"
+                                                VerticalAlignment="Center">
+                                        <TextBlock Text="Solo"
+                                                   Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                                   FontSize="16"
+                                                   FontWeight="SemiBold" />
+                                        <TextBlock Text="{Binding SoloChoiceStatusText}"
+                                                   Foreground="{StaticResource MoveInkBrush}"
+                                                   FontSize="12"
+                                                   FontWeight="SemiBold"
+                                                   Margin="0,2,0,0" />
+                                    </StackPanel>
+                                </Grid>
+                            </Button>
+
+                            <Button Command="{Binding ChooseWithSpouseCommand}"
+                                    ToolTip="Choose With Spouse">
+                                <Button.Style>
+                                    <Style TargetType="Button" BasedOn="{StaticResource MoveTimingButtonStyle}">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsWithSpouseSelected}" Value="True">
+                                                <Setter Property="Background" Value="{StaticResource MoveBrush}" />
+                                                <Setter Property="BorderBrush" Value="#A74E0C" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="10" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <Border Width="38"
+                                            Height="38"
+                                            CornerRadius="8"
+                                            Background="{StaticResource GreenSoftBrush}"
+                                            BorderBrush="#CDEAD5"
+                                            BorderThickness="1">
+                                        <TextBlock Text="&#xE716;"
+                                                   FontFamily="Segoe MDL2 Assets"
+                                                   FontSize="16"
+                                                   Foreground="#1E6B3A"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center" />
+                                    </Border>
+
+                                    <StackPanel Grid.Column="2"
+                                                VerticalAlignment="Center">
+                                        <TextBlock Text="With Spouse"
+                                                   Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                                   FontSize="16"
+                                                   FontWeight="SemiBold" />
+                                        <TextBlock Text="{Binding WithSpouseChoiceStatusText}"
+                                                   Foreground="{StaticResource MoveInkBrush}"
+                                                   FontSize="12"
+                                                   FontWeight="SemiBold"
+                                                   Margin="0,2,0,0" />
+                                    </StackPanel>
+                                </Grid>
+                            </Button>
+                        </StackPanel>
                     </StackPanel>
                 </Border>
 

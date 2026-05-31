@@ -970,7 +970,7 @@ Status:
 
 ~~10.5. Add mind occupier options.~~
 
-10.6. Add spouse option.
+~~10.6. Add spouse option.~~
 
 10.7. Save movement activity locally.
 
