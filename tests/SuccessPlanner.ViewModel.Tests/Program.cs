@@ -40,7 +40,8 @@ TestRunner.RunAll(
     ("StartWorkViewModel suggests a break after completion", StartWorkViewModelSuggestsBreakAfterCompletion),
     ("StartWorkViewModel creates task option display state", StartWorkViewModelCreatesTaskOptionDisplayState),
     ("StartWorkViewModel shows an empty focus state", StartWorkViewModelShowsEmptyFocusState),
-    ("StartWorkViewModel reports load failures", StartWorkViewModelReportsLoadFailures));
+    ("StartWorkViewModel reports load failures", StartWorkViewModelReportsLoadFailures),
+    ("MoveViewModel starts in a simple ready state", MoveViewModelStartsReady));
 
 static void CaptureViewModelStartsReady()
 {
@@ -1204,6 +1205,36 @@ static void StartWorkViewModelReportsLoadFailures()
     Assert.False(viewModel.UseSuggestionCommand.CanExecute(null), "Use Suggestion should disable after failure.");
     Assert.False(viewModel.IsLoading, "Loading flag should clear after failure.");
     Assert.True(viewModel.RefreshCommand.CanExecute(null), "Refresh should be available after failure.");
+}
+
+static void MoveViewModelStartsReady()
+{
+    MoveViewModel viewModel = new();
+
+    Assert.Equal(ScreenCatalog.Move, viewModel.Descriptor);
+    Assert.Equal("Move", viewModel.Title);
+    Assert.Equal("Walk, stretch, or work out.", viewModel.Subtitle);
+    Assert.Equal("\uE805", viewModel.IconGlyph);
+    Assert.Equal("#FFBE7A", viewModel.AccentColor);
+    Assert.Equal("Ready to plan movement.", viewModel.StatusText);
+    Assert.Equal("Choose Movement", viewModel.MovementPanelTitle);
+    Assert.Contains("Pick a small physical activity", viewModel.MovementPanelText);
+    Assert.Equal("No movement selected.", viewModel.SelectedActivityText);
+    Assert.Equal("Not scheduled yet.", viewModel.TimingText);
+    Assert.Equal("No mind occupier selected.", viewModel.MindOccupierText);
+    Assert.Equal("Solo movement.", viewModel.SpouseText);
+    Assert.Equal("No movement plan created yet.", viewModel.MovementDraftStatusText);
+    Assert.Equal(MovementSession.DefaultPlannedMinutes, viewModel.PlannedMinutes);
+    Assert.Equal("20 minute movement", viewModel.PlannedMinutesText);
+    Assert.Null(viewModel.SelectedActivityType, "Move should wait for a movement activity choice.");
+    Assert.False(viewModel.HasSelectedActivity, "Move should start without a selected activity.");
+    Assert.False(viewModel.HasMovementDraft, "Move should start without a movement draft.");
+    Assert.Equal("Choose one small movement activity.", viewModel.EmptyStateText);
+    Assert.Equal("Movement is local-first and not saved yet.", viewModel.SaveStatusText);
+
+    viewModel.OnNavigatedToAsync(CancellationToken.None).GetAwaiter().GetResult();
+
+    Assert.Equal("Ready to plan movement.", viewModel.StatusText);
 }
 
 static TaskItem CreateTask(

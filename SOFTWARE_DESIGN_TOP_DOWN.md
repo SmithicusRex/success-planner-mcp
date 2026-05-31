@@ -960,7 +960,7 @@ Status:
 
 ### 10. Move Workflow
 
-10.1. Create `MoveViewModel`.
+~~10.1. Create `MoveViewModel`.~~
 
 10.2. Create `MoveView`.
 
