@@ -940,7 +940,7 @@ Status:
 
 ~~9.2. Create `StartWorkView`.~~
 
-9.3. Suggest a best next action.
+~~9.3. Suggest a best next action.~~
 
 9.4. Add 10, 15, and 20 minute session choices.
 

@@ -22,6 +22,13 @@ public sealed class StartWorkViewModel : ScreenViewModelBase, INotifyPropertyCha
     private string _focusPanelTitle = "Choose Focus";
     private string _focusPanelText = "Pick one small action for a 20 minute focus session.";
     private string _focusIntention = "Choose one small action.";
+    private Guid? _suggestedTaskId;
+    private int _suggestedTaskScore;
+    private string _suggestedTaskTitle = "No suggestion yet.";
+    private string _suggestionPanelTitle = "Best Next";
+    private string _suggestionPanelText = "Load focus options to see the next small action.";
+    private string _suggestionReasonText = "No focus options loaded.";
+    private string _suggestionBadgeText = "Waiting";
 
     public StartWorkViewModel()
         : this((_, _) => Task.FromResult<IReadOnlyList<TaskItem>>([]))
@@ -46,6 +53,9 @@ public sealed class StartWorkViewModel : ScreenViewModelBase, INotifyPropertyCha
         RefreshCommand = new AsyncRelayCommand(
             () => LoadTasksAsync(CancellationToken.None),
             () => !IsLoading);
+        UseSuggestionCommand = new AsyncRelayCommand(
+            () => UseSuggestedTaskAsync(CancellationToken.None),
+            () => HasSuggestedTask && !IsLoading);
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -64,6 +74,8 @@ public sealed class StartWorkViewModel : ScreenViewModelBase, INotifyPropertyCha
 
     public AsyncRelayCommand RefreshCommand { get; }
 
+    public AsyncRelayCommand UseSuggestionCommand { get; }
+
     public bool IsLoading
     {
         get => _isLoading;
@@ -72,6 +84,7 @@ public sealed class StartWorkViewModel : ScreenViewModelBase, INotifyPropertyCha
             if (SetProperty(ref _isLoading, value))
             {
                 RefreshCommand.RaiseCanExecuteChanged();
+                UseSuggestionCommand.RaiseCanExecuteChanged();
             }
         }
     }
@@ -136,6 +149,57 @@ public sealed class StartWorkViewModel : ScreenViewModelBase, INotifyPropertyCha
         private set => SetProperty(ref _focusIntention, value);
     }
 
+    public Guid? SuggestedTaskId
+    {
+        get => _suggestedTaskId;
+        private set
+        {
+            if (SetProperty(ref _suggestedTaskId, value))
+            {
+                OnPropertyChanged(nameof(HasSuggestedTask));
+                UseSuggestionCommand.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
+    public bool HasSuggestedTask => SuggestedTaskId.HasValue;
+
+    public int SuggestedTaskScore
+    {
+        get => _suggestedTaskScore;
+        private set => SetProperty(ref _suggestedTaskScore, value);
+    }
+
+    public string SuggestedTaskTitle
+    {
+        get => _suggestedTaskTitle;
+        private set => SetProperty(ref _suggestedTaskTitle, value);
+    }
+
+    public string SuggestionPanelTitle
+    {
+        get => _suggestionPanelTitle;
+        private set => SetProperty(ref _suggestionPanelTitle, value);
+    }
+
+    public string SuggestionPanelText
+    {
+        get => _suggestionPanelText;
+        private set => SetProperty(ref _suggestionPanelText, value);
+    }
+
+    public string SuggestionReasonText
+    {
+        get => _suggestionReasonText;
+        private set => SetProperty(ref _suggestionReasonText, value);
+    }
+
+    public string SuggestionBadgeText
+    {
+        get => _suggestionBadgeText;
+        private set => SetProperty(ref _suggestionBadgeText, value);
+    }
+
     public int PlannedMinutes => FocusSession.DefaultPlannedMinutes;
 
     public string PlannedMinutesText => $"{PlannedMinutes} minute focus";
@@ -162,8 +226,13 @@ public sealed class StartWorkViewModel : ScreenViewModelBase, INotifyPropertyCha
                 .ThenBy(task => PrioritySortValue(task.Priority))
                 .ThenBy(task => task.Title, StringComparer.OrdinalIgnoreCase)
                 .ToList();
+            StartWorkSuggestion? suggestion = ChooseBestNextAction(focusItems, today);
             IReadOnlyList<StartWorkTaskOptionViewModel> focusOptions = focusItems
-                .Select(task => StartWorkTaskOptionViewModel.FromTask(task, today, SelectTaskAsync))
+                .Select(task => StartWorkTaskOptionViewModel.FromTask(
+                    task,
+                    today,
+                    SelectTaskAsync,
+                    isSuggestedAction: suggestion?.Task.Id == task.Id))
                 .ToList();
 
             _loadedTasksById.Clear();
@@ -178,13 +247,15 @@ public sealed class StartWorkViewModel : ScreenViewModelBase, INotifyPropertyCha
                 TaskOptions.Add(task);
             }
 
+            ApplySuggestion(suggestion);
+
             if (SelectedTaskId.HasValue && !_loadedTasksById.ContainsKey(SelectedTaskId.Value))
             {
                 ClearSelection();
             }
 
             UpdateTaskSummary();
-            StatusText = HasTaskOptions ? "Choose one focus task." : "No focus options ready.";
+            StatusText = HasSuggestedTask ? "Best next action suggested." : "No focus options ready.";
             EmptyStateText = HasTaskOptions
                 ? "Pick one small action and start when ready."
                 : "Capture or plan one tiny task before starting focus.";
@@ -198,6 +269,7 @@ public sealed class StartWorkViewModel : ScreenViewModelBase, INotifyPropertyCha
             _loadedTasksById.Clear();
             TaskOptions.Clear();
             ClearSelection();
+            ClearSuggestion();
             UpdateTaskSummary();
             StatusText = "Start could not load.";
             EmptyStateText = "Try Refresh, or return Home and open Start again.";
@@ -216,8 +288,32 @@ public sealed class StartWorkViewModel : ScreenViewModelBase, INotifyPropertyCha
         SelectedTaskTitle = taskOption.Title;
         FocusIntention = taskOption.Title;
         FocusPanelTitle = "Focus Selected";
-        FocusPanelText = $"{taskOption.Title} is ready for a {PlannedMinutes} minute focus session.";
-        StatusText = "Focus selected.";
+        FocusPanelText = taskOption.IsSuggestedAction
+            ? $"{taskOption.Title} is the suggested next action for a {PlannedMinutes} minute focus session."
+            : $"{taskOption.Title} is ready for a {PlannedMinutes} minute focus session.";
+        StatusText = taskOption.IsSuggestedAction ? "Suggested focus selected." : "Focus selected.";
+    }
+
+    public Task UseSuggestedTaskAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (!SuggestedTaskId.HasValue)
+        {
+            StatusText = "No suggestion available.";
+            return Task.CompletedTask;
+        }
+
+        StartWorkTaskOptionViewModel? suggestion = TaskOptions
+            .FirstOrDefault(task => task.Id == SuggestedTaskId.Value);
+        if (suggestion is null)
+        {
+            StatusText = "Suggestion needs refresh.";
+            return Task.CompletedTask;
+        }
+
+        SelectTask(suggestion);
+        return Task.CompletedTask;
     }
 
     public static bool ShouldShowTask(TaskItem task, DateOnly today)
@@ -254,6 +350,173 @@ public sealed class StartWorkViewModel : ScreenViewModelBase, INotifyPropertyCha
         FocusIntention = "Choose one small action.";
         FocusPanelTitle = "Choose Focus";
         FocusPanelText = "Pick one small action for a 20 minute focus session.";
+    }
+
+    private void ApplySuggestion(StartWorkSuggestion? suggestion)
+    {
+        if (suggestion is null)
+        {
+            ClearSuggestion();
+            return;
+        }
+
+        SuggestedTaskId = suggestion.Task.Id;
+        SuggestedTaskTitle = suggestion.Task.Title;
+        SuggestedTaskScore = suggestion.Score;
+        SuggestionPanelTitle = "Best Next";
+        SuggestionPanelText = $"Suggested: {suggestion.Task.Title}";
+        SuggestionReasonText = suggestion.ReasonText;
+        SuggestionBadgeText = suggestion.BadgeText;
+    }
+
+    private void ClearSuggestion()
+    {
+        SuggestedTaskId = null;
+        SuggestedTaskTitle = "No suggestion yet.";
+        SuggestedTaskScore = 0;
+        SuggestionPanelTitle = "Best Next";
+        SuggestionPanelText = "Load focus options to see the next small action.";
+        SuggestionReasonText = "No focus options loaded.";
+        SuggestionBadgeText = "Waiting";
+    }
+
+    private static StartWorkSuggestion? ChooseBestNextAction(IReadOnlyList<TaskItem> focusItems, DateOnly today)
+    {
+        if (focusItems.Count == 0)
+        {
+            return null;
+        }
+
+        return focusItems
+            .Select(task => new StartWorkSuggestion(
+                task,
+                CalculateSuggestionScore(task, today),
+                BuildSuggestionBadgeText(task, today),
+                BuildSuggestionReasonText(task, today)))
+            .OrderByDescending(suggestion => suggestion.Score)
+            .ThenBy(suggestion => FocusSortDate(suggestion.Task, today))
+            .ThenBy(suggestion => PrioritySortValue(suggestion.Task.Priority))
+            .ThenBy(suggestion => suggestion.Task.Title, StringComparer.OrdinalIgnoreCase)
+            .First();
+    }
+
+    private static int CalculateSuggestionScore(TaskItem task, DateOnly today)
+    {
+        int score = 0;
+
+        if (task.Status == TaskItemStatus.InProgress)
+        {
+            score += 100;
+        }
+
+        if (task.DueDate.HasValue && task.DueDate.Value < today)
+        {
+            score += 70 + Math.Min(14, today.DayNumber - task.DueDate.Value.DayNumber);
+        }
+        else if (task.DueDate.HasValue && task.DueDate.Value == today)
+        {
+            score += 60;
+        }
+
+        if (task.StartDate.HasValue && task.StartDate.Value <= today)
+        {
+            score += 40;
+        }
+
+        score += task.Priority switch
+        {
+            TaskPriority.Critical => 30,
+            TaskPriority.High => 20,
+            TaskPriority.Normal => 10,
+            TaskPriority.Low => 3,
+            _ => 0
+        };
+
+        if (task.IsTinyStep)
+        {
+            score += 20;
+        }
+
+        if (task.EstimatedMinutes.HasValue)
+        {
+            score += task.EstimatedMinutes.Value switch
+            {
+                <= FocusSession.DefaultPlannedMinutes => 15,
+                <= FocusSession.DefaultPlannedMinutes * 2 => 5,
+                _ => -10
+            };
+        }
+        else
+        {
+            score += 5;
+        }
+
+        if (string.Equals(task.EnergyLevel, "Low", StringComparison.OrdinalIgnoreCase))
+        {
+            score += 4;
+        }
+
+        return score;
+    }
+
+    private static string BuildSuggestionBadgeText(TaskItem task, DateOnly today)
+    {
+        if (task.Status == TaskItemStatus.InProgress)
+        {
+            return "Continue";
+        }
+
+        if (task.DueDate.HasValue && task.DueDate.Value < today)
+        {
+            return "Overdue";
+        }
+
+        if (task.DueDate.HasValue && task.DueDate.Value == today)
+        {
+            return "Due Today";
+        }
+
+        if (task.StartDate.HasValue && task.StartDate.Value <= today)
+        {
+            return "Selected Today";
+        }
+
+        if (task.IsTinyStep)
+        {
+            return "Tiny Step";
+        }
+
+        return "Ready";
+    }
+
+    private static string BuildSuggestionReasonText(TaskItem task, DateOnly today)
+    {
+        if (task.Status == TaskItemStatus.InProgress)
+        {
+            return "Already in progress, so continuing is the cleanest next step.";
+        }
+
+        if (task.DueDate.HasValue && task.DueDate.Value < today)
+        {
+            return "Overdue and ready now; one short focus block can move it forward.";
+        }
+
+        if (task.DueDate.HasValue && task.DueDate.Value == today)
+        {
+            return "Due today, so it is the clearest next commitment.";
+        }
+
+        if (task.StartDate.HasValue && task.StartDate.Value <= today)
+        {
+            return "Selected for today, so it belongs in this focus block.";
+        }
+
+        if (task.IsTinyStep)
+        {
+            return "Tiny enough to begin without extra preparation.";
+        }
+
+        return "Ready now and small enough to begin.";
     }
 
     private static int StatusSortValue(TaskItemStatus status)
@@ -326,6 +589,12 @@ public sealed class StartWorkViewModel : ScreenViewModelBase, INotifyPropertyCha
     {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
+
+    private sealed record StartWorkSuggestion(
+        TaskItem Task,
+        int Score,
+        string BadgeText,
+        string ReasonText);
 }
 
 public sealed class StartWorkTaskOptionViewModel
@@ -335,7 +604,8 @@ public sealed class StartWorkTaskOptionViewModel
     private StartWorkTaskOptionViewModel(
         TaskItem task,
         DateOnly today,
-        Func<StartWorkTaskOptionViewModel, Task>? selectTaskAsync)
+        Func<StartWorkTaskOptionViewModel, Task>? selectTaskAsync,
+        bool isSuggestedAction)
     {
         _selectTaskAsync = selectTaskAsync ?? (_ => Task.CompletedTask);
         Id = task.Id;
@@ -352,6 +622,7 @@ public sealed class StartWorkTaskOptionViewModel
         IsDueToday = task.DueDate.HasValue && task.DueDate.Value == today;
         IsSelectedForToday = task.StartDate.HasValue && task.StartDate.Value <= today;
         IsInProgress = task.Status == TaskItemStatus.InProgress;
+        IsSuggestedAction = isSuggestedAction;
         HasNotes = !string.IsNullOrWhiteSpace(task.Notes);
         NotesPreview = HasNotes ? BuildNotesPreview(task.Notes) : string.Empty;
         DueText = BuildDueText(task, today);
@@ -367,10 +638,11 @@ public sealed class StartWorkTaskOptionViewModel
         StatusBadgeBackground = BuildStatusBadgeBackground(task.Status);
         StatusBadgeForeground = BuildStatusBadgeForeground(task.Status);
         EstimateText = task.EstimatedMinutes.HasValue ? $"{task.EstimatedMinutes.Value} min" : "No estimate";
+        SuggestionBadgeText = isSuggestedAction ? "Suggested" : string.Empty;
         FocusBadgeText = BuildFocusBadgeText(task, today);
         FocusReasonText = BuildFocusReasonText(task, today);
         CardAccentColor = BuildCardAccentColor(task, today);
-        CardBorderColor = BuildCardBorderColor(task, today);
+        CardBorderColor = BuildCardBorderColor(task, today, isSuggestedAction);
         CardIconGlyph = BuildCardIconGlyph(task, today);
         CardToolTip = $"{task.Title} - {FocusReasonText} - {StatusText}";
         SelectCommand = new AsyncRelayCommand(SelectTaskAsync);
@@ -408,6 +680,8 @@ public sealed class StartWorkTaskOptionViewModel
 
     public bool IsInProgress { get; }
 
+    public bool IsSuggestedAction { get; }
+
     public bool HasNotes { get; }
 
     public string DueText { get; }
@@ -434,6 +708,8 @@ public sealed class StartWorkTaskOptionViewModel
 
     public string StatusBadgeForeground { get; }
 
+    public string SuggestionBadgeText { get; }
+
     public string FocusBadgeText { get; }
 
     public string FocusReasonText { get; }
@@ -451,10 +727,11 @@ public sealed class StartWorkTaskOptionViewModel
     public static StartWorkTaskOptionViewModel FromTask(
         TaskItem task,
         DateOnly today,
-        Func<StartWorkTaskOptionViewModel, Task>? selectTaskAsync = null)
+        Func<StartWorkTaskOptionViewModel, Task>? selectTaskAsync = null,
+        bool isSuggestedAction = false)
     {
         ArgumentNullException.ThrowIfNull(task);
-        return new StartWorkTaskOptionViewModel(task, today, selectTaskAsync);
+        return new StartWorkTaskOptionViewModel(task, today, selectTaskAsync, isSuggestedAction);
     }
 
     private Task SelectTaskAsync()
@@ -688,8 +965,13 @@ public sealed class StartWorkTaskOptionViewModel
         return "#A8E6B1";
     }
 
-    private static string BuildCardBorderColor(TaskItem task, DateOnly today)
+    private static string BuildCardBorderColor(TaskItem task, DateOnly today, bool isSuggestedAction)
     {
+        if (isSuggestedAction)
+        {
+            return "#65BFB8";
+        }
+
         if (task.Status == TaskItemStatus.InProgress)
         {
             return "#B7DEDB";

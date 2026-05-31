@@ -135,6 +135,15 @@
                 </DataTrigger>
             </Style.Triggers>
         </Style>
+
+        <Style x:Key="SuggestionBadgeVisibilityStyle" TargetType="Border">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsSuggestedAction}" Value="True">
+                    <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
     </UserControl.Resources>
 
     <Grid>
@@ -364,6 +373,18 @@
                                                                    FontSize="12"
                                                                    FontWeight="SemiBold" />
                                                     </Border>
+                                                    <Border Background="#FFF6D6"
+                                                            BorderBrush="#E4CD75"
+                                                            BorderThickness="1"
+                                                            CornerRadius="8"
+                                                            Padding="9,5"
+                                                            Margin="0,0,8,8"
+                                                            Style="{StaticResource SuggestionBadgeVisibilityStyle}">
+                                                        <TextBlock Text="{Binding SuggestionBadgeText}"
+                                                                   Foreground="#765A00"
+                                                                   FontSize="12"
+                                                                   FontWeight="SemiBold" />
+                                                    </Border>
                                                 </WrapPanel>
 
                                                 <Grid Margin="0,4,0,0">
@@ -447,6 +468,8 @@
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="18" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="18" />
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
 
@@ -512,6 +535,77 @@
                 </Border>
 
                 <Border Grid.Row="2"
+                        Background="{StaticResource PanelBrush}"
+                        BorderBrush="#E5E1D8"
+                        BorderThickness="1"
+                        CornerRadius="8"
+                        Padding="22">
+                    <StackPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel Orientation="Horizontal">
+                                <Border Width="44"
+                                        Height="44"
+                                        CornerRadius="8"
+                                        Background="#FFE08A"
+                                        Margin="0,0,12,0">
+                                    <TextBlock Text="&#xE9D5;"
+                                               FontFamily="Segoe MDL2 Assets"
+                                               FontSize="18"
+                                               Foreground="{StaticResource InkBrush}"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center" />
+                                </Border>
+
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding SuggestionPanelTitle}"
+                                               Style="{StaticResource SectionTitleStyle}"
+                                               Margin="0,0,0,2" />
+                                    <TextBlock Text="{Binding SuggestionBadgeText}"
+                                               Foreground="#765A00"
+                                               FontSize="13"
+                                               FontWeight="SemiBold" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Grid>
+
+                        <Border Height="10"
+                                CornerRadius="5"
+                                Background="#FFE08A"
+                                Margin="0,4,0,16" />
+                        <TextBlock Text="{Binding SuggestionPanelText}"
+                                   Foreground="{StaticResource InkBrush}"
+                                   FontSize="15"
+                                   FontWeight="SemiBold"
+                                   TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding SuggestionReasonText}"
+                                   Style="{StaticResource QuietTextStyle}"
+                                   Margin="0,8,0,0" />
+
+                        <Button Command="{Binding UseSuggestionCommand}"
+                                Style="{StaticResource CardActionButtonStyle}"
+                                MinWidth="148"
+                                Margin="0,16,0,0"
+                                HorizontalAlignment="Left"
+                                ToolTip="Use suggested action">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE768;"
+                                           FontFamily="Segoe MDL2 Assets"
+                                           FontSize="13"
+                                           Margin="0,0,6,0"
+                                           VerticalAlignment="Center" />
+                                <TextBlock Text="Use Suggestion"
+                                           VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                </Border>
+
+                <Border Grid.Row="4"
                         Background="{StaticResource PanelBrush}"
                         BorderBrush="#E5E1D8"
                         BorderThickness="1"

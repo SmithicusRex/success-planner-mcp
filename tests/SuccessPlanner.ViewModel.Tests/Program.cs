@@ -28,6 +28,8 @@ TestRunner.RunAll(
     ("DoneViewModel reports load failures", DoneViewModelReportsLoadFailures),
     ("StartWorkViewModel starts in a simple ready state", StartWorkViewModelStartsReady),
     ("StartWorkViewModel loads focus task options", StartWorkViewModelLoadsFocusTaskOptions),
+    ("StartWorkViewModel suggests a best next action", StartWorkViewModelSuggestsBestNextAction),
+    ("StartWorkViewModel uses the suggested action", StartWorkViewModelUsesSuggestedAction),
     ("StartWorkViewModel selects a focus task", StartWorkViewModelSelectsFocusTask),
     ("StartWorkViewModel creates task option display state", StartWorkViewModelCreatesTaskOptionDisplayState),
     ("StartWorkViewModel shows an empty focus state", StartWorkViewModelShowsEmptyFocusState),
@@ -678,12 +680,19 @@ static void StartWorkViewModelStartsReady()
     Assert.Equal("Choose Focus", viewModel.FocusPanelTitle);
     Assert.Contains("20 minute", viewModel.FocusPanelText);
     Assert.Equal("Choose one small action.", viewModel.FocusIntention);
+    Assert.False(viewModel.HasSuggestedTask, "Start should begin without a best-next suggestion.");
+    Assert.Equal("No suggestion yet.", viewModel.SuggestedTaskTitle);
+    Assert.Equal("Best Next", viewModel.SuggestionPanelTitle);
+    Assert.Equal("Waiting", viewModel.SuggestionBadgeText);
+    Assert.Contains("Load focus options", viewModel.SuggestionPanelText);
+    Assert.Equal("No focus options loaded.", viewModel.SuggestionReasonText);
     Assert.Equal(FocusSession.DefaultPlannedMinutes, viewModel.PlannedMinutes);
     Assert.Equal("20 minute focus", viewModel.PlannedMinutesText);
     Assert.False(viewModel.HasTaskOptions, "Start should begin with no loaded focus options.");
     Assert.False(viewModel.HasSelectedTask, "Start should begin without a selected focus task.");
     Assert.False(viewModel.IsLoading, "Start should not begin in a loading state.");
     Assert.True(viewModel.RefreshCommand.CanExecute(null), "Refresh should be available when Start is idle.");
+    Assert.False(viewModel.UseSuggestionCommand.CanExecute(null), "Use Suggestion should wait for a suggestion.");
 }
 
 static void StartWorkViewModelLoadsFocusTaskOptions()
@@ -716,6 +725,8 @@ static void StartWorkViewModelLoadsFocusTaskOptions()
     Assert.Equal(4, viewModel.Tasks.Count);
     Assert.Equal("Finish active task", viewModel.TaskOptions[0].Title);
     Assert.True(viewModel.TaskOptions[0].IsInProgress, "In-progress focus should sort first.");
+    Assert.True(viewModel.TaskOptions[0].IsSuggestedAction, "In-progress focus should be suggested first.");
+    Assert.Equal("Suggested", viewModel.TaskOptions[0].SuggestionBadgeText);
     Assert.Equal("Call the pharmacy", viewModel.TaskOptions[1].Title);
     Assert.True(viewModel.TaskOptions[1].IsOverdue, "Overdue focus should be marked overdue.");
     Assert.Equal("Pay the bill", viewModel.TaskOptions[2].Title);
@@ -727,9 +738,69 @@ static void StartWorkViewModelLoadsFocusTaskOptions()
     Assert.False(viewModel.TaskOptions.Any(task => task.Title == "Loose captured thought"), "Loose captures should wait for planning.");
     Assert.False(viewModel.TaskOptions.Any(task => task.Title == "Already complete"), "Done task should not load into Start.");
     Assert.True(viewModel.HasTaskOptions, "Loaded Start tasks should set HasTaskOptions.");
+    Assert.True(viewModel.HasSuggestedTask, "Loaded focus options should produce a best-next suggestion.");
+    Assert.Equal(inProgress.Id, viewModel.SuggestedTaskId.GetValueOrDefault());
+    Assert.Equal("Finish active task", viewModel.SuggestedTaskTitle);
+    Assert.Equal("Continue", viewModel.SuggestionBadgeText);
+    Assert.Contains("Already in progress", viewModel.SuggestionReasonText);
+    Assert.True(viewModel.UseSuggestionCommand.CanExecute(null), "Use Suggestion should enable after a suggestion loads.");
     Assert.Equal("4 options", viewModel.TaskCountText);
-    Assert.Equal("Choose one focus task.", viewModel.StatusText);
+    Assert.Equal("Best next action suggested.", viewModel.StatusText);
     Assert.Equal("Pick one small action and start when ready.", viewModel.EmptyStateText);
+}
+
+static void StartWorkViewModelSuggestsBestNextAction()
+{
+    DateOnly today = new(2026, 5, 30);
+    TaskItem overdueTinyStep = CreateTask("Call the pharmacy", dueDate: today.AddDays(-1));
+    overdueTinyStep.MarkTinyStep();
+    overdueTinyStep.SetEstimate(15);
+    overdueTinyStep.SetEnergyLevel("Low");
+    TaskItem dueTodayLarge = CreateTask("Draft the larger plan", dueDate: today, priority: TaskPriority.Critical);
+    dueTodayLarge.SetEstimate(90);
+    TaskItem selectedToday = CreateTask("Sketch the next panel", startDate: today, priority: TaskPriority.High);
+    StartWorkViewModel viewModel = new(
+        (_, _) => Task.FromResult<IReadOnlyList<TaskItem>>([dueTodayLarge, selectedToday, overdueTinyStep]),
+        () => today);
+
+    viewModel.LoadTasksAsync().GetAwaiter().GetResult();
+
+    Assert.True(viewModel.HasSuggestedTask, "Start should suggest one best next action when options exist.");
+    Assert.Equal(overdueTinyStep.Id, viewModel.SuggestedTaskId.GetValueOrDefault());
+    Assert.Equal("Call the pharmacy", viewModel.SuggestedTaskTitle);
+    Assert.Equal("Best Next", viewModel.SuggestionPanelTitle);
+    Assert.Equal("Suggested: Call the pharmacy", viewModel.SuggestionPanelText);
+    Assert.Equal("Overdue", viewModel.SuggestionBadgeText);
+    Assert.Contains("Overdue and ready now", viewModel.SuggestionReasonText);
+    Assert.True(viewModel.SuggestedTaskScore > 0, "Suggested task should expose a positive score.");
+
+    StartWorkTaskOptionViewModel suggestedOption = viewModel.TaskOptions.First(task => task.Id == overdueTinyStep.Id);
+    Assert.True(suggestedOption.IsSuggestedAction, "Suggested option should be marked for the view.");
+    Assert.Equal("Suggested", suggestedOption.SuggestionBadgeText);
+    Assert.Equal("#65BFB8", suggestedOption.CardBorderColor);
+}
+
+static void StartWorkViewModelUsesSuggestedAction()
+{
+    DateOnly today = new(2026, 5, 30);
+    TaskItem dueToday = CreateTask("Pay the bill", dueDate: today, priority: TaskPriority.High);
+    TaskItem selectedToday = CreateTask("Sketch the next panel", startDate: today);
+    StartWorkViewModel viewModel = new(
+        (_, _) => Task.FromResult<IReadOnlyList<TaskItem>>([selectedToday, dueToday]),
+        () => today);
+
+    viewModel.LoadTasksAsync().GetAwaiter().GetResult();
+    Assert.True(viewModel.UseSuggestionCommand.CanExecute(null), "Use Suggestion should be enabled after load.");
+
+    viewModel.UseSuggestedTaskAsync().GetAwaiter().GetResult();
+
+    Assert.Equal(dueToday.Id, viewModel.SelectedTaskId.GetValueOrDefault());
+    Assert.Equal("Pay the bill", viewModel.SelectedTaskTitle);
+    Assert.True(viewModel.HasSelectedTask, "Using the suggestion should select a focus task.");
+    Assert.Equal("Pay the bill", viewModel.FocusIntention);
+    Assert.Equal("Focus Selected", viewModel.FocusPanelTitle);
+    Assert.Contains("suggested next action", viewModel.FocusPanelText);
+    Assert.Equal("Suggested focus selected.", viewModel.StatusText);
 }
 
 static void StartWorkViewModelSelectsFocusTask()
@@ -752,7 +823,7 @@ static void StartWorkViewModelSelectsFocusTask()
     Assert.Equal("Draft the first Start screen", viewModel.FocusIntention);
     Assert.Equal("Focus Selected", viewModel.FocusPanelTitle);
     Assert.Contains("20 minute focus session", viewModel.FocusPanelText);
-    Assert.Equal("Focus selected.", viewModel.StatusText);
+    Assert.Equal("Suggested focus selected.", viewModel.StatusText);
 }
 
 static void StartWorkViewModelCreatesTaskOptionDisplayState()
@@ -776,6 +847,8 @@ static void StartWorkViewModelCreatesTaskOptionDisplayState()
     Assert.Equal("15 min", overdueOption.EstimateText);
     Assert.Equal("Low", overdueOption.EnergyLevel);
     Assert.True(overdueOption.IsTinyStep, "Tiny-step task should expose tiny-step display state.");
+    Assert.False(overdueOption.IsSuggestedAction, "Standalone option should not mark itself suggested.");
+    Assert.Equal(string.Empty, overdueOption.SuggestionBadgeText);
     Assert.Equal("Tiny step", overdueOption.FocusBadgeText);
     Assert.Contains("Overdue", overdueOption.FocusReasonText);
     Assert.Equal("#FFBE7A", overdueOption.CardAccentColor);
@@ -808,6 +881,10 @@ static void StartWorkViewModelShowsEmptyFocusState()
     Assert.Equal("No focus options ready.", viewModel.StatusText);
     Assert.Contains("Capture or plan", viewModel.EmptyStateText);
     Assert.False(viewModel.HasSelectedTask, "Empty Start should not select a task.");
+    Assert.False(viewModel.HasSuggestedTask, "Empty Start should not suggest a task.");
+    Assert.Equal("No suggestion yet.", viewModel.SuggestedTaskTitle);
+    Assert.Equal("Waiting", viewModel.SuggestionBadgeText);
+    Assert.False(viewModel.UseSuggestionCommand.CanExecute(null), "Use Suggestion should disable when empty.");
 }
 
 static void StartWorkViewModelReportsLoadFailures()
@@ -823,6 +900,9 @@ static void StartWorkViewModelReportsLoadFailures()
     Assert.Equal("Start could not load.", viewModel.StatusText);
     Assert.Contains("Try Refresh", viewModel.EmptyStateText);
     Assert.False(viewModel.HasSelectedTask, "Failed load should clear any selected focus task.");
+    Assert.False(viewModel.HasSuggestedTask, "Failed load should clear the best-next suggestion.");
+    Assert.Equal("No suggestion yet.", viewModel.SuggestedTaskTitle);
+    Assert.False(viewModel.UseSuggestionCommand.CanExecute(null), "Use Suggestion should disable after failure.");
     Assert.False(viewModel.IsLoading, "Loading flag should clear after failure.");
     Assert.True(viewModel.RefreshCommand.CanExecute(null), "Refresh should be available after failure.");
 }
