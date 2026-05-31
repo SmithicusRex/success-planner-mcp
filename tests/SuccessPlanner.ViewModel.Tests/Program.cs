@@ -335,49 +335,79 @@ static void TodayViewModelCreatesTaskCardDisplayState()
 static void TodayViewModelHandlesTaskCardActions()
 {
     DateOnly today = new(2026, 5, 30);
-    TaskItem task = CreateTask("Finish the sketch", dueDate: today);
-    task.UpdateNotes("Use the calmer color set.");
+    TaskItem startTask = CreateTask("Start the sketch", dueDate: today);
+    TaskItem doneTask = CreateTask("Finish the sketch", dueDate: today);
+    TaskItem snoozeTask = CreateTask("Call the printer", dueDate: today);
+    TaskItem noteTask = CreateTask("Choose calmer color set", dueDate: today);
+    noteTask.UpdateNotes("Use the calmer color set.");
+    List<(Guid Id, TaskItemStatus Status, DateOnly? DueDate, DateOnly? StartDate, string Notes)> savedTasks = [];
     TodayViewModel viewModel = new(
-        (_, _) => Task.FromResult<IReadOnlyList<TaskItem>>([task]),
+        (_, _) => Task.FromResult<IReadOnlyList<TaskItem>>([startTask, doneTask, snoozeTask, noteTask]),
+        (task, _) =>
+        {
+            savedTasks.Add((task.Id, task.Status, task.DueDate, task.StartDate, task.Notes));
+            return Task.CompletedTask;
+        },
         () => today);
 
     viewModel.LoadTasksAsync().GetAwaiter().GetResult();
-    TodayTaskCardViewModel card = viewModel.TaskCards[0];
+    TodayTaskCardViewModel startCard = viewModel.TaskCards.First(card => card.Id == startTask.Id);
 
-    Assert.True(card.StartCommand.CanExecute(null), "Start should be available on Today cards.");
-    Assert.True(card.DoneCommand.CanExecute(null), "Done should be available on Today cards.");
-    Assert.True(card.SnoozeCommand.CanExecute(null), "Snooze should be available on Today cards.");
-    Assert.True(card.NoteCommand.CanExecute(null), "Note should be available on Today cards.");
+    Assert.True(startCard.StartCommand.CanExecute(null), "Start should be available on Today cards.");
+    Assert.True(startCard.DoneCommand.CanExecute(null), "Done should be available on Today cards.");
+    Assert.True(startCard.SnoozeCommand.CanExecute(null), "Snooze should be available on Today cards.");
+    Assert.True(startCard.NoteCommand.CanExecute(null), "Note should be available on Today cards.");
 
-    card.StartCommand.Execute(null);
+    viewModel.ExecuteTaskActionAsync(startCard, TodayTaskAction.Start).GetAwaiter().GetResult();
 
     Assert.Equal(TodayTaskAction.Start, viewModel.SelectedAction);
-    Assert.Equal(task.Id, viewModel.SelectedTaskId.GetValueOrDefault());
-    Assert.Equal("Finish the sketch", viewModel.SelectedTaskTitle);
+    Assert.Equal(startTask.Id, viewModel.SelectedTaskId.GetValueOrDefault());
+    Assert.Equal("Start the sketch", viewModel.SelectedTaskTitle);
     Assert.Equal("Start", viewModel.ActionPanelTitle);
-    Assert.Contains("focus", viewModel.ActionPanelText);
-    Assert.Equal("Start selected.", viewModel.StatusText);
+    Assert.Contains("started locally", viewModel.ActionPanelText);
+    Assert.Equal("Start saved locally.", viewModel.StatusText);
     Assert.False(viewModel.IsNoteActionSelected, "Start should not show the note composer.");
+    Assert.Equal(TaskItemStatus.InProgress, startTask.Status);
+    Assert.Equal(TaskItemStatus.InProgress, savedTasks[^1].Status);
+    Assert.Equal("In progress", viewModel.TaskCards.First(card => card.Id == startTask.Id).StatusText);
 
-    card.DoneCommand.Execute(null);
+    TodayTaskCardViewModel doneCard = viewModel.TaskCards.First(card => card.Id == doneTask.Id);
+    viewModel.ExecuteTaskActionAsync(doneCard, TodayTaskAction.Done).GetAwaiter().GetResult();
     Assert.Equal(TodayTaskAction.Done, viewModel.SelectedAction);
     Assert.Equal("Done", viewModel.ActionPanelTitle);
-    Assert.Equal("Done selected.", viewModel.StatusText);
+    Assert.Equal("Done saved locally.", viewModel.StatusText);
+    Assert.Equal(TaskItemStatus.Done, doneTask.Status);
+    Assert.Equal(TaskItemStatus.Done, savedTasks[^1].Status);
+    Assert.False(viewModel.TaskCards.Any(card => card.Id == doneTask.Id), "Done task should leave Today cards.");
 
-    card.SnoozeCommand.Execute(null);
+    TodayTaskCardViewModel snoozeCard = viewModel.TaskCards.First(card => card.Id == snoozeTask.Id);
+    viewModel.ExecuteTaskActionAsync(snoozeCard, TodayTaskAction.Snooze).GetAwaiter().GetResult();
     Assert.Equal(TodayTaskAction.Snooze, viewModel.SelectedAction);
     Assert.Equal("Snooze", viewModel.ActionPanelTitle);
     Assert.Equal("#FFBE7A", viewModel.ActionPanelAccentColor);
-    Assert.Equal("Snooze selected.", viewModel.StatusText);
+    Assert.Equal("Snooze saved locally.", viewModel.StatusText);
+    Assert.Equal(today.AddDays(1), snoozeTask.DueDate);
+    Assert.Equal(today.AddDays(1), snoozeTask.StartDate);
+    Assert.Equal(today.AddDays(1), savedTasks[^1].DueDate);
+    Assert.False(viewModel.TaskCards.Any(card => card.Id == snoozeTask.Id), "Snoozed task should leave Today cards.");
 
-    card.NoteCommand.Execute(null);
+    TodayTaskCardViewModel noteCard = viewModel.TaskCards.First(card => card.Id == noteTask.Id);
+    viewModel.ExecuteTaskActionAsync(noteCard, TodayTaskAction.Note).GetAwaiter().GetResult();
     Assert.Equal(TodayTaskAction.Note, viewModel.SelectedAction);
     Assert.Equal("Note", viewModel.ActionPanelTitle);
     Assert.True(viewModel.IsNoteActionSelected, "Note should show the note composer.");
     Assert.Equal("Use the calmer color set.", viewModel.NoteDraft);
+    Assert.Equal("Note ready.", viewModel.StatusText);
+    Assert.True(viewModel.SaveNoteCommand.CanExecute(null), "Note should enable Save Note.");
 
     viewModel.NoteDraft = "Remember the calmer color set.";
+    viewModel.SaveSelectedNoteAsync().GetAwaiter().GetResult();
+
     Assert.Equal("Remember the calmer color set.", viewModel.NoteDraft);
+    Assert.Equal("Remember the calmer color set.", noteTask.Notes);
+    Assert.Equal("Remember the calmer color set.", savedTasks[^1].Notes);
+    Assert.Equal("Note saved locally.", viewModel.StatusText);
+    Assert.Equal("Remember the calmer color set.", viewModel.TaskCards.First(card => card.Id == noteTask.Id).NotesPreview);
 }
 
 static void TodayViewModelShowsEmptyTodayState()

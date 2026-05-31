@@ -20,8 +20,11 @@ public sealed class TodayViewModel : ScreenViewModelBase, INotifyPropertyChanged
 {
     private const string ReadyStatus = "Ready to load today.";
     private readonly Func<DateOnly, CancellationToken, Task<IReadOnlyList<TaskItem>>> _loadTodayTasksAsync;
+    private readonly Func<TaskItem, CancellationToken, Task> _saveTaskAsync;
     private readonly Func<DateOnly> _todayProvider;
+    private readonly Dictionary<Guid, TaskItem> _loadedTasksById = [];
     private bool _isLoading;
+    private bool _isActionSaving;
     private string _statusText = ReadyStatus;
     private string _emptyStateText = "No tasks due today.";
     private string _taskCountText = "0 tasks";
@@ -50,14 +53,27 @@ public sealed class TodayViewModel : ScreenViewModelBase, INotifyPropertyChanged
     public TodayViewModel(
         Func<DateOnly, CancellationToken, Task<IReadOnlyList<TaskItem>>> loadTodayTasksAsync,
         Func<DateOnly>? todayProvider = null)
+        : this(loadTodayTasksAsync, MissingTaskRepositorySaveAsync, todayProvider)
+    {
+    }
+
+    public TodayViewModel(
+        Func<DateOnly, CancellationToken, Task<IReadOnlyList<TaskItem>>> loadTodayTasksAsync,
+        Func<TaskItem, CancellationToken, Task> saveTaskAsync,
+        Func<DateOnly>? todayProvider = null)
         : base(ScreenCatalog.Today)
     {
         ArgumentNullException.ThrowIfNull(loadTodayTasksAsync);
+        ArgumentNullException.ThrowIfNull(saveTaskAsync);
         _loadTodayTasksAsync = loadTodayTasksAsync;
+        _saveTaskAsync = saveTaskAsync;
         _todayProvider = todayProvider ?? (() => DateOnly.FromDateTime(DateTime.Today));
         RefreshCommand = new AsyncRelayCommand(
             () => LoadTasksAsync(CancellationToken.None),
             () => !IsLoading);
+        SaveNoteCommand = new AsyncRelayCommand(
+            () => SaveSelectedNoteAsync(CancellationToken.None),
+            () => CanSaveNote);
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -75,6 +91,8 @@ public sealed class TodayViewModel : ScreenViewModelBase, INotifyPropertyChanged
     public ObservableCollection<TodayTaskCardViewModel> Tasks => TaskCards;
 
     public AsyncRelayCommand RefreshCommand { get; }
+
+    public AsyncRelayCommand SaveNoteCommand { get; }
 
     public bool IsLoading
     {
@@ -107,6 +125,20 @@ public sealed class TodayViewModel : ScreenViewModelBase, INotifyPropertyChanged
     }
 
     public bool HasTasks => TaskCards.Count > 0;
+
+    public bool IsActionSaving
+    {
+        get => _isActionSaving;
+        private set
+        {
+            if (SetProperty(ref _isActionSaving, value))
+            {
+                SaveNoteCommand.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
+    public bool CanSaveNote => IsNoteActionSelected && SelectedTaskId.HasValue && !IsActionSaving;
 
     public TodayTaskAction SelectedAction
     {
@@ -159,7 +191,13 @@ public sealed class TodayViewModel : ScreenViewModelBase, INotifyPropertyChanged
     public string NoteDraft
     {
         get => _noteDraft;
-        set => SetProperty(ref _noteDraft, value);
+        set
+        {
+            if (SetProperty(ref _noteDraft, value))
+            {
+                SaveNoteCommand.RaiseCanExecuteChanged();
+            }
+        }
     }
 
     public override Task OnNavigatedToAsync(CancellationToken cancellationToken)
@@ -177,13 +215,24 @@ public sealed class TodayViewModel : ScreenViewModelBase, INotifyPropertyChanged
         {
             DateOnly today = _todayProvider();
             IReadOnlyList<TaskItem> loadedTasks = await _loadTodayTasksAsync(today, cancellationToken);
-            IReadOnlyList<TodayTaskCardViewModel> todayTasks = loadedTasks
+            IReadOnlyList<TaskItem> todayItems = loadedTasks
                 .Where(task => ShouldShowTask(task, today))
                 .OrderBy(task => TodaySortDate(task, today))
                 .ThenBy(task => PrioritySortValue(task.Priority))
                 .ThenBy(task => task.Title, StringComparer.OrdinalIgnoreCase)
-                .Select(task => TodayTaskCardViewModel.FromTask(task, today, SelectTaskAction))
                 .ToList();
+            IReadOnlyList<TodayTaskCardViewModel> todayTasks = todayItems
+                .Select(task => TodayTaskCardViewModel.FromTask(
+                    task,
+                    today,
+                    (card, action) => ExecuteTaskActionAsync(card, action)))
+                .ToList();
+
+            _loadedTasksById.Clear();
+            foreach (TaskItem task in todayItems)
+            {
+                _loadedTasksById[task.Id] = task;
+            }
 
             TaskCards.Clear();
             foreach (TodayTaskCardViewModel task in todayTasks)
@@ -203,6 +252,7 @@ public sealed class TodayViewModel : ScreenViewModelBase, INotifyPropertyChanged
         }
         catch (Exception)
         {
+            _loadedTasksById.Clear();
             TaskCards.Clear();
             UpdateTaskSummary();
             StatusText = "Today could not load.";
@@ -284,6 +334,115 @@ public sealed class TodayViewModel : ScreenViewModelBase, INotifyPropertyChanged
                 StatusText = HasTasks ? "Today is ready." : "Today is clear.";
                 break;
         }
+
+        OnPropertyChanged(nameof(CanSaveNote));
+        SaveNoteCommand.RaiseCanExecuteChanged();
+    }
+
+    public async Task ExecuteTaskActionAsync(
+        TodayTaskCardViewModel taskCard,
+        TodayTaskAction action,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(taskCard);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (!_loadedTasksById.TryGetValue(taskCard.Id, out TaskItem? task))
+        {
+            SelectTaskAction(taskCard, action);
+            StatusText = "Task needs refresh.";
+            ActionPanelText = "Refresh Today and try again.";
+            return;
+        }
+
+        SelectTaskAction(taskCard, action);
+
+        if (action == TodayTaskAction.Note)
+        {
+            StatusText = "Note ready.";
+            return;
+        }
+
+        try
+        {
+            IsActionSaving = true;
+            DateOnly today = _todayProvider();
+
+            switch (action)
+            {
+                case TodayTaskAction.Start:
+                    task.Start();
+                    await _saveTaskAsync(task, cancellationToken);
+                    ReplaceTaskCard(task, today);
+                    ActionPanelText = $"{task.Title} was started locally.";
+                    StatusText = "Start saved locally.";
+                    break;
+                case TodayTaskAction.Done:
+                    task.Complete();
+                    await _saveTaskAsync(task, cancellationToken);
+                    RemoveTaskCard(task.Id);
+                    ActionPanelText = $"{task.Title} was marked done locally.";
+                    StatusText = "Done saved locally.";
+                    break;
+                case TodayTaskAction.Snooze:
+                    DateOnly snoozeDate = today.AddDays(1);
+                    task.Schedule(snoozeDate, snoozeDate);
+                    await _saveTaskAsync(task, cancellationToken);
+                    RemoveTaskCard(task.Id);
+                    ActionPanelText = $"{task.Title} was snoozed to {snoozeDate:MMM d}.";
+                    StatusText = "Snooze saved locally.";
+                    break;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            StatusText = "Action save failed.";
+            ActionPanelText = "The action could not be saved locally. Try Refresh and repeat the action.";
+        }
+        finally
+        {
+            IsActionSaving = false;
+        }
+    }
+
+    public async Task SaveSelectedNoteAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (!SelectedTaskId.HasValue || !_loadedTasksById.TryGetValue(SelectedTaskId.Value, out TaskItem? task))
+        {
+            StatusText = "Task needs refresh.";
+            ActionPanelText = "Refresh Today and try the note again.";
+            return;
+        }
+
+        try
+        {
+            IsActionSaving = true;
+            task.UpdateNotes(NoteDraft);
+            await _saveTaskAsync(task, cancellationToken);
+            ReplaceTaskCard(task, _todayProvider());
+            SelectedTaskTitle = task.Title;
+            ActionPanelText = $"Note saved locally for {task.Title}.";
+            StatusText = "Note saved locally.";
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            StatusText = "Note save failed.";
+            ActionPanelText = "The note could not be saved locally. Try Refresh and repeat the note.";
+        }
+        finally
+        {
+            IsActionSaving = false;
+        }
     }
 
     private static Func<DateOnly, CancellationToken, Task<IReadOnlyList<TaskItem>>> CreateTodayLoader(
@@ -291,6 +450,52 @@ public sealed class TodayViewModel : ScreenViewModelBase, INotifyPropertyChanged
     {
         ArgumentNullException.ThrowIfNull(loadTasksAsync);
         return (_, cancellationToken) => loadTasksAsync(cancellationToken);
+    }
+
+    private static Task MissingTaskRepositorySaveAsync(TaskItem task, CancellationToken cancellationToken)
+    {
+        throw new InvalidOperationException("Task save service is not configured.");
+    }
+
+    private void ReplaceTaskCard(TaskItem task, DateOnly today)
+    {
+        _loadedTasksById[task.Id] = task;
+        TodayTaskCardViewModel replacement = TodayTaskCardViewModel.FromTask(
+            task,
+            today,
+            (card, action) => ExecuteTaskActionAsync(card, action));
+
+        for (int index = 0; index < TaskCards.Count; index++)
+        {
+            if (TaskCards[index].Id == task.Id)
+            {
+                TaskCards[index] = replacement;
+                return;
+            }
+        }
+
+        TaskCards.Add(replacement);
+        UpdateTaskSummary();
+    }
+
+    private void RemoveTaskCard(Guid taskId)
+    {
+        _loadedTasksById.Remove(taskId);
+
+        for (int index = 0; index < TaskCards.Count; index++)
+        {
+            if (TaskCards[index].Id == taskId)
+            {
+                TaskCards.RemoveAt(index);
+                break;
+            }
+        }
+
+        UpdateTaskSummary();
+        if (!HasTasks)
+        {
+            EmptyStateText = "Today is clear. Nice small win.";
+        }
     }
 
     private static DateOnly TodaySortDate(TaskItem task, DateOnly today)
@@ -349,14 +554,14 @@ public sealed class TodayViewModel : ScreenViewModelBase, INotifyPropertyChanged
 
 public sealed class TodayTaskCardViewModel
 {
-    private readonly Action<TodayTaskCardViewModel, TodayTaskAction> _selectAction;
+    private readonly Func<TodayTaskCardViewModel, TodayTaskAction, Task> _executeActionAsync;
 
     private TodayTaskCardViewModel(
         TaskItem task,
         DateOnly today,
-        Action<TodayTaskCardViewModel, TodayTaskAction>? selectAction)
+        Func<TodayTaskCardViewModel, TodayTaskAction, Task>? executeActionAsync)
     {
-        _selectAction = selectAction ?? ((_, _) => { });
+        _executeActionAsync = executeActionAsync ?? ((_, _) => Task.CompletedTask);
         Id = task.Id;
         Title = task.Title;
         Notes = task.Notes;
@@ -462,16 +667,15 @@ public sealed class TodayTaskCardViewModel
     public static TodayTaskCardViewModel FromTask(
         TaskItem task,
         DateOnly today,
-        Action<TodayTaskCardViewModel, TodayTaskAction>? selectAction = null)
+        Func<TodayTaskCardViewModel, TodayTaskAction, Task>? executeActionAsync = null)
     {
         ArgumentNullException.ThrowIfNull(task);
-        return new TodayTaskCardViewModel(task, today, selectAction);
+        return new TodayTaskCardViewModel(task, today, executeActionAsync);
     }
 
     private Task SelectActionAsync(TodayTaskAction action)
     {
-        _selectAction(this, action);
-        return Task.CompletedTask;
+        return _executeActionAsync(this, action);
     }
 
     private static string BuildDueText(TaskItem task, DateOnly today)

@@ -891,7 +891,7 @@ Status:
 - ~~Capture works without Microsoft sync.~~
 - ~~Build and tests pass.~~
 
-### 7. Today Workflow
+### ~~7. Today Workflow~~
 
 ~~7.1. Create `TodayViewModel`.~~
 
@@ -903,15 +903,15 @@ Status:
 
 ~~7.5. Add Start, Done, Snooze, and Note actions.~~
 
-7.6. Save each action locally.
+~~7.6. Save each action locally.~~
 
-Benchmark gate:
+~~Benchmark gate:~~
 
-- User can see today tasks.
-- User can mark a today task done.
-- User can snooze a task.
-- Changes survive restart.
-- Build and tests pass.
+- ~~User can see today tasks.~~
+- ~~User can mark a today task done.~~
+- ~~User can snooze a task.~~
+- ~~Changes survive restart.~~
+- ~~Build and tests pass.~~
 
 ### 8. Done Workflow
 

@@ -16,6 +16,7 @@ TestRunner.RunAll(
     ("AppBootstrapper shows a simple database failure message", AppBootstrapperShowsSimpleDatabaseFailureMessage),
     ("TaskRepository saves and loads task state", TaskRepositorySavesAndLoadsTaskState),
     ("TaskRepository loads today tasks", TaskRepositoryLoadsTodayTasks),
+    ("TodayViewModel saves task actions through TaskRepository", TodayViewModelSavesTaskActionsThroughTaskRepository),
     ("TaskRepository deletes tasks", TaskRepositoryDeletesTasks),
     ("CaptureViewModel saves captured tasks through TaskRepository", CaptureViewModelSavesCapturedTasksThroughTaskRepository),
     ("SettingsMetadataRepository upserts and deletes metadata", SettingsMetadataRepositoryUpsertsAndDeletesMetadata));
@@ -322,6 +323,69 @@ static async Task TaskRepositoryLoadsTodayTasks()
     Assert.False(todayTasks.Any(task => task.Title == "Future task"), "Future tasks should not load into Today.");
     Assert.False(todayTasks.Any(task => task.Title == "Already done"), "Completed tasks should not load into Today.");
     Assert.False(todayTasks.Any(task => task.Title == "Loose capture"), "Undated captured tasks should not load into Today.");
+}
+
+static async Task TodayViewModelSavesTaskActionsThroughTaskRepository()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+    await CreateMigratedDatabaseAsync(paths);
+
+    DateOnly today = new(2026, 5, 30);
+    TaskItem startTask = CreateRepositoryTask("Start the sketch", dueDate: today);
+    TaskItem doneTask = CreateRepositoryTask("Finish the sketch", dueDate: today);
+    TaskItem snoozeTask = CreateRepositoryTask("Call the printer", dueDate: today);
+    TaskItem noteTask = CreateRepositoryTask("Choose calmer color set", dueDate: today);
+    noteTask.UpdateNotes("Use the calmer color set.");
+
+    TaskRepository repository = new(paths);
+    foreach (TaskItem task in new[] { startTask, doneTask, snoozeTask, noteTask })
+    {
+        await repository.AddAsync(task, CancellationToken.None);
+    }
+
+    TodayViewModel viewModel = new(repository.GetTodayAsync, repository.SaveAsync, () => today);
+    await viewModel.LoadTasksAsync(CancellationToken.None);
+
+    await viewModel.ExecuteTaskActionAsync(
+        viewModel.TaskCards.First(card => card.Id == startTask.Id),
+        TodayTaskAction.Start,
+        CancellationToken.None);
+    await viewModel.ExecuteTaskActionAsync(
+        viewModel.TaskCards.First(card => card.Id == doneTask.Id),
+        TodayTaskAction.Done,
+        CancellationToken.None);
+    await viewModel.ExecuteTaskActionAsync(
+        viewModel.TaskCards.First(card => card.Id == snoozeTask.Id),
+        TodayTaskAction.Snooze,
+        CancellationToken.None);
+    await viewModel.ExecuteTaskActionAsync(
+        viewModel.TaskCards.First(card => card.Id == noteTask.Id),
+        TodayTaskAction.Note,
+        CancellationToken.None);
+    viewModel.NoteDraft = "Remember the calmer color set.";
+    await viewModel.SaveSelectedNoteAsync(CancellationToken.None);
+
+    TaskItem? savedStart = await repository.GetByIdAsync(startTask.Id, CancellationToken.None);
+    TaskItem? savedDone = await repository.GetByIdAsync(doneTask.Id, CancellationToken.None);
+    TaskItem? savedSnooze = await repository.GetByIdAsync(snoozeTask.Id, CancellationToken.None);
+    TaskItem? savedNote = await repository.GetByIdAsync(noteTask.Id, CancellationToken.None);
+    IReadOnlyList<TaskItem> todayTasks = await repository.GetTodayAsync(today, CancellationToken.None);
+
+    Assert.NotNull(savedStart, "Started task should remain in SQLite.");
+    Assert.Equal(TaskItemStatus.InProgress, savedStart!.Status);
+    Assert.NotNull(savedDone, "Done task should remain in SQLite.");
+    Assert.Equal(TaskItemStatus.Done, savedDone!.Status);
+    Assert.True(savedDone.CompletedAt.HasValue, "Done task should persist a completed time.");
+    Assert.NotNull(savedSnooze, "Snoozed task should remain in SQLite.");
+    Assert.Equal(today.AddDays(1), savedSnooze!.DueDate);
+    Assert.Equal(today.AddDays(1), savedSnooze.StartDate);
+    Assert.NotNull(savedNote, "Note task should remain in SQLite.");
+    Assert.Equal("Remember the calmer color set.", savedNote!.Notes);
+    Assert.True(todayTasks.Any(task => task.Id == startTask.Id), "Started task should still appear in Today.");
+    Assert.True(todayTasks.Any(task => task.Id == noteTask.Id), "Note task should still appear in Today.");
+    Assert.False(todayTasks.Any(task => task.Id == doneTask.Id), "Done task should leave Today.");
+    Assert.False(todayTasks.Any(task => task.Id == snoozeTask.Id), "Snoozed task should leave Today.");
 }
 
 static async Task CaptureViewModelSavesCapturedTasksThroughTaskRepository()
