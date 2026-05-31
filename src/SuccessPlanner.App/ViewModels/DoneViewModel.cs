@@ -13,6 +13,7 @@ public sealed class DoneViewModel : ScreenViewModelBase, INotifyPropertyChanged
     private const string ReadyStatus = "Ready to choose a win.";
     private readonly Func<DateOnly, CancellationToken, Task<IReadOnlyList<TaskItem>>> _loadTasksAsync;
     private readonly Func<TaskItem, CancellationToken, Task> _saveTaskAsync;
+    private readonly Func<TaskItem, CancellationToken, Task<NoteItem>> _recordSmallWinAsync;
     private readonly Func<DateOnly> _todayProvider;
     private readonly Dictionary<Guid, TaskItem> _loadedTasksById = [];
     private bool _isLoading;
@@ -21,8 +22,10 @@ public sealed class DoneViewModel : ScreenViewModelBase, INotifyPropertyChanged
     private string _emptyStateText = "No active tasks ready to finish.";
     private string _taskCountText = "0 tasks";
     private Guid? _selectedTaskId;
+    private Guid? _lastSmallWinNoteId;
     private string _selectedTaskTitle = "No task selected.";
     private string _completionPanelText = "Choose a recent active task, then mark it complete.";
+    private string _lastSmallWinText = "No small win recorded yet.";
 
     public DoneViewModel()
         : this((_, _) => Task.FromResult<IReadOnlyList<TaskItem>>([]))
@@ -47,12 +50,23 @@ public sealed class DoneViewModel : ScreenViewModelBase, INotifyPropertyChanged
         Func<DateOnly, CancellationToken, Task<IReadOnlyList<TaskItem>>> loadTasksAsync,
         Func<TaskItem, CancellationToken, Task> saveTaskAsync,
         Func<DateOnly>? todayProvider = null)
+        : this(loadTasksAsync, saveTaskAsync, NoOpSmallWinRecorderAsync, todayProvider)
+    {
+    }
+
+    public DoneViewModel(
+        Func<DateOnly, CancellationToken, Task<IReadOnlyList<TaskItem>>> loadTasksAsync,
+        Func<TaskItem, CancellationToken, Task> saveTaskAsync,
+        Func<TaskItem, CancellationToken, Task<NoteItem>> recordSmallWinAsync,
+        Func<DateOnly>? todayProvider = null)
         : base(ScreenCatalog.Done)
     {
         ArgumentNullException.ThrowIfNull(loadTasksAsync);
         ArgumentNullException.ThrowIfNull(saveTaskAsync);
+        ArgumentNullException.ThrowIfNull(recordSmallWinAsync);
         _loadTasksAsync = loadTasksAsync;
         _saveTaskAsync = saveTaskAsync;
+        _recordSmallWinAsync = recordSmallWinAsync;
         _todayProvider = todayProvider ?? (() => DateOnly.FromDateTime(DateTime.Today));
         RefreshCommand = new AsyncRelayCommand(
             () => LoadTasksAsync(CancellationToken.None),
@@ -123,6 +137,18 @@ public sealed class DoneViewModel : ScreenViewModelBase, INotifyPropertyChanged
     {
         get => _selectedTaskTitle;
         private set => SetProperty(ref _selectedTaskTitle, value);
+    }
+
+    public Guid? LastSmallWinNoteId
+    {
+        get => _lastSmallWinNoteId;
+        private set => SetProperty(ref _lastSmallWinNoteId, value);
+    }
+
+    public string LastSmallWinText
+    {
+        get => _lastSmallWinText;
+        private set => SetProperty(ref _lastSmallWinText, value);
     }
 
     public string CompletionPanelText
@@ -225,9 +251,12 @@ public sealed class DoneViewModel : ScreenViewModelBase, INotifyPropertyChanged
             IsCompleting = true;
             task.Complete();
             await _saveTaskAsync(task, cancellationToken);
+            NoteItem smallWin = await _recordSmallWinAsync(task, cancellationToken);
+            LastSmallWinNoteId = smallWin.Id;
+            LastSmallWinText = smallWin.Text;
             RemoveTaskCard(task.Id);
-            StatusText = "Task completed locally.";
-            CompletionPanelText = $"{task.Title} was marked complete.";
+            StatusText = "Small win recorded locally.";
+            CompletionPanelText = $"{task.Title} was marked complete and recorded as a small win.";
         }
         catch (OperationCanceledException)
         {
@@ -320,6 +349,15 @@ public sealed class DoneViewModel : ScreenViewModelBase, INotifyPropertyChanged
     private static Task MissingTaskRepositorySaveAsync(TaskItem task, CancellationToken cancellationToken)
     {
         throw new InvalidOperationException("Task save service is not configured.");
+    }
+
+    private static Task<NoteItem> NoOpSmallWinRecorderAsync(TaskItem task, CancellationToken cancellationToken)
+    {
+        NoteItem note = NoteItem.Create(NoteOwnerType.Task, task.Id, $"Small win: {task.Title}");
+        note.MarkReviewHighlight();
+        note.AddTag("Win");
+        note.AddTag("Small Win");
+        return Task.FromResult(note);
     }
 
     private void SelectTask(DoneTaskCardViewModel taskCard)

@@ -923,7 +923,7 @@ Status:
 
 ~~8.4. Complete selected task.~~
 
-8.5. Record completion as a small win.
+~~8.5. Record completion as a small win.~~
 
 8.6. Show brief success feedback.
 

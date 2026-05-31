@@ -462,6 +462,8 @@ static void DoneViewModelStartsReady()
     Assert.Equal("0 tasks", viewModel.TaskCountText);
     Assert.Equal("No task selected.", viewModel.SelectedTaskTitle);
     Assert.Equal("Choose a recent active task, then mark it complete.", viewModel.CompletionPanelText);
+    Assert.Null(viewModel.LastSmallWinNoteId, "Done should start without a small win note.");
+    Assert.Equal("No small win recorded yet.", viewModel.LastSmallWinText);
     Assert.False(viewModel.HasTasks, "Done should start with no loaded tasks.");
     Assert.False(viewModel.IsLoading, "Done should not start in a loading state.");
     Assert.False(viewModel.IsCompleting, "Done should not start in a completing state.");
@@ -541,12 +543,22 @@ static void DoneViewModelCompletesSelectedTask()
     TaskItem completedTask = CreateTask("Finish active task", inProgress: true);
     TaskItem remainingTask = CreateTask("Pay the bill", dueDate: today);
     List<(Guid Id, TaskItemStatus Status, DateTimeOffset? CompletedAt)> savedTasks = [];
+    List<NoteItem> smallWins = [];
     DoneViewModel viewModel = new(
         (_, _) => Task.FromResult<IReadOnlyList<TaskItem>>([completedTask, remainingTask]),
         (task, _) =>
         {
             savedTasks.Add((task.Id, task.Status, task.CompletedAt));
             return Task.CompletedTask;
+        },
+        (task, _) =>
+        {
+            NoteItem smallWin = NoteItem.Create(NoteOwnerType.Task, task.Id, $"Small win: {task.Title}");
+            smallWin.MarkReviewHighlight();
+            smallWin.AddTag("Win");
+            smallWin.AddTag("Small Win");
+            smallWins.Add(smallWin);
+            return Task.FromResult(smallWin);
         },
         () => today);
 
@@ -557,14 +569,22 @@ static void DoneViewModelCompletesSelectedTask()
 
     Assert.Equal(completedTask.Id, viewModel.SelectedTaskId.GetValueOrDefault());
     Assert.Equal("Finish active task", viewModel.SelectedTaskTitle);
-    Assert.Equal("Task completed locally.", viewModel.StatusText);
-    Assert.Contains("marked complete", viewModel.CompletionPanelText);
+    Assert.Equal("Small win recorded locally.", viewModel.StatusText);
+    Assert.Contains("recorded as a small win", viewModel.CompletionPanelText);
     Assert.Equal(TaskItemStatus.Done, completedTask.Status);
     Assert.True(completedTask.CompletedAt.HasValue, "Completing selected task should stamp a completed time.");
     Assert.Equal(1, savedTasks.Count);
     Assert.Equal(completedTask.Id, savedTasks[0].Id);
     Assert.Equal(TaskItemStatus.Done, savedTasks[0].Status);
     Assert.True(savedTasks[0].CompletedAt.HasValue, "Completed task should be saved with a completed time.");
+    Assert.Equal(1, smallWins.Count);
+    Assert.Equal(NoteOwnerType.Task, smallWins[0].OwnerType);
+    Assert.Equal(completedTask.Id, smallWins[0].OwnerId.GetValueOrDefault());
+    Assert.True(smallWins[0].IsReviewHighlight, "Small win should be visible to Review.");
+    Assert.Contains("Win", smallWins[0].Tags);
+    Assert.Contains("Small Win", smallWins[0].Tags);
+    Assert.Equal(smallWins[0].Id, viewModel.LastSmallWinNoteId.GetValueOrDefault());
+    Assert.Equal("Small win: Finish active task", viewModel.LastSmallWinText);
     Assert.False(viewModel.TaskCards.Any(task => task.Id == completedTask.Id), "Completed task should leave Done task cards.");
     Assert.Equal(1, viewModel.TaskCards.Count);
     Assert.Equal("1 task", viewModel.TaskCountText);

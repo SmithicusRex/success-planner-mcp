@@ -438,12 +438,17 @@ static async Task DoneViewModelCompletesSelectedTaskThroughTaskRepository()
     TaskItem remainingTask = CreateRepositoryTask("Pay the bill", dueDate: today);
 
     TaskRepository repository = new(paths);
+    NoteRepository noteRepository = new(paths);
     foreach (TaskItem task in new[] { completedTask, remainingTask })
     {
         await repository.AddAsync(task, CancellationToken.None);
     }
 
-    DoneViewModel viewModel = new(repository.GetRecentActiveAsync, repository.SaveAsync, () => today);
+    DoneViewModel viewModel = new(
+        repository.GetRecentActiveAsync,
+        repository.SaveAsync,
+        noteRepository.AddTaskSmallWinAsync,
+        () => today);
     await viewModel.LoadTasksAsync(CancellationToken.None);
 
     await viewModel.CompleteSelectedTaskAsync(
@@ -452,12 +457,35 @@ static async Task DoneViewModelCompletesSelectedTaskThroughTaskRepository()
 
     TaskItem? savedCompletedTask = await repository.GetByIdAsync(completedTask.Id, CancellationToken.None);
     IReadOnlyList<TaskItem> recentActiveTasks = await repository.GetRecentActiveAsync(today, CancellationToken.None);
+    IReadOnlyList<NoteItem> taskNotes = await noteRepository.GetForOwnerAsync(
+        NoteOwnerType.Task,
+        completedTask.Id,
+        CancellationToken.None);
+    IReadOnlyList<NoteItem> reviewHighlights = await noteRepository.GetReviewHighlightsAsync(CancellationToken.None);
 
     Assert.NotNull(savedCompletedTask, "Completed task should remain in SQLite.");
     Assert.Equal(TaskItemStatus.Done, savedCompletedTask!.Status);
     Assert.True(savedCompletedTask.CompletedAt.HasValue, "Completed task should persist a completed time.");
     Assert.False(recentActiveTasks.Any(task => task.Id == completedTask.Id), "Completed task should leave Done recent active tasks.");
     Assert.True(recentActiveTasks.Any(task => task.Id == remainingTask.Id), "Remaining recent active task should still load.");
+    Assert.Equal(1, taskNotes.Count);
+    Assert.Equal("Small win: Finish active task", taskNotes[0].Text);
+    Assert.Equal(NoteOwnerType.Task, taskNotes[0].OwnerType);
+    Assert.Equal(completedTask.Id, taskNotes[0].OwnerId.GetValueOrDefault());
+    Assert.True(taskNotes[0].IsReviewHighlight, "Small win note should be marked for Review.");
+    Assert.Contains("Review", taskNotes[0].Tags);
+    Assert.Contains("Win", taskNotes[0].Tags);
+    Assert.Contains("Small Win", taskNotes[0].Tags);
+    Assert.Equal(taskNotes[0].Id, viewModel.LastSmallWinNoteId.GetValueOrDefault());
+    Assert.Equal("Small win: Finish active task", viewModel.LastSmallWinText);
+    Assert.True(reviewHighlights.Any(note => note.Id == taskNotes[0].Id), "Small win should appear in review highlights.");
+
+    await noteRepository.AddTaskSmallWinAsync(savedCompletedTask, CancellationToken.None);
+    IReadOnlyList<NoteItem> taskNotesAfterSecondRecord = await noteRepository.GetForOwnerAsync(
+        NoteOwnerType.Task,
+        completedTask.Id,
+        CancellationToken.None);
+    Assert.Equal(1, taskNotesAfterSecondRecord.Count);
 }
 
 static async Task CaptureViewModelSavesCapturedTasksThroughTaskRepository()

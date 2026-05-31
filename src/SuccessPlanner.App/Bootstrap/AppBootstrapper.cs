@@ -12,6 +12,7 @@ public sealed class AppBootstrapper
     private readonly DatabaseService _databaseService;
     private readonly DatabaseStartupMigrationService _databaseStartupMigrationService;
     private readonly TaskRepository _taskRepository;
+    private readonly NoteRepository _noteRepository;
     private readonly BackgroundWorkerHost _backgroundWorkerHost;
     private readonly NavigationService _navigationService;
     private AppSettings? _loadedSettings;
@@ -30,6 +31,7 @@ public sealed class AppBootstrapper
         _databaseService = new DatabaseService(_paths);
         _databaseStartupMigrationService = new DatabaseStartupMigrationService(_databaseService);
         _taskRepository = new TaskRepository(_paths);
+        _noteRepository = new NoteRepository(_paths);
         _backgroundWorkerHost = new BackgroundWorkerHost();
         _navigationService = new NavigationService();
         RegisterScreens();
@@ -92,7 +94,8 @@ public sealed class AppBootstrapper
         _navigationService.Register(AppScreen.StartWork, () => new InitialScreenViewModel(ScreenCatalog.StartWork));
         _navigationService.Register(AppScreen.Done, () => new DoneViewModel(
             _taskRepository.GetRecentActiveAsync,
-            _taskRepository.SaveAsync));
+            _taskRepository.SaveAsync,
+            _noteRepository.AddTaskSmallWinAsync));
         _navigationService.Register(AppScreen.Move, () => new InitialScreenViewModel(ScreenCatalog.Move));
         _navigationService.Register(AppScreen.Review, () => new InitialScreenViewModel(ScreenCatalog.Review));
         _navigationService.Register(AppScreen.Find, () => new InitialScreenViewModel(ScreenCatalog.Find));
