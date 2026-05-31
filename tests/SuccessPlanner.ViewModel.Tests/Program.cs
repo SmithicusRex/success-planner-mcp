@@ -12,7 +12,11 @@ TestRunner.RunAll(
     ("CaptureViewModel saves a captured task locally", CaptureViewModelSavesCapturedTaskLocally),
     ("CaptureViewModel captures another task after success", CaptureViewModelCapturesAnotherTaskAfterSuccess),
     ("CaptureViewModel resets the capture form", CaptureViewModelResetsCaptureForm),
-    ("CaptureViewModel raises property change notifications", CaptureViewModelRaisesPropertyChangeNotifications));
+    ("CaptureViewModel raises property change notifications", CaptureViewModelRaisesPropertyChangeNotifications),
+    ("TodayViewModel starts in a simple ready state", TodayViewModelStartsReady),
+    ("TodayViewModel loads today tasks", TodayViewModelLoadsTodayTasks),
+    ("TodayViewModel shows an empty today state", TodayViewModelShowsEmptyTodayState),
+    ("TodayViewModel reports load failures", TodayViewModelReportsLoadFailures));
 
 static void CaptureViewModelStartsReady()
 {
@@ -233,6 +237,116 @@ static void CaptureViewModelRaisesPropertyChangeNotifications()
     Assert.Contains(nameof(CaptureViewModel.CanCreateTask), changedProperties);
     Assert.True(viewModel.CanCreateTask, "Nonblank title should be ready to create a task.");
     Assert.True(viewModel.SaveTaskCommand.CanExecute(null), "Nonblank title should enable save.");
+}
+
+static void TodayViewModelStartsReady()
+{
+    TodayViewModel viewModel = new();
+
+    Assert.Equal(ScreenCatalog.Today, viewModel.Descriptor);
+    Assert.Equal("Today", viewModel.Title);
+    Assert.Equal("See what matters now.", viewModel.Subtitle);
+    Assert.Equal("\uE787", viewModel.IconGlyph);
+    Assert.Equal("#A8E6B1", viewModel.AccentColor);
+    Assert.Equal("Ready to load today.", viewModel.StatusText);
+    Assert.Equal("No tasks due today.", viewModel.EmptyStateText);
+    Assert.Equal("0 tasks", viewModel.TaskCountText);
+    Assert.False(viewModel.HasTasks, "Today should start with no loaded tasks.");
+    Assert.False(viewModel.IsLoading, "Today should not start in a loading state.");
+    Assert.True(viewModel.RefreshCommand.CanExecute(null), "Refresh should be available when Today is idle.");
+}
+
+static void TodayViewModelLoadsTodayTasks()
+{
+    DateOnly today = new(2026, 5, 30);
+    TaskItem overdue = CreateTask("Call the pharmacy", dueDate: today.AddDays(-1));
+    TaskItem dueToday = CreateTask("Pay the bill", dueDate: today, priority: TaskPriority.High);
+    TaskItem selectedToday = CreateTask("Draft next plan", dueDate: today.AddDays(5), startDate: today);
+    TaskItem inProgress = CreateTask("Finish active task", inProgress: true);
+    TaskItem future = CreateTask("Future task", dueDate: today.AddDays(1));
+    TaskItem doneToday = CreateTask("Already done", dueDate: today, done: true);
+    TodayViewModel viewModel = new(
+        _ => Task.FromResult<IReadOnlyList<TaskItem>>(
+            [future, selectedToday, doneToday, dueToday, inProgress, overdue]),
+        () => today);
+
+    viewModel.LoadTasksAsync().GetAwaiter().GetResult();
+
+    Assert.Equal(4, viewModel.Tasks.Count);
+    Assert.Equal("Call the pharmacy", viewModel.Tasks[0].Title);
+    Assert.True(viewModel.Tasks[0].IsOverdue, "Overdue task should be marked overdue.");
+    Assert.Equal("Pay the bill", viewModel.Tasks[1].Title);
+    Assert.True(viewModel.Tasks[1].IsDueToday, "Due-today task should be marked due today.");
+    Assert.Equal("Draft next plan", viewModel.Tasks[2].Title);
+    Assert.True(viewModel.Tasks[2].IsSelectedForToday, "Start-date task should be selected for today.");
+    Assert.Equal("Finish active task", viewModel.Tasks[3].Title);
+    Assert.True(viewModel.Tasks[3].IsInProgress, "In-progress task should stay visible.");
+    Assert.False(viewModel.Tasks.Any(task => task.Title == "Future task"), "Future task should not load into Today.");
+    Assert.False(viewModel.Tasks.Any(task => task.Title == "Already done"), "Done task should not load into Today.");
+    Assert.True(viewModel.HasTasks, "Loaded Today tasks should set HasTasks.");
+    Assert.Equal("4 tasks", viewModel.TaskCountText);
+    Assert.Equal("Today is ready.", viewModel.StatusText);
+    Assert.Equal("Choose one small action.", viewModel.EmptyStateText);
+}
+
+static void TodayViewModelShowsEmptyTodayState()
+{
+    DateOnly today = new(2026, 5, 30);
+    TodayViewModel viewModel = new(
+        _ => Task.FromResult<IReadOnlyList<TaskItem>>([CreateTask("Future task", dueDate: today.AddDays(1))]),
+        () => today);
+
+    viewModel.OnNavigatedToAsync(CancellationToken.None).GetAwaiter().GetResult();
+
+    Assert.False(viewModel.HasTasks, "Future-only task list should leave Today empty.");
+    Assert.Equal("0 tasks", viewModel.TaskCountText);
+    Assert.Equal("Today is clear.", viewModel.StatusText);
+    Assert.Contains("No tasks due today", viewModel.EmptyStateText);
+}
+
+static void TodayViewModelReportsLoadFailures()
+{
+    DateOnly today = new(2026, 5, 30);
+    TodayViewModel viewModel = new(
+        _ => throw new InvalidOperationException("Task storage unavailable."),
+        () => today);
+
+    viewModel.LoadTasksAsync().GetAwaiter().GetResult();
+
+    Assert.False(viewModel.HasTasks, "Failed load should not leave stale tasks visible.");
+    Assert.Equal("0 tasks", viewModel.TaskCountText);
+    Assert.Equal("Today could not load.", viewModel.StatusText);
+    Assert.Contains("Try Refresh", viewModel.EmptyStateText);
+    Assert.False(viewModel.IsLoading, "Loading flag should clear after failure.");
+    Assert.True(viewModel.RefreshCommand.CanExecute(null), "Refresh should be available after failure.");
+}
+
+static TaskItem CreateTask(
+    string title,
+    DateOnly? dueDate = null,
+    DateOnly? startDate = null,
+    TaskPriority priority = TaskPriority.Normal,
+    bool inProgress = false,
+    bool done = false)
+{
+    TaskItem task = TaskItem.Capture(title);
+    if (dueDate.HasValue || startDate.HasValue)
+    {
+        task.Schedule(dueDate, startDate);
+    }
+
+    task.SetPriority(priority);
+    if (inProgress)
+    {
+        task.Start();
+    }
+
+    if (done)
+    {
+        task.Complete();
+    }
+
+    return task;
 }
 
 internal static class TestRunner

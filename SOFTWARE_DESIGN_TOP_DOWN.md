@@ -893,7 +893,7 @@ Status:
 
 ### 7. Today Workflow
 
-7.1. Create `TodayViewModel`.
+~~7.1. Create `TodayViewModel`.~~
 
 7.2. Create `TodayView`.
 
