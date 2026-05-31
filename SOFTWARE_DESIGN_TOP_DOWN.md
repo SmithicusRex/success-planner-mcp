@@ -915,7 +915,7 @@ Status:
 
 ### 8. Done Workflow
 
-8.1. Create `DoneViewModel`.
+~~8.1. Create `DoneViewModel`.~~
 
 8.2. Create `DoneView`.
 

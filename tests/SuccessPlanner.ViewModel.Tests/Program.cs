@@ -18,7 +18,12 @@ TestRunner.RunAll(
     ("TodayViewModel creates task card display state", TodayViewModelCreatesTaskCardDisplayState),
     ("TodayViewModel handles task card actions", TodayViewModelHandlesTaskCardActions),
     ("TodayViewModel shows an empty today state", TodayViewModelShowsEmptyTodayState),
-    ("TodayViewModel reports load failures", TodayViewModelReportsLoadFailures));
+    ("TodayViewModel reports load failures", TodayViewModelReportsLoadFailures),
+    ("DoneViewModel starts in a simple ready state", DoneViewModelStartsReady),
+    ("DoneViewModel loads tasks ready to complete", DoneViewModelLoadsTasksReadyToComplete),
+    ("DoneViewModel creates task card display state", DoneViewModelCreatesTaskCardDisplayState),
+    ("DoneViewModel shows an empty done state", DoneViewModelShowsEmptyDoneState),
+    ("DoneViewModel reports load failures", DoneViewModelReportsLoadFailures));
 
 static void CaptureViewModelStartsReady()
 {
@@ -437,6 +442,111 @@ static void TodayViewModelReportsLoadFailures()
     Assert.False(viewModel.HasTasks, "Failed load should not leave stale tasks visible.");
     Assert.Equal("0 tasks", viewModel.TaskCountText);
     Assert.Equal("Today could not load.", viewModel.StatusText);
+    Assert.Contains("Try Refresh", viewModel.EmptyStateText);
+    Assert.False(viewModel.IsLoading, "Loading flag should clear after failure.");
+    Assert.True(viewModel.RefreshCommand.CanExecute(null), "Refresh should be available after failure.");
+}
+
+static void DoneViewModelStartsReady()
+{
+    DoneViewModel viewModel = new();
+
+    Assert.Equal(ScreenCatalog.Done, viewModel.Descriptor);
+    Assert.Equal("Done", viewModel.Title);
+    Assert.Equal("Record the win.", viewModel.Subtitle);
+    Assert.Equal("\uE73E", viewModel.IconGlyph);
+    Assert.Equal("#DADDE2", viewModel.AccentColor);
+    Assert.Equal("Ready to choose a win.", viewModel.StatusText);
+    Assert.Equal("No active tasks ready to finish.", viewModel.EmptyStateText);
+    Assert.Equal("0 tasks", viewModel.TaskCountText);
+    Assert.False(viewModel.HasTasks, "Done should start with no loaded tasks.");
+    Assert.False(viewModel.IsLoading, "Done should not start in a loading state.");
+    Assert.True(viewModel.RefreshCommand.CanExecute(null), "Refresh should be available when Done is idle.");
+}
+
+static void DoneViewModelLoadsTasksReadyToComplete()
+{
+    DateOnly today = new(2026, 5, 30);
+    TaskItem captured = CreateTask("Quick captured thought");
+    TaskItem planned = CreateTask("Pay the bill", dueDate: today, priority: TaskPriority.High);
+    TaskItem inProgress = CreateTask("Finish active task", inProgress: true);
+    TaskItem blocked = CreateTask("Resolve blocked item");
+    blocked.MarkBlocked();
+    TaskItem alreadyDone = CreateTask("Already complete", done: true);
+    DoneViewModel viewModel = new(
+        _ => Task.FromResult<IReadOnlyList<TaskItem>>([captured, alreadyDone, planned, blocked, inProgress]),
+        () => today);
+
+    viewModel.LoadTasksAsync().GetAwaiter().GetResult();
+
+    Assert.Equal(4, viewModel.Tasks.Count);
+    Assert.Equal(4, viewModel.TaskCards.Count);
+    Assert.Equal("Finish active task", viewModel.Tasks[0].Title);
+    Assert.True(viewModel.Tasks[0].IsInProgress, "In-progress task should sort first.");
+    Assert.Equal("Pay the bill", viewModel.Tasks[1].Title);
+    Assert.True(viewModel.Tasks[1].IsDueToday, "Due-today task should be identified.");
+    Assert.Equal("Resolve blocked item", viewModel.Tasks[2].Title);
+    Assert.True(viewModel.Tasks[2].IsBlocked, "Blocked task should keep visible status.");
+    Assert.Equal("Quick captured thought", viewModel.Tasks[3].Title);
+    Assert.False(viewModel.Tasks.Any(task => task.Title == "Already complete"), "Done tasks should not load into Done candidates.");
+    Assert.True(viewModel.HasTasks, "Loaded Done tasks should set HasTasks.");
+    Assert.Equal("4 tasks", viewModel.TaskCountText);
+    Assert.Equal("Choose one task to complete.", viewModel.StatusText);
+    Assert.Equal("Pick one finished action and record the win.", viewModel.EmptyStateText);
+}
+
+static void DoneViewModelCreatesTaskCardDisplayState()
+{
+    DateOnly today = new(2026, 5, 30);
+    TaskItem overdue = CreateTask("Call the pharmacy", dueDate: today.AddDays(-1), priority: TaskPriority.Critical);
+    overdue.UpdateNotes("Ask about the refill, bring the glucose log, and keep the call under ten minutes.");
+
+    DoneTaskCardViewModel overdueCard = DoneTaskCardViewModel.FromTask(overdue, today);
+
+    Assert.Equal("Call the pharmacy", overdueCard.Title);
+    Assert.True(overdueCard.HasNotes, "Done card should show notes when notes exist.");
+    Assert.Contains("glucose log", overdueCard.NotesPreview);
+    Assert.Equal("Overdue", overdueCard.DueBadgeText);
+    Assert.Contains("Overdue", overdueCard.DueText);
+    Assert.Equal("Critical", overdueCard.PriorityBadgeText);
+    Assert.Equal("Planned", overdueCard.StatusBadgeText);
+    Assert.Equal("#FFBE7A", overdueCard.CardAccentColor);
+    Assert.Equal("\uE823", overdueCard.CardIconGlyph);
+    Assert.Contains("Call the pharmacy", overdueCard.CardToolTip);
+
+    TaskItem active = CreateTask("Finish the active item", inProgress: true);
+    DoneTaskCardViewModel activeCard = DoneTaskCardViewModel.FromTask(active, today);
+
+    Assert.Equal("In progress", activeCard.StatusBadgeText);
+    Assert.Equal("#8DDAD5", activeCard.CardAccentColor);
+    Assert.Equal("\uE768", activeCard.CardIconGlyph);
+}
+
+static void DoneViewModelShowsEmptyDoneState()
+{
+    DoneViewModel viewModel = new(
+        _ => Task.FromResult<IReadOnlyList<TaskItem>>([CreateTask("Already done", done: true)]),
+        () => new DateOnly(2026, 5, 30));
+
+    viewModel.OnNavigatedToAsync(CancellationToken.None).GetAwaiter().GetResult();
+
+    Assert.False(viewModel.HasTasks, "Done-only task list should leave Done candidates empty.");
+    Assert.Equal("0 tasks", viewModel.TaskCountText);
+    Assert.Equal("No active tasks ready.", viewModel.StatusText);
+    Assert.Contains("Start from Today", viewModel.EmptyStateText);
+}
+
+static void DoneViewModelReportsLoadFailures()
+{
+    DoneViewModel viewModel = new(
+        _ => throw new InvalidOperationException("Task storage unavailable."),
+        () => new DateOnly(2026, 5, 30));
+
+    viewModel.LoadTasksAsync().GetAwaiter().GetResult();
+
+    Assert.False(viewModel.HasTasks, "Failed load should not leave stale tasks visible.");
+    Assert.Equal("0 tasks", viewModel.TaskCountText);
+    Assert.Equal("Done could not load.", viewModel.StatusText);
     Assert.Contains("Try Refresh", viewModel.EmptyStateText);
     Assert.False(viewModel.IsLoading, "Loading flag should clear after failure.");
     Assert.True(viewModel.RefreshCommand.CanExecute(null), "Refresh should be available after failure.");
