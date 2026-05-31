@@ -59,6 +59,43 @@
             </Setter>
         </Style>
 
+        <Style x:Key="CardActionButtonStyle" TargetType="Button">
+            <Setter Property="MinHeight" Value="34" />
+            <Setter Property="MinWidth" Value="82" />
+            <Setter Property="Padding" Value="10,0" />
+            <Setter Property="Margin" Value="0,0,8,8" />
+            <Setter Property="Background" Value="#FFFFFF" />
+            <Setter Property="BorderBrush" Value="#D7DADF" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chrome"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="8">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="#F1F5F9" />
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="#B8C0CC" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="#E8EDF3" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style x:Key="TaskListVisibilityStyle" TargetType="ScrollViewer">
             <Setter Property="Visibility" Value="Visible" />
             <Style.Triggers>
@@ -82,6 +119,15 @@
             <Style.Triggers>
                 <DataTrigger Binding="{Binding HasNotes}" Value="False">
                     <Setter Property="Visibility" Value="Collapsed" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="NoteComposerVisibilityStyle" TargetType="Border">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsNoteActionSelected}" Value="True">
+                    <Setter Property="Visibility" Value="Visible" />
                 </DataTrigger>
             </Style.Triggers>
         </Style>
@@ -304,6 +350,61 @@
                                                                    FontWeight="SemiBold" />
                                                     </Border>
                                                 </WrapPanel>
+
+                                                <WrapPanel Margin="0,4,0,0">
+                                                    <Button Command="{Binding StartCommand}"
+                                                            Style="{StaticResource CardActionButtonStyle}"
+                                                            ToolTip="Start">
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <TextBlock Text="&#xE768;"
+                                                                       FontFamily="Segoe MDL2 Assets"
+                                                                       FontSize="13"
+                                                                       Margin="0,0,6,0"
+                                                                       VerticalAlignment="Center" />
+                                                            <TextBlock Text="Start"
+                                                                       VerticalAlignment="Center" />
+                                                        </StackPanel>
+                                                    </Button>
+                                                    <Button Command="{Binding DoneCommand}"
+                                                            Style="{StaticResource CardActionButtonStyle}"
+                                                            ToolTip="Done">
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <TextBlock Text="&#xE73E;"
+                                                                       FontFamily="Segoe MDL2 Assets"
+                                                                       FontSize="13"
+                                                                       Margin="0,0,6,0"
+                                                                       VerticalAlignment="Center" />
+                                                            <TextBlock Text="Done"
+                                                                       VerticalAlignment="Center" />
+                                                        </StackPanel>
+                                                    </Button>
+                                                    <Button Command="{Binding SnoozeCommand}"
+                                                            Style="{StaticResource CardActionButtonStyle}"
+                                                            ToolTip="Snooze">
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <TextBlock Text="&#xE823;"
+                                                                       FontFamily="Segoe MDL2 Assets"
+                                                                       FontSize="13"
+                                                                       Margin="0,0,6,0"
+                                                                       VerticalAlignment="Center" />
+                                                            <TextBlock Text="Snooze"
+                                                                       VerticalAlignment="Center" />
+                                                        </StackPanel>
+                                                    </Button>
+                                                    <Button Command="{Binding NoteCommand}"
+                                                            Style="{StaticResource CardActionButtonStyle}"
+                                                            ToolTip="Note">
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <TextBlock Text="&#xE70F;"
+                                                                       FontFamily="Segoe MDL2 Assets"
+                                                                       FontSize="13"
+                                                                       Margin="0,0,6,0"
+                                                                       VerticalAlignment="Center" />
+                                                            <TextBlock Text="Note"
+                                                                       VerticalAlignment="Center" />
+                                                        </StackPanel>
+                                                    </Button>
+                                                </WrapPanel>
                                             </StackPanel>
                                         </Grid>
                                     </Border>
@@ -361,14 +462,57 @@
                         CornerRadius="8"
                         Padding="22">
                     <StackPanel>
-                        <TextBlock Text="Choose One"
-                                   Style="{StaticResource SectionTitleStyle}" />
+                        <StackPanel Orientation="Horizontal">
+                            <Border Width="44"
+                                    Height="44"
+                                    CornerRadius="8"
+                                    Background="{Binding ActionPanelAccentColor}"
+                                    Margin="0,0,12,0">
+                                <TextBlock Text="{Binding ActionPanelIconGlyph}"
+                                           FontFamily="Segoe MDL2 Assets"
+                                           FontSize="18"
+                                           Foreground="{StaticResource InkBrush}"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center" />
+                            </Border>
+
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock Text="{Binding ActionPanelTitle}"
+                                           Style="{StaticResource SectionTitleStyle}"
+                                           Margin="0,0,0,2" />
+                                <TextBlock Text="{Binding SelectedTaskTitle}"
+                                           Foreground="{StaticResource MutedBrush}"
+                                           FontSize="13"
+                                           FontWeight="SemiBold"
+                                           TextWrapping="Wrap" />
+                            </StackPanel>
+                        </StackPanel>
+
                         <Border Height="10"
                                 CornerRadius="5"
-                                Background="{StaticResource TodayBrush}"
+                                Background="{Binding ActionPanelAccentColor}"
                                 Margin="0,4,0,16" />
-                        <TextBlock Text="Pick one small action, then move to Start when you are ready for a timer."
+                        <TextBlock Text="{Binding ActionPanelText}"
                                    Style="{StaticResource QuietTextStyle}" />
+
+                        <Border Background="#F5F3EE"
+                                BorderBrush="#E7E2D8"
+                                BorderThickness="1"
+                                CornerRadius="8"
+                                Padding="12"
+                                Margin="0,16,0,0"
+                                Style="{StaticResource NoteComposerVisibilityStyle}">
+                            <TextBox Text="{Binding NoteDraft, UpdateSourceTrigger=PropertyChanged}"
+                                     AcceptsReturn="True"
+                                     TextWrapping="Wrap"
+                                     MinHeight="92"
+                                     MaxLength="600"
+                                     FontSize="14"
+                                     Padding="10"
+                                     BorderBrush="#D7DADF"
+                                     BorderThickness="1"
+                                     Background="#FFFFFF" />
+                        </Border>
                     </StackPanel>
                 </Border>
 

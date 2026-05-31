@@ -901,7 +901,7 @@ Status:
 
 ~~7.4. Show tasks as cards.~~
 
-7.5. Add Start, Done, Snooze, and Note actions.
+~~7.5. Add Start, Done, Snooze, and Note actions.~~
 
 7.6. Save each action locally.
 

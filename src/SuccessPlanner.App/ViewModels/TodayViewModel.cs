@@ -7,6 +7,15 @@ using SuccessPlanner.App.Screens;
 
 namespace SuccessPlanner.App.ViewModels;
 
+public enum TodayTaskAction
+{
+    None,
+    Start,
+    Done,
+    Snooze,
+    Note
+}
+
 public sealed class TodayViewModel : ScreenViewModelBase, INotifyPropertyChanged
 {
     private const string ReadyStatus = "Ready to load today.";
@@ -16,6 +25,15 @@ public sealed class TodayViewModel : ScreenViewModelBase, INotifyPropertyChanged
     private string _statusText = ReadyStatus;
     private string _emptyStateText = "No tasks due today.";
     private string _taskCountText = "0 tasks";
+    private TodayTaskAction _selectedAction = TodayTaskAction.None;
+    private Guid? _selectedTaskId;
+    private string _selectedTaskTitle = "No task selected.";
+    private string _actionPanelTitle = "Choose One";
+    private string _actionPanelText = "No action selected.";
+    private string _actionPanelIconGlyph = "\uE76C";
+    private string _actionPanelAccentColor = "#A8E6B1";
+    private bool _isNoteActionSelected;
+    private string _noteDraft = string.Empty;
 
     public TodayViewModel()
         : this((_, _) => Task.FromResult<IReadOnlyList<TaskItem>>([]))
@@ -90,6 +108,60 @@ public sealed class TodayViewModel : ScreenViewModelBase, INotifyPropertyChanged
 
     public bool HasTasks => TaskCards.Count > 0;
 
+    public TodayTaskAction SelectedAction
+    {
+        get => _selectedAction;
+        private set => SetProperty(ref _selectedAction, value);
+    }
+
+    public Guid? SelectedTaskId
+    {
+        get => _selectedTaskId;
+        private set => SetProperty(ref _selectedTaskId, value);
+    }
+
+    public string SelectedTaskTitle
+    {
+        get => _selectedTaskTitle;
+        private set => SetProperty(ref _selectedTaskTitle, value);
+    }
+
+    public string ActionPanelTitle
+    {
+        get => _actionPanelTitle;
+        private set => SetProperty(ref _actionPanelTitle, value);
+    }
+
+    public string ActionPanelText
+    {
+        get => _actionPanelText;
+        private set => SetProperty(ref _actionPanelText, value);
+    }
+
+    public string ActionPanelIconGlyph
+    {
+        get => _actionPanelIconGlyph;
+        private set => SetProperty(ref _actionPanelIconGlyph, value);
+    }
+
+    public string ActionPanelAccentColor
+    {
+        get => _actionPanelAccentColor;
+        private set => SetProperty(ref _actionPanelAccentColor, value);
+    }
+
+    public bool IsNoteActionSelected
+    {
+        get => _isNoteActionSelected;
+        private set => SetProperty(ref _isNoteActionSelected, value);
+    }
+
+    public string NoteDraft
+    {
+        get => _noteDraft;
+        set => SetProperty(ref _noteDraft, value);
+    }
+
     public override Task OnNavigatedToAsync(CancellationToken cancellationToken)
     {
         return LoadTasksAsync(cancellationToken);
@@ -110,7 +182,7 @@ public sealed class TodayViewModel : ScreenViewModelBase, INotifyPropertyChanged
                 .OrderBy(task => TodaySortDate(task, today))
                 .ThenBy(task => PrioritySortValue(task.Priority))
                 .ThenBy(task => task.Title, StringComparer.OrdinalIgnoreCase)
-                .Select(task => TodayTaskCardViewModel.FromTask(task, today))
+                .Select(task => TodayTaskCardViewModel.FromTask(task, today, SelectTaskAction))
                 .ToList();
 
             TaskCards.Clear();
@@ -154,6 +226,64 @@ public sealed class TodayViewModel : ScreenViewModelBase, INotifyPropertyChanged
         return task.Status == TaskItemStatus.InProgress
             || (task.DueDate.HasValue && task.DueDate.Value <= today)
             || (task.StartDate.HasValue && task.StartDate.Value <= today);
+    }
+
+    public void SelectTaskAction(TodayTaskCardViewModel taskCard, TodayTaskAction action)
+    {
+        ArgumentNullException.ThrowIfNull(taskCard);
+
+        SelectedTaskId = taskCard.Id;
+        SelectedTaskTitle = taskCard.Title;
+        SelectedAction = action;
+        IsNoteActionSelected = action == TodayTaskAction.Note;
+
+        if (IsNoteActionSelected)
+        {
+            NoteDraft = taskCard.Notes;
+        }
+        else
+        {
+            NoteDraft = string.Empty;
+        }
+
+        switch (action)
+        {
+            case TodayTaskAction.Start:
+                ActionPanelTitle = "Start";
+                ActionPanelText = $"{taskCard.Title} is selected for focus.";
+                ActionPanelIconGlyph = "\uE768";
+                ActionPanelAccentColor = "#8DDAD5";
+                StatusText = "Start selected.";
+                break;
+            case TodayTaskAction.Done:
+                ActionPanelTitle = "Done";
+                ActionPanelText = $"{taskCard.Title} is selected as the win.";
+                ActionPanelIconGlyph = "\uE73E";
+                ActionPanelAccentColor = "#DADDE2";
+                StatusText = "Done selected.";
+                break;
+            case TodayTaskAction.Snooze:
+                ActionPanelTitle = "Snooze";
+                ActionPanelText = $"{taskCard.Title} is selected to move forward.";
+                ActionPanelIconGlyph = "\uE823";
+                ActionPanelAccentColor = "#FFBE7A";
+                StatusText = "Snooze selected.";
+                break;
+            case TodayTaskAction.Note:
+                ActionPanelTitle = "Note";
+                ActionPanelText = $"Add a short note for {taskCard.Title}.";
+                ActionPanelIconGlyph = "\uE70F";
+                ActionPanelAccentColor = "#C8B6FF";
+                StatusText = "Note selected.";
+                break;
+            default:
+                ActionPanelTitle = "Choose One";
+                ActionPanelText = "No action selected.";
+                ActionPanelIconGlyph = "\uE76C";
+                ActionPanelAccentColor = "#A8E6B1";
+                StatusText = HasTasks ? "Today is ready." : "Today is clear.";
+                break;
+        }
     }
 
     private static Func<DateOnly, CancellationToken, Task<IReadOnlyList<TaskItem>>> CreateTodayLoader(
@@ -219,8 +349,14 @@ public sealed class TodayViewModel : ScreenViewModelBase, INotifyPropertyChanged
 
 public sealed class TodayTaskCardViewModel
 {
-    private TodayTaskCardViewModel(TaskItem task, DateOnly today)
+    private readonly Action<TodayTaskCardViewModel, TodayTaskAction> _selectAction;
+
+    private TodayTaskCardViewModel(
+        TaskItem task,
+        DateOnly today,
+        Action<TodayTaskCardViewModel, TodayTaskAction>? selectAction)
     {
+        _selectAction = selectAction ?? ((_, _) => { });
         Id = task.Id;
         Title = task.Title;
         Notes = task.Notes;
@@ -250,6 +386,11 @@ public sealed class TodayTaskCardViewModel
         CardBorderColor = BuildCardBorderColor(task, today);
         CardIconGlyph = BuildCardIconGlyph(task, today);
         CardToolTip = BuildCardToolTip(task, today);
+
+        StartCommand = new AsyncRelayCommand(() => SelectActionAsync(TodayTaskAction.Start));
+        DoneCommand = new AsyncRelayCommand(() => SelectActionAsync(TodayTaskAction.Done));
+        SnoozeCommand = new AsyncRelayCommand(() => SelectActionAsync(TodayTaskAction.Snooze));
+        NoteCommand = new AsyncRelayCommand(() => SelectActionAsync(TodayTaskAction.Note));
     }
 
     public Guid Id { get; }
@@ -310,10 +451,27 @@ public sealed class TodayTaskCardViewModel
 
     public string CardToolTip { get; }
 
-    public static TodayTaskCardViewModel FromTask(TaskItem task, DateOnly today)
+    public AsyncRelayCommand StartCommand { get; }
+
+    public AsyncRelayCommand DoneCommand { get; }
+
+    public AsyncRelayCommand SnoozeCommand { get; }
+
+    public AsyncRelayCommand NoteCommand { get; }
+
+    public static TodayTaskCardViewModel FromTask(
+        TaskItem task,
+        DateOnly today,
+        Action<TodayTaskCardViewModel, TodayTaskAction>? selectAction = null)
     {
         ArgumentNullException.ThrowIfNull(task);
-        return new TodayTaskCardViewModel(task, today);
+        return new TodayTaskCardViewModel(task, today, selectAction);
+    }
+
+    private Task SelectActionAsync(TodayTaskAction action)
+    {
+        _selectAction(this, action);
+        return Task.CompletedTask;
     }
 
     private static string BuildDueText(TaskItem task, DateOnly today)

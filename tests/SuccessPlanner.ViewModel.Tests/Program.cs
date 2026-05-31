@@ -16,6 +16,7 @@ TestRunner.RunAll(
     ("TodayViewModel starts in a simple ready state", TodayViewModelStartsReady),
     ("TodayViewModel loads today tasks", TodayViewModelLoadsTodayTasks),
     ("TodayViewModel creates task card display state", TodayViewModelCreatesTaskCardDisplayState),
+    ("TodayViewModel handles task card actions", TodayViewModelHandlesTaskCardActions),
     ("TodayViewModel shows an empty today state", TodayViewModelShowsEmptyTodayState),
     ("TodayViewModel reports load failures", TodayViewModelReportsLoadFailures));
 
@@ -255,6 +256,11 @@ static void TodayViewModelStartsReady()
     Assert.False(viewModel.HasTasks, "Today should start with no loaded tasks.");
     Assert.False(viewModel.IsLoading, "Today should not start in a loading state.");
     Assert.True(viewModel.RefreshCommand.CanExecute(null), "Refresh should be available when Today is idle.");
+    Assert.Equal(TodayTaskAction.None, viewModel.SelectedAction);
+    Assert.Null(viewModel.SelectedTaskId, "No task should start selected.");
+    Assert.Equal("No task selected.", viewModel.SelectedTaskTitle);
+    Assert.Equal("Choose One", viewModel.ActionPanelTitle);
+    Assert.False(viewModel.IsNoteActionSelected, "Note composer should start hidden.");
 }
 
 static void TodayViewModelLoadsTodayTasks()
@@ -324,6 +330,54 @@ static void TodayViewModelCreatesTaskCardDisplayState()
     Assert.Equal(string.Empty, selectedCard.NotesPreview);
     Assert.Equal("Selected today", selectedCard.DueBadgeText);
     Assert.Equal("#EAF4FF", selectedCard.DueBadgeBackground);
+}
+
+static void TodayViewModelHandlesTaskCardActions()
+{
+    DateOnly today = new(2026, 5, 30);
+    TaskItem task = CreateTask("Finish the sketch", dueDate: today);
+    task.UpdateNotes("Use the calmer color set.");
+    TodayViewModel viewModel = new(
+        (_, _) => Task.FromResult<IReadOnlyList<TaskItem>>([task]),
+        () => today);
+
+    viewModel.LoadTasksAsync().GetAwaiter().GetResult();
+    TodayTaskCardViewModel card = viewModel.TaskCards[0];
+
+    Assert.True(card.StartCommand.CanExecute(null), "Start should be available on Today cards.");
+    Assert.True(card.DoneCommand.CanExecute(null), "Done should be available on Today cards.");
+    Assert.True(card.SnoozeCommand.CanExecute(null), "Snooze should be available on Today cards.");
+    Assert.True(card.NoteCommand.CanExecute(null), "Note should be available on Today cards.");
+
+    card.StartCommand.Execute(null);
+
+    Assert.Equal(TodayTaskAction.Start, viewModel.SelectedAction);
+    Assert.Equal(task.Id, viewModel.SelectedTaskId.GetValueOrDefault());
+    Assert.Equal("Finish the sketch", viewModel.SelectedTaskTitle);
+    Assert.Equal("Start", viewModel.ActionPanelTitle);
+    Assert.Contains("focus", viewModel.ActionPanelText);
+    Assert.Equal("Start selected.", viewModel.StatusText);
+    Assert.False(viewModel.IsNoteActionSelected, "Start should not show the note composer.");
+
+    card.DoneCommand.Execute(null);
+    Assert.Equal(TodayTaskAction.Done, viewModel.SelectedAction);
+    Assert.Equal("Done", viewModel.ActionPanelTitle);
+    Assert.Equal("Done selected.", viewModel.StatusText);
+
+    card.SnoozeCommand.Execute(null);
+    Assert.Equal(TodayTaskAction.Snooze, viewModel.SelectedAction);
+    Assert.Equal("Snooze", viewModel.ActionPanelTitle);
+    Assert.Equal("#FFBE7A", viewModel.ActionPanelAccentColor);
+    Assert.Equal("Snooze selected.", viewModel.StatusText);
+
+    card.NoteCommand.Execute(null);
+    Assert.Equal(TodayTaskAction.Note, viewModel.SelectedAction);
+    Assert.Equal("Note", viewModel.ActionPanelTitle);
+    Assert.True(viewModel.IsNoteActionSelected, "Note should show the note composer.");
+    Assert.Equal("Use the calmer color set.", viewModel.NoteDraft);
+
+    viewModel.NoteDraft = "Remember the calmer color set.";
+    Assert.Equal("Remember the calmer color set.", viewModel.NoteDraft);
 }
 
 static void TodayViewModelShowsEmptyTodayState()
