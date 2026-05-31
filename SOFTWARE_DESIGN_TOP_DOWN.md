@@ -917,7 +917,7 @@ Status:
 
 ~~8.1. Create `DoneViewModel`.~~
 
-8.2. Create `DoneView`.
+~~8.2. Create `DoneView`.~~
 
 8.3. Show recent active tasks.
 
