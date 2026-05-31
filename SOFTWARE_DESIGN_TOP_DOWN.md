@@ -934,7 +934,7 @@ Status:
 - ~~Completing twice does not corrupt data.~~
 - ~~Build and tests pass.~~
 
-### 9. Start Work Timer Workflow
+### ~~9. Start Work Timer Workflow~~
 
 ~~9.1. Create `StartWorkViewModel`.~~
 
@@ -950,13 +950,13 @@ Status:
 
 ~~9.7. Suggest a break after session completion.~~
 
-Benchmark gate:
+~~Benchmark gate:~~
 
-- User can start a 20-minute focus session.
-- Timer state is visible.
-- Completed session is saved.
-- Blocked session does not mark task complete.
-- Build and tests pass.
+- ~~User can start a 20-minute focus session.~~
+- ~~Timer state is visible.~~
+- ~~Completed session is saved.~~
+- ~~Blocked session does not mark task complete.~~
+- ~~Build and tests pass.~~
 
 ### 10. Move Workflow
 
