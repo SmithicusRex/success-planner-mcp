@@ -936,7 +936,7 @@ Status:
 
 ### 9. Start Work Timer Workflow
 
-9.1. Create `StartWorkViewModel`.
+~~9.1. Create `StartWorkViewModel`.~~
 
 9.2. Create `StartWorkView`.
 

@@ -25,7 +25,13 @@ TestRunner.RunAll(
     ("DoneViewModel completes selected task", DoneViewModelCompletesSelectedTask),
     ("DoneViewModel shows brief success feedback", DoneViewModelShowsBriefSuccessFeedback),
     ("DoneViewModel shows an empty done state", DoneViewModelShowsEmptyDoneState),
-    ("DoneViewModel reports load failures", DoneViewModelReportsLoadFailures));
+    ("DoneViewModel reports load failures", DoneViewModelReportsLoadFailures),
+    ("StartWorkViewModel starts in a simple ready state", StartWorkViewModelStartsReady),
+    ("StartWorkViewModel loads focus task options", StartWorkViewModelLoadsFocusTaskOptions),
+    ("StartWorkViewModel selects a focus task", StartWorkViewModelSelectsFocusTask),
+    ("StartWorkViewModel creates task option display state", StartWorkViewModelCreatesTaskOptionDisplayState),
+    ("StartWorkViewModel shows an empty focus state", StartWorkViewModelShowsEmptyFocusState),
+    ("StartWorkViewModel reports load failures", StartWorkViewModelReportsLoadFailures));
 
 static void CaptureViewModelStartsReady()
 {
@@ -652,6 +658,171 @@ static void DoneViewModelReportsLoadFailures()
     Assert.Equal("0 tasks", viewModel.TaskCountText);
     Assert.Equal("Done could not load.", viewModel.StatusText);
     Assert.Contains("Try Refresh", viewModel.EmptyStateText);
+    Assert.False(viewModel.IsLoading, "Loading flag should clear after failure.");
+    Assert.True(viewModel.RefreshCommand.CanExecute(null), "Refresh should be available after failure.");
+}
+
+static void StartWorkViewModelStartsReady()
+{
+    StartWorkViewModel viewModel = new();
+
+    Assert.Equal(ScreenCatalog.StartWork, viewModel.Descriptor);
+    Assert.Equal("Start", viewModel.Title);
+    Assert.Equal("Begin a short focus session.", viewModel.Subtitle);
+    Assert.Equal("\uE768", viewModel.IconGlyph);
+    Assert.Equal("#8DDAD5", viewModel.AccentColor);
+    Assert.Equal("Ready to choose focus.", viewModel.StatusText);
+    Assert.Equal("No focus options loaded.", viewModel.EmptyStateText);
+    Assert.Equal("0 options", viewModel.TaskCountText);
+    Assert.Equal("No focus selected.", viewModel.SelectedTaskTitle);
+    Assert.Equal("Choose Focus", viewModel.FocusPanelTitle);
+    Assert.Contains("20 minute", viewModel.FocusPanelText);
+    Assert.Equal("Choose one small action.", viewModel.FocusIntention);
+    Assert.Equal(FocusSession.DefaultPlannedMinutes, viewModel.PlannedMinutes);
+    Assert.Equal("20 minute focus", viewModel.PlannedMinutesText);
+    Assert.False(viewModel.HasTaskOptions, "Start should begin with no loaded focus options.");
+    Assert.False(viewModel.HasSelectedTask, "Start should begin without a selected focus task.");
+    Assert.False(viewModel.IsLoading, "Start should not begin in a loading state.");
+    Assert.True(viewModel.RefreshCommand.CanExecute(null), "Refresh should be available when Start is idle.");
+}
+
+static void StartWorkViewModelLoadsFocusTaskOptions()
+{
+    DateOnly today = new(2026, 5, 30);
+    TaskItem overdue = CreateTask("Call the pharmacy", dueDate: today.AddDays(-1));
+    TaskItem dueToday = CreateTask("Pay the bill", dueDate: today, priority: TaskPriority.High);
+    TaskItem selectedToday = CreateTask("Draft next plan", dueDate: today.AddDays(5), startDate: today);
+    TaskItem inProgress = CreateTask("Finish active task", inProgress: true);
+    TaskItem blocked = CreateTask("Resolve blocker", dueDate: today);
+    blocked.MarkBlocked();
+    TaskItem future = CreateTask("Future task", dueDate: today.AddDays(1));
+    TaskItem looseCapture = CreateTask("Loose captured thought");
+    TaskItem alreadyDone = CreateTask("Already complete", dueDate: today, done: true);
+    DateOnly? requestedToday = null;
+    StartWorkViewModel viewModel = new(
+        (todayToLoad, _) =>
+        {
+            requestedToday = todayToLoad;
+            return Task.FromResult<IReadOnlyList<TaskItem>>(
+                [future, selectedToday, blocked, alreadyDone, dueToday, inProgress, looseCapture, overdue]);
+        },
+        () => today);
+
+    viewModel.LoadTasksAsync().GetAwaiter().GetResult();
+
+    Assert.True(requestedToday.HasValue, "Start load should pass the current date to its loader.");
+    Assert.Equal(today, requestedToday.GetValueOrDefault());
+    Assert.Equal(4, viewModel.TaskOptions.Count);
+    Assert.Equal(4, viewModel.Tasks.Count);
+    Assert.Equal("Finish active task", viewModel.TaskOptions[0].Title);
+    Assert.True(viewModel.TaskOptions[0].IsInProgress, "In-progress focus should sort first.");
+    Assert.Equal("Call the pharmacy", viewModel.TaskOptions[1].Title);
+    Assert.True(viewModel.TaskOptions[1].IsOverdue, "Overdue focus should be marked overdue.");
+    Assert.Equal("Pay the bill", viewModel.TaskOptions[2].Title);
+    Assert.True(viewModel.TaskOptions[2].IsDueToday, "Due-today focus should be marked due today.");
+    Assert.Equal("Draft next plan", viewModel.TaskOptions[3].Title);
+    Assert.True(viewModel.TaskOptions[3].IsSelectedForToday, "Start-date task should be selected for today.");
+    Assert.False(viewModel.TaskOptions.Any(task => task.Title == "Future task"), "Future task should not load into Start.");
+    Assert.False(viewModel.TaskOptions.Any(task => task.Title == "Resolve blocker"), "Blocked task should not load into Start.");
+    Assert.False(viewModel.TaskOptions.Any(task => task.Title == "Loose captured thought"), "Loose captures should wait for planning.");
+    Assert.False(viewModel.TaskOptions.Any(task => task.Title == "Already complete"), "Done task should not load into Start.");
+    Assert.True(viewModel.HasTaskOptions, "Loaded Start tasks should set HasTaskOptions.");
+    Assert.Equal("4 options", viewModel.TaskCountText);
+    Assert.Equal("Choose one focus task.", viewModel.StatusText);
+    Assert.Equal("Pick one small action and start when ready.", viewModel.EmptyStateText);
+}
+
+static void StartWorkViewModelSelectsFocusTask()
+{
+    DateOnly today = new(2026, 5, 30);
+    TaskItem focusTask = CreateTask("Draft the first Start screen", dueDate: today);
+    StartWorkViewModel viewModel = new(
+        (_, _) => Task.FromResult<IReadOnlyList<TaskItem>>([focusTask]),
+        () => today);
+
+    viewModel.LoadTasksAsync().GetAwaiter().GetResult();
+    StartWorkTaskOptionViewModel taskOption = viewModel.TaskOptions[0];
+    Assert.True(taskOption.SelectCommand.CanExecute(null), "Focus option should expose a select command.");
+
+    viewModel.SelectTask(taskOption);
+
+    Assert.Equal(focusTask.Id, viewModel.SelectedTaskId.GetValueOrDefault());
+    Assert.Equal("Draft the first Start screen", viewModel.SelectedTaskTitle);
+    Assert.True(viewModel.HasSelectedTask, "Selecting a focus option should set HasSelectedTask.");
+    Assert.Equal("Draft the first Start screen", viewModel.FocusIntention);
+    Assert.Equal("Focus Selected", viewModel.FocusPanelTitle);
+    Assert.Contains("20 minute focus session", viewModel.FocusPanelText);
+    Assert.Equal("Focus selected.", viewModel.StatusText);
+}
+
+static void StartWorkViewModelCreatesTaskOptionDisplayState()
+{
+    DateOnly today = new(2026, 5, 30);
+    TaskItem overdue = CreateTask("Call the pharmacy", dueDate: today.AddDays(-1), priority: TaskPriority.Critical);
+    overdue.UpdateNotes("Ask about the refill, bring the glucose log, and keep the call under ten minutes.");
+    overdue.SetEstimate(15);
+    overdue.SetEnergyLevel("Low");
+    overdue.MarkTinyStep();
+
+    StartWorkTaskOptionViewModel overdueOption = StartWorkTaskOptionViewModel.FromTask(overdue, today);
+
+    Assert.Equal("Call the pharmacy", overdueOption.Title);
+    Assert.True(overdueOption.HasNotes, "Start option should show notes when notes exist.");
+    Assert.Contains("glucose log", overdueOption.NotesPreview);
+    Assert.Equal("Overdue", overdueOption.DueBadgeText);
+    Assert.Contains("Overdue", overdueOption.DueText);
+    Assert.Equal("Critical", overdueOption.PriorityBadgeText);
+    Assert.Equal("Planned", overdueOption.StatusBadgeText);
+    Assert.Equal("15 min", overdueOption.EstimateText);
+    Assert.Equal("Low", overdueOption.EnergyLevel);
+    Assert.True(overdueOption.IsTinyStep, "Tiny-step task should expose tiny-step display state.");
+    Assert.Equal("Tiny step", overdueOption.FocusBadgeText);
+    Assert.Contains("Overdue", overdueOption.FocusReasonText);
+    Assert.Equal("#FFBE7A", overdueOption.CardAccentColor);
+    Assert.Equal("\uE823", overdueOption.CardIconGlyph);
+    Assert.Contains("Call the pharmacy", overdueOption.CardToolTip);
+
+    TaskItem active = CreateTask("Keep going on the active item", inProgress: true);
+    StartWorkTaskOptionViewModel activeOption = StartWorkTaskOptionViewModel.FromTask(active, today);
+
+    Assert.Equal("Keep going", activeOption.FocusBadgeText);
+    Assert.Equal("Already in progress", activeOption.FocusReasonText);
+    Assert.Equal("#8DDAD5", activeOption.CardAccentColor);
+    Assert.Equal("\uE768", activeOption.CardIconGlyph);
+}
+
+static void StartWorkViewModelShowsEmptyFocusState()
+{
+    DateOnly today = new(2026, 5, 30);
+    TaskItem blocked = CreateTask("Blocked task", dueDate: today);
+    blocked.MarkBlocked();
+    StartWorkViewModel viewModel = new(
+        _ => Task.FromResult<IReadOnlyList<TaskItem>>(
+            [CreateTask("Future task", dueDate: today.AddDays(1)), blocked]),
+        () => today);
+
+    viewModel.OnNavigatedToAsync(CancellationToken.None).GetAwaiter().GetResult();
+
+    Assert.False(viewModel.HasTaskOptions, "Future and blocked tasks should leave Start empty.");
+    Assert.Equal("0 options", viewModel.TaskCountText);
+    Assert.Equal("No focus options ready.", viewModel.StatusText);
+    Assert.Contains("Capture or plan", viewModel.EmptyStateText);
+    Assert.False(viewModel.HasSelectedTask, "Empty Start should not select a task.");
+}
+
+static void StartWorkViewModelReportsLoadFailures()
+{
+    StartWorkViewModel viewModel = new(
+        _ => throw new InvalidOperationException("Task storage unavailable."),
+        () => new DateOnly(2026, 5, 30));
+
+    viewModel.LoadTasksAsync().GetAwaiter().GetResult();
+
+    Assert.False(viewModel.HasTaskOptions, "Failed load should not leave stale focus options visible.");
+    Assert.Equal("0 options", viewModel.TaskCountText);
+    Assert.Equal("Start could not load.", viewModel.StatusText);
+    Assert.Contains("Try Refresh", viewModel.EmptyStateText);
+    Assert.False(viewModel.HasSelectedTask, "Failed load should clear any selected focus task.");
     Assert.False(viewModel.IsLoading, "Loading flag should clear after failure.");
     Assert.True(viewModel.RefreshCommand.CanExecute(null), "Refresh should be available after failure.");
 }
