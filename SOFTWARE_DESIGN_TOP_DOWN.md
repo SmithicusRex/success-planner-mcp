@@ -921,7 +921,7 @@ Status:
 
 ~~8.3. Show recent active tasks.~~
 
-8.4. Complete selected task.
+~~8.4. Complete selected task.~~
 
 8.5. Record completion as a small win.
 

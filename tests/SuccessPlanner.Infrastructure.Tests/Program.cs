@@ -18,6 +18,7 @@ TestRunner.RunAll(
     ("TaskRepository loads today tasks", TaskRepositoryLoadsTodayTasks),
     ("TaskRepository loads recent active tasks", TaskRepositoryLoadsRecentActiveTasks),
     ("TodayViewModel saves task actions through TaskRepository", TodayViewModelSavesTaskActionsThroughTaskRepository),
+    ("DoneViewModel completes selected task through TaskRepository", DoneViewModelCompletesSelectedTaskThroughTaskRepository),
     ("TaskRepository deletes tasks", TaskRepositoryDeletesTasks),
     ("CaptureViewModel saves captured tasks through TaskRepository", CaptureViewModelSavesCapturedTasksThroughTaskRepository),
     ("SettingsMetadataRepository upserts and deletes metadata", SettingsMetadataRepositoryUpsertsAndDeletesMetadata));
@@ -424,6 +425,39 @@ static async Task TodayViewModelSavesTaskActionsThroughTaskRepository()
     Assert.True(todayTasks.Any(task => task.Id == noteTask.Id), "Note task should still appear in Today.");
     Assert.False(todayTasks.Any(task => task.Id == doneTask.Id), "Done task should leave Today.");
     Assert.False(todayTasks.Any(task => task.Id == snoozeTask.Id), "Snoozed task should leave Today.");
+}
+
+static async Task DoneViewModelCompletesSelectedTaskThroughTaskRepository()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+    await CreateMigratedDatabaseAsync(paths);
+
+    DateOnly today = new(2026, 5, 30);
+    TaskItem completedTask = CreateRepositoryTask("Finish active task", inProgress: true);
+    TaskItem remainingTask = CreateRepositoryTask("Pay the bill", dueDate: today);
+
+    TaskRepository repository = new(paths);
+    foreach (TaskItem task in new[] { completedTask, remainingTask })
+    {
+        await repository.AddAsync(task, CancellationToken.None);
+    }
+
+    DoneViewModel viewModel = new(repository.GetRecentActiveAsync, repository.SaveAsync, () => today);
+    await viewModel.LoadTasksAsync(CancellationToken.None);
+
+    await viewModel.CompleteSelectedTaskAsync(
+        viewModel.TaskCards.First(card => card.Id == completedTask.Id),
+        CancellationToken.None);
+
+    TaskItem? savedCompletedTask = await repository.GetByIdAsync(completedTask.Id, CancellationToken.None);
+    IReadOnlyList<TaskItem> recentActiveTasks = await repository.GetRecentActiveAsync(today, CancellationToken.None);
+
+    Assert.NotNull(savedCompletedTask, "Completed task should remain in SQLite.");
+    Assert.Equal(TaskItemStatus.Done, savedCompletedTask!.Status);
+    Assert.True(savedCompletedTask.CompletedAt.HasValue, "Completed task should persist a completed time.");
+    Assert.False(recentActiveTasks.Any(task => task.Id == completedTask.Id), "Completed task should leave Done recent active tasks.");
+    Assert.True(recentActiveTasks.Any(task => task.Id == remainingTask.Id), "Remaining recent active task should still load.");
 }
 
 static async Task CaptureViewModelSavesCapturedTasksThroughTaskRepository()

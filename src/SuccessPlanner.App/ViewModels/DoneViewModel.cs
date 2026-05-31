@@ -12,11 +12,17 @@ public sealed class DoneViewModel : ScreenViewModelBase, INotifyPropertyChanged
     private const int RecentActiveLookbackDays = 14;
     private const string ReadyStatus = "Ready to choose a win.";
     private readonly Func<DateOnly, CancellationToken, Task<IReadOnlyList<TaskItem>>> _loadTasksAsync;
+    private readonly Func<TaskItem, CancellationToken, Task> _saveTaskAsync;
     private readonly Func<DateOnly> _todayProvider;
+    private readonly Dictionary<Guid, TaskItem> _loadedTasksById = [];
     private bool _isLoading;
+    private bool _isCompleting;
     private string _statusText = ReadyStatus;
     private string _emptyStateText = "No active tasks ready to finish.";
     private string _taskCountText = "0 tasks";
+    private Guid? _selectedTaskId;
+    private string _selectedTaskTitle = "No task selected.";
+    private string _completionPanelText = "Choose a recent active task, then mark it complete.";
 
     public DoneViewModel()
         : this((_, _) => Task.FromResult<IReadOnlyList<TaskItem>>([]))
@@ -26,17 +32,27 @@ public sealed class DoneViewModel : ScreenViewModelBase, INotifyPropertyChanged
     public DoneViewModel(
         Func<CancellationToken, Task<IReadOnlyList<TaskItem>>> loadTasksAsync,
         Func<DateOnly>? todayProvider = null)
-        : this(CreateRecentActiveLoader(loadTasksAsync), todayProvider)
+        : this(CreateRecentActiveLoader(loadTasksAsync), MissingTaskRepositorySaveAsync, todayProvider)
     {
     }
 
     public DoneViewModel(
         Func<DateOnly, CancellationToken, Task<IReadOnlyList<TaskItem>>> loadTasksAsync,
         Func<DateOnly>? todayProvider = null)
+        : this(loadTasksAsync, MissingTaskRepositorySaveAsync, todayProvider)
+    {
+    }
+
+    public DoneViewModel(
+        Func<DateOnly, CancellationToken, Task<IReadOnlyList<TaskItem>>> loadTasksAsync,
+        Func<TaskItem, CancellationToken, Task> saveTaskAsync,
+        Func<DateOnly>? todayProvider = null)
         : base(ScreenCatalog.Done)
     {
         ArgumentNullException.ThrowIfNull(loadTasksAsync);
+        ArgumentNullException.ThrowIfNull(saveTaskAsync);
         _loadTasksAsync = loadTasksAsync;
+        _saveTaskAsync = saveTaskAsync;
         _todayProvider = todayProvider ?? (() => DateOnly.FromDateTime(DateTime.Today));
         RefreshCommand = new AsyncRelayCommand(
             () => LoadTasksAsync(CancellationToken.None),
@@ -91,6 +107,30 @@ public sealed class DoneViewModel : ScreenViewModelBase, INotifyPropertyChanged
 
     public bool HasTasks => TaskCards.Count > 0;
 
+    public bool IsCompleting
+    {
+        get => _isCompleting;
+        private set => SetProperty(ref _isCompleting, value);
+    }
+
+    public Guid? SelectedTaskId
+    {
+        get => _selectedTaskId;
+        private set => SetProperty(ref _selectedTaskId, value);
+    }
+
+    public string SelectedTaskTitle
+    {
+        get => _selectedTaskTitle;
+        private set => SetProperty(ref _selectedTaskTitle, value);
+    }
+
+    public string CompletionPanelText
+    {
+        get => _completionPanelText;
+        private set => SetProperty(ref _completionPanelText, value);
+    }
+
     public override Task OnNavigatedToAsync(CancellationToken cancellationToken)
     {
         return LoadTasksAsync(cancellationToken);
@@ -112,8 +152,14 @@ public sealed class DoneViewModel : ScreenViewModelBase, INotifyPropertyChanged
                 .ThenByDescending(task => RecentActivityDate(task, today))
                 .ThenBy(task => PrioritySortValue(task.Priority))
                 .ThenBy(task => task.Title, StringComparer.OrdinalIgnoreCase)
-                .Select(task => DoneTaskCardViewModel.FromTask(task, today))
+                .Select(task => DoneTaskCardViewModel.FromTask(task, today, card => CompleteSelectedTaskAsync(card)))
                 .ToList();
+
+            _loadedTasksById.Clear();
+            foreach (TaskItem task in loadedTasks.Where(task => ShouldShowTask(task, today)))
+            {
+                _loadedTasksById[task.Id] = task;
+            }
 
             TaskCards.Clear();
             foreach (DoneTaskCardViewModel task in readyTasks)
@@ -133,6 +179,7 @@ public sealed class DoneViewModel : ScreenViewModelBase, INotifyPropertyChanged
         }
         catch (Exception)
         {
+            _loadedTasksById.Clear();
             TaskCards.Clear();
             UpdateTaskSummary();
             StatusText = "Done could not load.";
@@ -141,6 +188,59 @@ public sealed class DoneViewModel : ScreenViewModelBase, INotifyPropertyChanged
         finally
         {
             IsLoading = false;
+        }
+    }
+
+    public async Task CompleteSelectedTaskAsync(
+        DoneTaskCardViewModel taskCard,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(taskCard);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        SelectTask(taskCard);
+
+        if (IsCompleting)
+        {
+            return;
+        }
+
+        if (!_loadedTasksById.TryGetValue(taskCard.Id, out TaskItem? task))
+        {
+            StatusText = "Task needs refresh.";
+            CompletionPanelText = "Refresh Done and choose the task again.";
+            return;
+        }
+
+        if (task.Status == TaskItemStatus.Done)
+        {
+            RemoveTaskCard(task.Id);
+            StatusText = "Task already complete.";
+            CompletionPanelText = $"{task.Title} was already marked complete.";
+            return;
+        }
+
+        try
+        {
+            IsCompleting = true;
+            task.Complete();
+            await _saveTaskAsync(task, cancellationToken);
+            RemoveTaskCard(task.Id);
+            StatusText = "Task completed locally.";
+            CompletionPanelText = $"{task.Title} was marked complete.";
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            StatusText = "Complete save failed.";
+            CompletionPanelText = "The task could not be saved locally. Refresh Done and try again.";
+        }
+        finally
+        {
+            IsCompleting = false;
         }
     }
 
@@ -217,6 +317,38 @@ public sealed class DoneViewModel : ScreenViewModelBase, INotifyPropertyChanged
         return (_, cancellationToken) => loadTasksAsync(cancellationToken);
     }
 
+    private static Task MissingTaskRepositorySaveAsync(TaskItem task, CancellationToken cancellationToken)
+    {
+        throw new InvalidOperationException("Task save service is not configured.");
+    }
+
+    private void SelectTask(DoneTaskCardViewModel taskCard)
+    {
+        SelectedTaskId = taskCard.Id;
+        SelectedTaskTitle = taskCard.Title;
+        CompletionPanelText = $"{taskCard.Title} is selected.";
+    }
+
+    private void RemoveTaskCard(Guid taskId)
+    {
+        _loadedTasksById.Remove(taskId);
+
+        for (int index = 0; index < TaskCards.Count; index++)
+        {
+            if (TaskCards[index].Id == taskId)
+            {
+                TaskCards.RemoveAt(index);
+                break;
+            }
+        }
+
+        UpdateTaskSummary();
+        if (!HasTasks)
+        {
+            EmptyStateText = "No recent active tasks remain.";
+        }
+    }
+
     private void UpdateTaskSummary()
     {
         TaskCountText = TaskCards.Count == 1 ? "1 task" : $"{TaskCards.Count} tasks";
@@ -246,8 +378,14 @@ public sealed class DoneViewModel : ScreenViewModelBase, INotifyPropertyChanged
 
 public sealed class DoneTaskCardViewModel
 {
-    private DoneTaskCardViewModel(TaskItem task, DateOnly today)
+    private readonly Func<DoneTaskCardViewModel, Task> _completeTaskAsync;
+
+    private DoneTaskCardViewModel(
+        TaskItem task,
+        DateOnly today,
+        Func<DoneTaskCardViewModel, Task>? completeTaskAsync)
     {
+        _completeTaskAsync = completeTaskAsync ?? (_ => Task.CompletedTask);
         Id = task.Id;
         Title = task.Title;
         Notes = task.Notes;
@@ -277,6 +415,7 @@ public sealed class DoneTaskCardViewModel
         CardBorderColor = BuildCardBorderColor(task, today);
         CardIconGlyph = BuildCardIconGlyph(task, today);
         CardToolTip = $"{task.Title} - {DueText} - {StatusText}";
+        CompleteCommand = new AsyncRelayCommand(CompleteTaskAsync);
     }
 
     public Guid Id { get; }
@@ -337,10 +476,20 @@ public sealed class DoneTaskCardViewModel
 
     public string CardToolTip { get; }
 
-    public static DoneTaskCardViewModel FromTask(TaskItem task, DateOnly today)
+    public AsyncRelayCommand CompleteCommand { get; }
+
+    public static DoneTaskCardViewModel FromTask(
+        TaskItem task,
+        DateOnly today,
+        Func<DoneTaskCardViewModel, Task>? completeTaskAsync = null)
     {
         ArgumentNullException.ThrowIfNull(task);
-        return new DoneTaskCardViewModel(task, today);
+        return new DoneTaskCardViewModel(task, today, completeTaskAsync);
+    }
+
+    private Task CompleteTaskAsync()
+    {
+        return _completeTaskAsync(this);
     }
 
     private static string BuildDueText(TaskItem task, DateOnly today)

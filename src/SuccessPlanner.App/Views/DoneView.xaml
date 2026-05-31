@@ -60,6 +60,46 @@
             </Setter>
         </Style>
 
+        <Style x:Key="CardActionButtonStyle" TargetType="Button">
+            <Setter Property="MinHeight" Value="34" />
+            <Setter Property="MinWidth" Value="104" />
+            <Setter Property="Padding" Value="10,0" />
+            <Setter Property="Margin" Value="0,0,8,8" />
+            <Setter Property="Background" Value="#FFFFFF" />
+            <Setter Property="BorderBrush" Value="#D7DADF" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chrome"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="8">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{StaticResource DoneSoftBrush}" />
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="#B8C0CC" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="#E4E8ED" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Chrome" Property="Opacity" Value="0.52" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style x:Key="TaskListVisibilityStyle" TargetType="ScrollViewer">
             <Setter Property="Visibility" Value="Visible" />
             <Style.Triggers>
@@ -305,6 +345,22 @@
                                                                    FontWeight="SemiBold" />
                                                     </Border>
                                                 </WrapPanel>
+
+                                                <WrapPanel Margin="0,4,0,0">
+                                                    <Button Command="{Binding CompleteCommand}"
+                                                            Style="{StaticResource CardActionButtonStyle}"
+                                                            ToolTip="Complete task">
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <TextBlock Text="&#xE73E;"
+                                                                       FontFamily="Segoe MDL2 Assets"
+                                                                       FontSize="13"
+                                                                       Margin="0,0,6,0"
+                                                                       VerticalAlignment="Center" />
+                                                            <TextBlock Text="Complete"
+                                                                       VerticalAlignment="Center" />
+                                                        </StackPanel>
+                                                    </Button>
+                                                </WrapPanel>
                                             </StackPanel>
                                         </Grid>
                                     </Border>
@@ -380,7 +436,7 @@
                                 <TextBlock Text="Win Lane"
                                            Style="{StaticResource SectionTitleStyle}"
                                            Margin="0,0,0,2" />
-                                <TextBlock Text="{Binding TaskCountText}"
+                                <TextBlock Text="{Binding SelectedTaskTitle}"
                                            Foreground="{StaticResource MutedBrush}"
                                            FontSize="13"
                                            FontWeight="SemiBold" />
@@ -391,7 +447,7 @@
                                 CornerRadius="5"
                                 Background="{StaticResource DoneBrush}"
                                 Margin="0,4,0,16" />
-                        <TextBlock Text="{Binding StatusText}"
+                        <TextBlock Text="{Binding CompletionPanelText}"
                                    Style="{StaticResource QuietTextStyle}" />
                     </StackPanel>
                 </Border>

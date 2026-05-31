@@ -22,6 +22,7 @@ TestRunner.RunAll(
     ("DoneViewModel starts in a simple ready state", DoneViewModelStartsReady),
     ("DoneViewModel loads recent active tasks", DoneViewModelLoadsRecentActiveTasks),
     ("DoneViewModel creates task card display state", DoneViewModelCreatesTaskCardDisplayState),
+    ("DoneViewModel completes selected task", DoneViewModelCompletesSelectedTask),
     ("DoneViewModel shows an empty done state", DoneViewModelShowsEmptyDoneState),
     ("DoneViewModel reports load failures", DoneViewModelReportsLoadFailures));
 
@@ -459,8 +460,11 @@ static void DoneViewModelStartsReady()
     Assert.Equal("Ready to choose a win.", viewModel.StatusText);
     Assert.Equal("No active tasks ready to finish.", viewModel.EmptyStateText);
     Assert.Equal("0 tasks", viewModel.TaskCountText);
+    Assert.Equal("No task selected.", viewModel.SelectedTaskTitle);
+    Assert.Equal("Choose a recent active task, then mark it complete.", viewModel.CompletionPanelText);
     Assert.False(viewModel.HasTasks, "Done should start with no loaded tasks.");
     Assert.False(viewModel.IsLoading, "Done should not start in a loading state.");
+    Assert.False(viewModel.IsCompleting, "Done should not start in a completing state.");
     Assert.True(viewModel.RefreshCommand.CanExecute(null), "Refresh should be available when Done is idle.");
 }
 
@@ -500,6 +504,7 @@ static void DoneViewModelLoadsRecentActiveTasks()
     Assert.Equal("4 tasks", viewModel.TaskCountText);
     Assert.Equal("Choose one task to complete.", viewModel.StatusText);
     Assert.Equal("Pick one finished action and record the win.", viewModel.EmptyStateText);
+    Assert.True(viewModel.Tasks[0].CompleteCommand.CanExecute(null), "Complete should be available on Done task cards.");
 }
 
 static void DoneViewModelCreatesTaskCardDisplayState()
@@ -527,6 +532,44 @@ static void DoneViewModelCreatesTaskCardDisplayState()
     Assert.Equal("In progress", activeCard.StatusBadgeText);
     Assert.Equal("#8DDAD5", activeCard.CardAccentColor);
     Assert.Equal("\uE768", activeCard.CardIconGlyph);
+    Assert.True(activeCard.CompleteCommand.CanExecute(null), "Done card should expose a Complete command.");
+}
+
+static void DoneViewModelCompletesSelectedTask()
+{
+    DateOnly today = new(2026, 5, 30);
+    TaskItem completedTask = CreateTask("Finish active task", inProgress: true);
+    TaskItem remainingTask = CreateTask("Pay the bill", dueDate: today);
+    List<(Guid Id, TaskItemStatus Status, DateTimeOffset? CompletedAt)> savedTasks = [];
+    DoneViewModel viewModel = new(
+        (_, _) => Task.FromResult<IReadOnlyList<TaskItem>>([completedTask, remainingTask]),
+        (task, _) =>
+        {
+            savedTasks.Add((task.Id, task.Status, task.CompletedAt));
+            return Task.CompletedTask;
+        },
+        () => today);
+
+    viewModel.LoadTasksAsync().GetAwaiter().GetResult();
+    DoneTaskCardViewModel card = viewModel.TaskCards.First(task => task.Id == completedTask.Id);
+
+    viewModel.CompleteSelectedTaskAsync(card).GetAwaiter().GetResult();
+
+    Assert.Equal(completedTask.Id, viewModel.SelectedTaskId.GetValueOrDefault());
+    Assert.Equal("Finish active task", viewModel.SelectedTaskTitle);
+    Assert.Equal("Task completed locally.", viewModel.StatusText);
+    Assert.Contains("marked complete", viewModel.CompletionPanelText);
+    Assert.Equal(TaskItemStatus.Done, completedTask.Status);
+    Assert.True(completedTask.CompletedAt.HasValue, "Completing selected task should stamp a completed time.");
+    Assert.Equal(1, savedTasks.Count);
+    Assert.Equal(completedTask.Id, savedTasks[0].Id);
+    Assert.Equal(TaskItemStatus.Done, savedTasks[0].Status);
+    Assert.True(savedTasks[0].CompletedAt.HasValue, "Completed task should be saved with a completed time.");
+    Assert.False(viewModel.TaskCards.Any(task => task.Id == completedTask.Id), "Completed task should leave Done task cards.");
+    Assert.Equal(1, viewModel.TaskCards.Count);
+    Assert.Equal("1 task", viewModel.TaskCountText);
+    Assert.True(viewModel.HasTasks, "Remaining task should keep Done non-empty.");
+    Assert.False(viewModel.IsCompleting, "Completing flag should clear after save.");
 }
 
 static void DoneViewModelShowsEmptyDoneState()
