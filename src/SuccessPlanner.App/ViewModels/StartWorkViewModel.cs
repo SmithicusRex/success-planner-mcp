@@ -26,6 +26,14 @@ public sealed class StartWorkViewModel : ScreenViewModelBase, INotifyPropertyCha
     private string _focusPanelTitle = "Choose Focus";
     private string _focusPanelText = "Pick one small action for a 20 minute focus session.";
     private string _focusIntention = "Choose one small action.";
+    private FocusSession? _activeFocusSession;
+    private string _focusSessionStatusText = "No active session.";
+    private string _focusSessionPanelTitle = "Ready Timer";
+    private string _focusSessionPanelText = "Select one focus option, then start the timer.";
+    private string _focusSessionBadgeText = "Ready";
+    private string _focusTimerText = "20:00 planned";
+    private string _focusSessionWinText = "Start a focus block to record a win.";
+    private string _blockedReasonDraft = string.Empty;
     private Guid? _suggestedTaskId;
     private int _suggestedTaskScore;
     private string _suggestedTaskTitle = "No suggestion yet.";
@@ -63,6 +71,21 @@ public sealed class StartWorkViewModel : ScreenViewModelBase, INotifyPropertyCha
         ChooseTenMinuteSessionCommand = new AsyncRelayCommand(() => ChooseSessionLengthAsync(ShortSessionMinutes));
         ChooseFifteenMinuteSessionCommand = new AsyncRelayCommand(() => ChooseSessionLengthAsync(MediumSessionMinutes));
         ChooseTwentyMinuteSessionCommand = new AsyncRelayCommand(() => ChooseSessionLengthAsync(FocusSession.DefaultPlannedMinutes));
+        StartFocusCommand = new AsyncRelayCommand(
+            () => StartFocusAsync(CancellationToken.None),
+            () => CanStartFocus);
+        PauseFocusCommand = new AsyncRelayCommand(
+            () => PauseFocusAsync(CancellationToken.None),
+            () => CanPauseFocus);
+        ResumeFocusCommand = new AsyncRelayCommand(
+            () => ResumeFocusAsync(CancellationToken.None),
+            () => CanResumeFocus);
+        CompleteFocusCommand = new AsyncRelayCommand(
+            () => CompleteFocusAsync(CancellationToken.None),
+            () => CanCompleteFocus);
+        BlockFocusCommand = new AsyncRelayCommand(
+            () => BlockFocusAsync(CancellationToken.None),
+            () => CanBlockFocus);
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -89,6 +112,16 @@ public sealed class StartWorkViewModel : ScreenViewModelBase, INotifyPropertyCha
 
     public AsyncRelayCommand ChooseTwentyMinuteSessionCommand { get; }
 
+    public AsyncRelayCommand StartFocusCommand { get; }
+
+    public AsyncRelayCommand PauseFocusCommand { get; }
+
+    public AsyncRelayCommand ResumeFocusCommand { get; }
+
+    public AsyncRelayCommand CompleteFocusCommand { get; }
+
+    public AsyncRelayCommand BlockFocusCommand { get; }
+
     public bool IsLoading
     {
         get => _isLoading;
@@ -98,6 +131,7 @@ public sealed class StartWorkViewModel : ScreenViewModelBase, INotifyPropertyCha
             {
                 RefreshCommand.RaiseCanExecuteChanged();
                 UseSuggestionCommand.RaiseCanExecuteChanged();
+                RaiseFocusCommandStatesChanged();
             }
         }
     }
@@ -132,6 +166,8 @@ public sealed class StartWorkViewModel : ScreenViewModelBase, INotifyPropertyCha
             if (SetProperty(ref _selectedTaskId, value))
             {
                 OnPropertyChanged(nameof(HasSelectedTask));
+                OnPropertyChanged(nameof(CanStartFocus));
+                RaiseFocusCommandStatesChanged();
             }
         }
     }
@@ -161,6 +197,82 @@ public sealed class StartWorkViewModel : ScreenViewModelBase, INotifyPropertyCha
         get => _focusIntention;
         private set => SetProperty(ref _focusIntention, value);
     }
+
+    public Guid? ActiveFocusSessionId => _activeFocusSession?.Id;
+
+    public Guid? ActiveFocusSessionTaskId => _activeFocusSession?.TaskId;
+
+    public int ActiveFocusSessionPlannedMinutes => _activeFocusSession?.PlannedMinutes ?? PlannedMinutes;
+
+    public FocusSessionStatus? ActiveFocusSessionStatus => _activeFocusSession?.Status;
+
+    public string FocusSessionStatusText
+    {
+        get => _focusSessionStatusText;
+        private set => SetProperty(ref _focusSessionStatusText, value);
+    }
+
+    public string FocusSessionPanelTitle
+    {
+        get => _focusSessionPanelTitle;
+        private set => SetProperty(ref _focusSessionPanelTitle, value);
+    }
+
+    public string FocusSessionPanelText
+    {
+        get => _focusSessionPanelText;
+        private set => SetProperty(ref _focusSessionPanelText, value);
+    }
+
+    public string FocusSessionBadgeText
+    {
+        get => _focusSessionBadgeText;
+        private set => SetProperty(ref _focusSessionBadgeText, value);
+    }
+
+    public string FocusTimerText
+    {
+        get => _focusTimerText;
+        private set => SetProperty(ref _focusTimerText, value);
+    }
+
+    public string FocusSessionWinText
+    {
+        get => _focusSessionWinText;
+        private set => SetProperty(ref _focusSessionWinText, value);
+    }
+
+    public string BlockedReasonDraft
+    {
+        get => _blockedReasonDraft;
+        set => SetProperty(ref _blockedReasonDraft, value);
+    }
+
+    public string FocusSessionBlockedReason => _activeFocusSession?.BlockedReason ?? string.Empty;
+
+    public bool HasFocusSession => _activeFocusSession is not null;
+
+    public bool HasActiveFocusSession => ActiveFocusSessionStatus is FocusSessionStatus.InProgress or FocusSessionStatus.Paused;
+
+    public bool HasEndedFocusSession => ActiveFocusSessionStatus is FocusSessionStatus.Completed or FocusSessionStatus.Blocked or FocusSessionStatus.Cancelled;
+
+    public bool IsFocusSessionInProgress => ActiveFocusSessionStatus == FocusSessionStatus.InProgress;
+
+    public bool IsFocusSessionPaused => ActiveFocusSessionStatus == FocusSessionStatus.Paused;
+
+    public bool IsFocusSessionCompleted => ActiveFocusSessionStatus == FocusSessionStatus.Completed;
+
+    public bool IsFocusSessionBlocked => ActiveFocusSessionStatus == FocusSessionStatus.Blocked;
+
+    public bool CanStartFocus => HasSelectedTask && !IsLoading && !HasActiveFocusSession;
+
+    public bool CanPauseFocus => IsFocusSessionInProgress && !IsLoading;
+
+    public bool CanResumeFocus => IsFocusSessionPaused && !IsLoading;
+
+    public bool CanCompleteFocus => HasActiveFocusSession && !IsLoading;
+
+    public bool CanBlockFocus => HasActiveFocusSession && !IsLoading;
 
     public Guid? SuggestedTaskId
     {
@@ -225,6 +337,11 @@ public sealed class StartWorkViewModel : ScreenViewModelBase, INotifyPropertyCha
                 OnPropertyChanged(nameof(IsTenMinuteSessionSelected));
                 OnPropertyChanged(nameof(IsFifteenMinuteSessionSelected));
                 OnPropertyChanged(nameof(IsTwentyMinuteSessionSelected));
+                OnPropertyChanged(nameof(ActiveFocusSessionPlannedMinutes));
+                if (!HasActiveFocusSession)
+                {
+                    FocusTimerText = $"{PlannedMinutes}:00 planned";
+                }
             }
         }
     }
@@ -373,6 +490,98 @@ public sealed class StartWorkViewModel : ScreenViewModelBase, INotifyPropertyCha
         }
 
         SelectTask(suggestion);
+        return Task.CompletedTask;
+    }
+
+    public Task StartFocusAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (!HasSelectedTask)
+        {
+            StatusText = "Choose a focus first.";
+            return Task.CompletedTask;
+        }
+
+        if (HasActiveFocusSession)
+        {
+            StatusText = "Focus session already running.";
+            return Task.CompletedTask;
+        }
+
+        _activeFocusSession = FocusSession.StartForTask(SelectedTaskId, FocusIntention, PlannedMinutes);
+        if (SelectedTaskId.HasValue && _loadedTasksById.TryGetValue(SelectedTaskId.Value, out TaskItem? selectedTask))
+        {
+            selectedTask?.Start();
+        }
+
+        BlockedReasonDraft = string.Empty;
+        UpdateFocusSessionState("Focus session started.");
+        return Task.CompletedTask;
+    }
+
+    public Task PauseFocusAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (!CanPauseFocus)
+        {
+            StatusText = "No running session to pause.";
+            return Task.CompletedTask;
+        }
+
+        _activeFocusSession!.Pause();
+        UpdateFocusSessionState("Focus session paused.");
+        return Task.CompletedTask;
+    }
+
+    public Task ResumeFocusAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (!CanResumeFocus)
+        {
+            StatusText = "No paused session to resume.";
+            return Task.CompletedTask;
+        }
+
+        _activeFocusSession!.Resume();
+        UpdateFocusSessionState("Focus session resumed.");
+        return Task.CompletedTask;
+    }
+
+    public Task CompleteFocusAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (!CanCompleteFocus)
+        {
+            StatusText = "No active session to complete.";
+            return Task.CompletedTask;
+        }
+
+        FocusSession session = _activeFocusSession!;
+        session.Complete($"Completed {session.PlannedMinutes} minute focus: {session.Intention}");
+        UpdateFocusSessionState("Focus session completed.");
+        return Task.CompletedTask;
+    }
+
+    public Task BlockFocusAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (!CanBlockFocus)
+        {
+            StatusText = "No active session to block.";
+            return Task.CompletedTask;
+        }
+
+        string reason = string.IsNullOrWhiteSpace(BlockedReasonDraft)
+            ? "Blocked during focus."
+            : BlockedReasonDraft.Trim();
+        _activeFocusSession!.MarkBlocked(reason);
+        BlockedReasonDraft = reason;
+        UpdateFocusSessionState("Focus session blocked.");
         return Task.CompletedTask;
     }
 
@@ -629,6 +838,110 @@ public sealed class StartWorkViewModel : ScreenViewModelBase, INotifyPropertyCha
             TaskPriority.Low => 3,
             _ => 4
         };
+    }
+
+    private void UpdateFocusSessionState(string statusMessage)
+    {
+        if (_activeFocusSession is null)
+        {
+            FocusSessionStatusText = "No active session.";
+            FocusSessionPanelTitle = "Ready Timer";
+            FocusSessionPanelText = "Select one focus option, then start the timer.";
+            FocusSessionBadgeText = "Ready";
+            FocusTimerText = $"{PlannedMinutes}:00 planned";
+            FocusSessionWinText = "Start a focus block to record a win.";
+        }
+        else
+        {
+            ApplyFocusSessionDisplay(_activeFocusSession);
+        }
+
+        OnPropertyChanged(nameof(ActiveFocusSessionId));
+        OnPropertyChanged(nameof(ActiveFocusSessionTaskId));
+        OnPropertyChanged(nameof(ActiveFocusSessionPlannedMinutes));
+        OnPropertyChanged(nameof(ActiveFocusSessionStatus));
+        OnPropertyChanged(nameof(FocusSessionBlockedReason));
+        OnPropertyChanged(nameof(HasFocusSession));
+        OnPropertyChanged(nameof(HasActiveFocusSession));
+        OnPropertyChanged(nameof(HasEndedFocusSession));
+        OnPropertyChanged(nameof(IsFocusSessionInProgress));
+        OnPropertyChanged(nameof(IsFocusSessionPaused));
+        OnPropertyChanged(nameof(IsFocusSessionCompleted));
+        OnPropertyChanged(nameof(IsFocusSessionBlocked));
+        OnPropertyChanged(nameof(CanStartFocus));
+        OnPropertyChanged(nameof(CanPauseFocus));
+        OnPropertyChanged(nameof(CanResumeFocus));
+        OnPropertyChanged(nameof(CanCompleteFocus));
+        OnPropertyChanged(nameof(CanBlockFocus));
+        RaiseFocusCommandStatesChanged();
+        StatusText = statusMessage;
+    }
+
+    private void ApplyFocusSessionDisplay(FocusSession session)
+    {
+        FocusSessionStatusText = session.Status switch
+        {
+            FocusSessionStatus.InProgress => "In progress",
+            FocusSessionStatus.Paused => "Paused",
+            FocusSessionStatus.Completed => "Completed",
+            FocusSessionStatus.Blocked => "Blocked",
+            FocusSessionStatus.Cancelled => "Cancelled",
+            _ => session.Status.ToString()
+        };
+        FocusSessionPanelTitle = session.Status switch
+        {
+            FocusSessionStatus.InProgress => "Focus Running",
+            FocusSessionStatus.Paused => "Focus Paused",
+            FocusSessionStatus.Completed => "Focus Complete",
+            FocusSessionStatus.Blocked => "Focus Blocked",
+            FocusSessionStatus.Cancelled => "Focus Cancelled",
+            _ => "Focus Session"
+        };
+        FocusSessionBadgeText = session.Status switch
+        {
+            FocusSessionStatus.InProgress => "Running",
+            FocusSessionStatus.Paused => "Paused",
+            FocusSessionStatus.Completed => "Done",
+            FocusSessionStatus.Blocked => "Blocked",
+            FocusSessionStatus.Cancelled => "Stopped",
+            _ => "Ready"
+        };
+        FocusTimerText = session.Status switch
+        {
+            FocusSessionStatus.Completed => $"{session.ActualFocusMinutes.GetValueOrDefault()} min recorded",
+            FocusSessionStatus.Blocked => $"{session.ActualFocusMinutes.GetValueOrDefault()} min before block",
+            FocusSessionStatus.Paused => $"{session.PlannedMinutes}:00 paused",
+            _ => $"{session.PlannedMinutes}:00 focus block"
+        };
+        FocusSessionPanelText = session.Status switch
+        {
+            FocusSessionStatus.InProgress => $"{session.Intention} is running as the only focus.",
+            FocusSessionStatus.Paused => $"{session.Intention} is paused without losing the session.",
+            FocusSessionStatus.Completed => $"{session.Intention} is recorded as a small focus win.",
+            FocusSessionStatus.Blocked => $"{session.Intention} is blocked. Choose the next tiny step when ready.",
+            FocusSessionStatus.Cancelled => $"{session.Intention} was stopped.",
+            _ => session.Intention
+        };
+        FocusSessionWinText = session.Status switch
+        {
+            FocusSessionStatus.Completed => string.IsNullOrWhiteSpace(session.WinNote) ? "Focus session completed." : session.WinNote,
+            FocusSessionStatus.Blocked => string.IsNullOrWhiteSpace(session.BlockedReason)
+                ? "Blocked without completing the task."
+                : $"Blocked: {session.BlockedReason}",
+            FocusSessionStatus.Paused => "Paused. Resume when ready.",
+            FocusSessionStatus.InProgress => "Keep this one action in front of you.",
+            FocusSessionStatus.Cancelled => "Session stopped.",
+            _ => "Start a focus block to record a win."
+        };
+    }
+
+    private void RaiseFocusCommandStatesChanged()
+    {
+        StartFocusCommand.RaiseCanExecuteChanged();
+        PauseFocusCommand.RaiseCanExecuteChanged();
+        ResumeFocusCommand.RaiseCanExecuteChanged();
+        CompleteFocusCommand.RaiseCanExecuteChanged();
+        BlockFocusCommand.RaiseCanExecuteChanged();
     }
 
     private void UpdateTaskSummary()

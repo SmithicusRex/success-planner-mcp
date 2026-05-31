@@ -32,6 +32,10 @@ TestRunner.RunAll(
     ("StartWorkViewModel suggests a best next action", StartWorkViewModelSuggestsBestNextAction),
     ("StartWorkViewModel uses the suggested action", StartWorkViewModelUsesSuggestedAction),
     ("StartWorkViewModel selects a focus task", StartWorkViewModelSelectsFocusTask),
+    ("StartWorkViewModel starts a focus session", StartWorkViewModelStartsFocusSession),
+    ("StartWorkViewModel pauses and resumes a focus session", StartWorkViewModelPausesAndResumesFocusSession),
+    ("StartWorkViewModel completes a focus session", StartWorkViewModelCompletesFocusSession),
+    ("StartWorkViewModel blocks a focus session without completing the task", StartWorkViewModelBlocksFocusSessionWithoutCompletingTask),
     ("StartWorkViewModel creates task option display state", StartWorkViewModelCreatesTaskOptionDisplayState),
     ("StartWorkViewModel shows an empty focus state", StartWorkViewModelShowsEmptyFocusState),
     ("StartWorkViewModel reports load failures", StartWorkViewModelReportsLoadFailures));
@@ -693,6 +697,21 @@ static void StartWorkViewModelStartsReady()
     Assert.False(viewModel.IsTenMinuteSessionSelected, "Ten minute session should not start selected.");
     Assert.False(viewModel.IsFifteenMinuteSessionSelected, "Fifteen minute session should not start selected.");
     Assert.True(viewModel.IsTwentyMinuteSessionSelected, "Twenty minute session should start selected.");
+    Assert.Null(viewModel.ActiveFocusSessionId, "Start should begin without a focus session.");
+    Assert.Null(viewModel.ActiveFocusSessionTaskId, "Start should begin without a session task.");
+    Assert.False(viewModel.HasFocusSession, "Start should not show a session before the user starts one.");
+    Assert.False(viewModel.HasActiveFocusSession, "Start should not show an active session before the user starts one.");
+    Assert.Equal("No active session.", viewModel.FocusSessionStatusText);
+    Assert.Equal("Ready Timer", viewModel.FocusSessionPanelTitle);
+    Assert.Equal("Ready", viewModel.FocusSessionBadgeText);
+    Assert.Equal("20:00 planned", viewModel.FocusTimerText);
+    Assert.Contains("Select one focus option", viewModel.FocusSessionPanelText);
+    Assert.False(viewModel.CanStartFocus, "Start Focus should wait for a selected task.");
+    Assert.False(viewModel.StartFocusCommand.CanExecute(null), "Start Focus command should wait for a selected task.");
+    Assert.False(viewModel.PauseFocusCommand.CanExecute(null), "Pause should wait for a running session.");
+    Assert.False(viewModel.ResumeFocusCommand.CanExecute(null), "Resume should wait for a paused session.");
+    Assert.False(viewModel.CompleteFocusCommand.CanExecute(null), "Complete should wait for an active session.");
+    Assert.False(viewModel.BlockFocusCommand.CanExecute(null), "Blocked should wait for an active session.");
     Assert.True(viewModel.ChooseTenMinuteSessionCommand.CanExecute(null), "Ten minute choice should be available.");
     Assert.True(viewModel.ChooseFifteenMinuteSessionCommand.CanExecute(null), "Fifteen minute choice should be available.");
     Assert.True(viewModel.ChooseTwentyMinuteSessionCommand.CanExecute(null), "Twenty minute choice should be available.");
@@ -875,6 +894,131 @@ static void StartWorkViewModelSelectsFocusTask()
     Assert.Equal("Focus Selected", viewModel.FocusPanelTitle);
     Assert.Contains("20 minute focus session", viewModel.FocusPanelText);
     Assert.Equal("Suggested focus selected.", viewModel.StatusText);
+}
+
+static void StartWorkViewModelStartsFocusSession()
+{
+    DateOnly today = new(2026, 5, 30);
+    TaskItem focusTask = CreateTask("Draft the first Start screen", dueDate: today);
+    StartWorkViewModel viewModel = new(
+        (_, _) => Task.FromResult<IReadOnlyList<TaskItem>>([focusTask]),
+        () => today);
+
+    viewModel.LoadTasksAsync().GetAwaiter().GetResult();
+    viewModel.UseSuggestedTaskAsync().GetAwaiter().GetResult();
+    viewModel.SetSessionLength(15);
+    viewModel.StartFocusAsync().GetAwaiter().GetResult();
+
+    Assert.True(viewModel.ActiveFocusSessionId.HasValue, "Starting focus should create a session id.");
+    Assert.Equal(focusTask.Id, viewModel.ActiveFocusSessionTaskId.GetValueOrDefault());
+    Assert.True(viewModel.ActiveFocusSessionStatus == FocusSessionStatus.InProgress, "Started focus session should be in progress.");
+    Assert.Equal(15, viewModel.ActiveFocusSessionPlannedMinutes);
+    Assert.True(viewModel.HasFocusSession, "Started focus session should be visible.");
+    Assert.True(viewModel.HasActiveFocusSession, "Started focus session should be active.");
+    Assert.True(viewModel.IsFocusSessionInProgress, "Started focus session should expose running state.");
+    Assert.Equal("In progress", viewModel.FocusSessionStatusText);
+    Assert.Equal("Focus Running", viewModel.FocusSessionPanelTitle);
+    Assert.Equal("Running", viewModel.FocusSessionBadgeText);
+    Assert.Equal("15:00 focus block", viewModel.FocusTimerText);
+    Assert.Contains("only focus", viewModel.FocusSessionPanelText);
+    Assert.Contains("Keep this one action", viewModel.FocusSessionWinText);
+    Assert.Equal(TaskItemStatus.InProgress, focusTask.Status);
+    Assert.False(viewModel.CanStartFocus, "Start should disable while a session is active.");
+    Assert.True(viewModel.CanPauseFocus, "Pause should enable while a session is running.");
+    Assert.False(viewModel.CanResumeFocus, "Resume should wait for a paused session.");
+    Assert.True(viewModel.CanCompleteFocus, "Complete should be available during active focus.");
+    Assert.True(viewModel.CanBlockFocus, "Blocked should be available during active focus.");
+    Assert.False(viewModel.StartFocusCommand.CanExecute(null), "Start command should disable while running.");
+    Assert.True(viewModel.PauseFocusCommand.CanExecute(null), "Pause command should enable while running.");
+}
+
+static void StartWorkViewModelPausesAndResumesFocusSession()
+{
+    DateOnly today = new(2026, 5, 30);
+    TaskItem focusTask = CreateTask("Draft the pause state", dueDate: today);
+    StartWorkViewModel viewModel = new(
+        (_, _) => Task.FromResult<IReadOnlyList<TaskItem>>([focusTask]),
+        () => today);
+
+    viewModel.LoadTasksAsync().GetAwaiter().GetResult();
+    viewModel.UseSuggestedTaskAsync().GetAwaiter().GetResult();
+    viewModel.StartFocusAsync().GetAwaiter().GetResult();
+    viewModel.PauseFocusAsync().GetAwaiter().GetResult();
+
+    Assert.True(viewModel.ActiveFocusSessionStatus == FocusSessionStatus.Paused, "Pause should put the session in paused state.");
+    Assert.True(viewModel.IsFocusSessionPaused, "Pause should expose paused state.");
+    Assert.Equal("Paused", viewModel.FocusSessionStatusText);
+    Assert.Equal("Focus Paused", viewModel.FocusSessionPanelTitle);
+    Assert.Equal("20:00 paused", viewModel.FocusTimerText);
+    Assert.False(viewModel.CanPauseFocus, "Pause should disable while paused.");
+    Assert.True(viewModel.CanResumeFocus, "Resume should enable while paused.");
+    Assert.True(viewModel.ResumeFocusCommand.CanExecute(null), "Resume command should enable while paused.");
+
+    viewModel.ResumeFocusAsync().GetAwaiter().GetResult();
+
+    Assert.True(viewModel.ActiveFocusSessionStatus == FocusSessionStatus.InProgress, "Resume should return the session to running.");
+    Assert.True(viewModel.IsFocusSessionInProgress, "Resume should expose running state.");
+    Assert.Equal("In progress", viewModel.FocusSessionStatusText);
+    Assert.Equal("Focus Running", viewModel.FocusSessionPanelTitle);
+    Assert.True(viewModel.CanPauseFocus, "Pause should enable after resume.");
+    Assert.False(viewModel.CanResumeFocus, "Resume should disable after resume.");
+}
+
+static void StartWorkViewModelCompletesFocusSession()
+{
+    DateOnly today = new(2026, 5, 30);
+    TaskItem focusTask = CreateTask("Draft the completion state", dueDate: today);
+    StartWorkViewModel viewModel = new(
+        (_, _) => Task.FromResult<IReadOnlyList<TaskItem>>([focusTask]),
+        () => today);
+
+    viewModel.LoadTasksAsync().GetAwaiter().GetResult();
+    viewModel.UseSuggestedTaskAsync().GetAwaiter().GetResult();
+    viewModel.StartFocusAsync().GetAwaiter().GetResult();
+    viewModel.CompleteFocusAsync().GetAwaiter().GetResult();
+
+    Assert.True(viewModel.ActiveFocusSessionStatus == FocusSessionStatus.Completed, "Complete should close the focus session as completed.");
+    Assert.True(viewModel.HasEndedFocusSession, "Completed session should expose ended state.");
+    Assert.True(viewModel.IsFocusSessionCompleted, "Completed session should expose completed state.");
+    Assert.Equal("Completed", viewModel.FocusSessionStatusText);
+    Assert.Equal("Focus Complete", viewModel.FocusSessionPanelTitle);
+    Assert.Equal("Done", viewModel.FocusSessionBadgeText);
+    Assert.Contains("recorded", viewModel.FocusTimerText);
+    Assert.Contains("Completed 20 minute focus", viewModel.FocusSessionWinText);
+    Assert.Equal(TaskItemStatus.InProgress, focusTask.Status);
+    Assert.True(viewModel.CanStartFocus, "A completed focus session should allow a new session.");
+    Assert.False(viewModel.CanPauseFocus, "Pause should disable after completion.");
+    Assert.False(viewModel.CanResumeFocus, "Resume should disable after completion.");
+    Assert.False(viewModel.CanCompleteFocus, "Complete should disable after completion.");
+    Assert.False(viewModel.CanBlockFocus, "Blocked should disable after completion.");
+}
+
+static void StartWorkViewModelBlocksFocusSessionWithoutCompletingTask()
+{
+    DateOnly today = new(2026, 5, 30);
+    TaskItem focusTask = CreateTask("Call the supplier", dueDate: today);
+    StartWorkViewModel viewModel = new(
+        (_, _) => Task.FromResult<IReadOnlyList<TaskItem>>([focusTask]),
+        () => today);
+
+    viewModel.LoadTasksAsync().GetAwaiter().GetResult();
+    viewModel.UseSuggestedTaskAsync().GetAwaiter().GetResult();
+    viewModel.StartFocusAsync().GetAwaiter().GetResult();
+    viewModel.BlockedReasonDraft = "Waiting on a return call";
+    viewModel.BlockFocusAsync().GetAwaiter().GetResult();
+
+    Assert.True(viewModel.ActiveFocusSessionStatus == FocusSessionStatus.Blocked, "Blocked should close the focus session as blocked.");
+    Assert.True(viewModel.HasEndedFocusSession, "Blocked session should expose ended state.");
+    Assert.True(viewModel.IsFocusSessionBlocked, "Blocked session should expose blocked state.");
+    Assert.Equal("Blocked", viewModel.FocusSessionStatusText);
+    Assert.Equal("Focus Blocked", viewModel.FocusSessionPanelTitle);
+    Assert.Equal("Waiting on a return call", viewModel.FocusSessionBlockedReason);
+    Assert.Contains("Blocked: Waiting on a return call", viewModel.FocusSessionWinText);
+    Assert.Equal(TaskItemStatus.InProgress, focusTask.Status);
+    Assert.False(focusTask.Status == TaskItemStatus.Done, "Blocked session must not mark the task complete.");
+    Assert.True(viewModel.CanStartFocus, "A blocked focus session should allow a new session.");
+    Assert.False(viewModel.CanCompleteFocus, "Complete should disable after blocked.");
+    Assert.False(viewModel.CanBlockFocus, "Blocked should disable after blocked.");
 }
 
 static void StartWorkViewModelCreatesTaskOptionDisplayState()

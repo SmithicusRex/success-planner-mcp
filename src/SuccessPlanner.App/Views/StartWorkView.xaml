@@ -607,6 +607,144 @@
                                        Margin="0,8,0,0" />
                         </StackPanel>
 
+                        <Border Background="#FFFFFF"
+                                BorderBrush="#B7DEDB"
+                                BorderThickness="1"
+                                CornerRadius="8"
+                                Padding="14"
+                                Margin="0,16,0,0">
+                            <StackPanel>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <TextBlock Text="{Binding FocusSessionPanelTitle}"
+                                               Foreground="{StaticResource InkBrush}"
+                                               FontSize="15"
+                                               FontWeight="SemiBold"
+                                               TextWrapping="Wrap" />
+                                    <Border Grid.Column="1"
+                                            Background="{StaticResource StartSoftBrush}"
+                                            BorderBrush="#B7DEDB"
+                                            BorderThickness="1"
+                                            CornerRadius="8"
+                                            Padding="9,5"
+                                            Margin="8,0,0,0">
+                                        <TextBlock Text="{Binding FocusSessionBadgeText}"
+                                                   Foreground="{StaticResource StartInkBrush}"
+                                                   FontSize="12"
+                                                   FontWeight="SemiBold" />
+                                    </Border>
+                                </Grid>
+
+                                <TextBlock Text="{Binding FocusTimerText}"
+                                           Foreground="{StaticResource StartInkBrush}"
+                                           FontSize="24"
+                                           FontWeight="SemiBold"
+                                           Margin="0,10,0,0" />
+                                <TextBlock Text="{Binding FocusSessionStatusText}"
+                                           Foreground="{StaticResource MutedBrush}"
+                                           FontSize="13"
+                                           FontWeight="SemiBold"
+                                           Margin="0,2,0,0" />
+                                <TextBlock Text="{Binding FocusSessionPanelText}"
+                                           Foreground="{StaticResource MutedBrush}"
+                                           FontSize="13"
+                                           TextWrapping="Wrap"
+                                           Margin="0,8,0,0" />
+
+                                <WrapPanel Margin="0,12,0,0">
+                                    <Button Command="{Binding StartFocusCommand}"
+                                            Style="{StaticResource CardActionButtonStyle}"
+                                            ToolTip="Start focus session">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="&#xE768;"
+                                                       FontFamily="Segoe MDL2 Assets"
+                                                       FontSize="13"
+                                                       Margin="0,0,6,0"
+                                                       VerticalAlignment="Center" />
+                                            <TextBlock Text="Start"
+                                                       VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </Button>
+                                    <Button Command="{Binding PauseFocusCommand}"
+                                            Style="{StaticResource CardActionButtonStyle}"
+                                            ToolTip="Pause focus session">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="&#xE769;"
+                                                       FontFamily="Segoe MDL2 Assets"
+                                                       FontSize="13"
+                                                       Margin="0,0,6,0"
+                                                       VerticalAlignment="Center" />
+                                            <TextBlock Text="Pause"
+                                                       VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </Button>
+                                    <Button Command="{Binding ResumeFocusCommand}"
+                                            Style="{StaticResource CardActionButtonStyle}"
+                                            ToolTip="Resume focus session">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="&#xE768;"
+                                                       FontFamily="Segoe MDL2 Assets"
+                                                       FontSize="13"
+                                                       Margin="0,0,6,0"
+                                                       VerticalAlignment="Center" />
+                                            <TextBlock Text="Resume"
+                                                       VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </Button>
+                                    <Button Command="{Binding CompleteFocusCommand}"
+                                            Style="{StaticResource CardActionButtonStyle}"
+                                            ToolTip="Complete focus session">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="&#xE73E;"
+                                                       FontFamily="Segoe MDL2 Assets"
+                                                       FontSize="13"
+                                                       Margin="0,0,6,0"
+                                                       VerticalAlignment="Center" />
+                                            <TextBlock Text="Complete"
+                                                       VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </Button>
+                                </WrapPanel>
+
+                                <TextBlock Text="If blocked"
+                                           Foreground="{StaticResource InkBrush}"
+                                           FontSize="12"
+                                           FontWeight="SemiBold"
+                                           Margin="0,6,0,4" />
+                                <TextBox Text="{Binding BlockedReasonDraft, UpdateSourceTrigger=PropertyChanged}"
+                                         MinHeight="34"
+                                         Padding="8,5"
+                                         BorderBrush="#D7DADF"
+                                         BorderThickness="1"
+                                         ToolTip="Why is this blocked?" />
+                                <Button Command="{Binding BlockFocusCommand}"
+                                        Style="{StaticResource CardActionButtonStyle}"
+                                        HorizontalAlignment="Left"
+                                        MinWidth="122"
+                                        Margin="0,8,0,0"
+                                        ToolTip="Mark focus session blocked">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="&#xE783;"
+                                                   FontFamily="Segoe MDL2 Assets"
+                                                   FontSize="13"
+                                                   Margin="0,0,6,0"
+                                                   VerticalAlignment="Center" />
+                                        <TextBlock Text="Blocked"
+                                                   VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
+                                <TextBlock Text="{Binding FocusSessionWinText}"
+                                           Foreground="{StaticResource MutedBrush}"
+                                           FontSize="13"
+                                           TextWrapping="Wrap"
+                                           Margin="0,8,0,0" />
+                            </StackPanel>
+                        </Border>
+
                         <Border Background="{StaticResource StartSoftBrush}"
                                 BorderBrush="#B7DEDB"
                                 BorderThickness="1"
