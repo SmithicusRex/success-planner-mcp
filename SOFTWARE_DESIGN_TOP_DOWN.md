@@ -946,7 +946,7 @@ Status:
 
 ~~9.5. Implement start, pause, resume, complete, and blocked states.~~
 
-9.6. Record focus session locally.
+~~9.6. Record focus session locally.~~
 
 9.7. Suggest a break after session completion.
 

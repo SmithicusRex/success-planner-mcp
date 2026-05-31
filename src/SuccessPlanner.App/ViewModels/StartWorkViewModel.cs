@@ -13,6 +13,8 @@ public sealed class StartWorkViewModel : ScreenViewModelBase, INotifyPropertyCha
     private const int ShortSessionMinutes = 10;
     private const int MediumSessionMinutes = 15;
     private readonly Func<DateOnly, CancellationToken, Task<IReadOnlyList<TaskItem>>> _loadTasksAsync;
+    private readonly Func<FocusSession, CancellationToken, Task> _saveFocusSessionAsync;
+    private readonly Func<TaskItem, CancellationToken, Task> _saveTaskAsync;
     private readonly Func<DateOnly> _todayProvider;
     private readonly Dictionary<Guid, TaskItem> _loadedTasksById = [];
     private bool _isLoading;
@@ -33,6 +35,8 @@ public sealed class StartWorkViewModel : ScreenViewModelBase, INotifyPropertyCha
     private string _focusSessionBadgeText = "Ready";
     private string _focusTimerText = "20:00 planned";
     private string _focusSessionWinText = "Start a focus block to record a win.";
+    private string _focusSessionStorageText = "Session not saved yet.";
+    private Guid? _lastSavedFocusSessionId;
     private string _blockedReasonDraft = string.Empty;
     private Guid? _suggestedTaskId;
     private int _suggestedTaskScore;
@@ -50,17 +54,38 @@ public sealed class StartWorkViewModel : ScreenViewModelBase, INotifyPropertyCha
     public StartWorkViewModel(
         Func<CancellationToken, Task<IReadOnlyList<TaskItem>>> loadTasksAsync,
         Func<DateOnly>? todayProvider = null)
-        : this(CreateFocusLoader(loadTasksAsync), todayProvider)
+        : this(CreateFocusLoader(loadTasksAsync), MissingFocusSessionRepositorySaveAsync, MissingTaskRepositorySaveAsync, todayProvider)
+    {
+    }
+
+    public StartWorkViewModel(
+        Func<CancellationToken, Task<IReadOnlyList<TaskItem>>> loadTasksAsync,
+        Func<FocusSession, CancellationToken, Task> saveFocusSessionAsync,
+        Func<TaskItem, CancellationToken, Task>? saveTaskAsync = null,
+        Func<DateOnly>? todayProvider = null)
+        : this(CreateFocusLoader(loadTasksAsync), saveFocusSessionAsync, saveTaskAsync, todayProvider)
     {
     }
 
     public StartWorkViewModel(
         Func<DateOnly, CancellationToken, Task<IReadOnlyList<TaskItem>>> loadTasksAsync,
         Func<DateOnly>? todayProvider = null)
+        : this(loadTasksAsync, MissingFocusSessionRepositorySaveAsync, MissingTaskRepositorySaveAsync, todayProvider)
+    {
+    }
+
+    public StartWorkViewModel(
+        Func<DateOnly, CancellationToken, Task<IReadOnlyList<TaskItem>>> loadTasksAsync,
+        Func<FocusSession, CancellationToken, Task> saveFocusSessionAsync,
+        Func<TaskItem, CancellationToken, Task>? saveTaskAsync = null,
+        Func<DateOnly>? todayProvider = null)
         : base(ScreenCatalog.StartWork)
     {
         ArgumentNullException.ThrowIfNull(loadTasksAsync);
+        ArgumentNullException.ThrowIfNull(saveFocusSessionAsync);
         _loadTasksAsync = loadTasksAsync;
+        _saveFocusSessionAsync = saveFocusSessionAsync;
+        _saveTaskAsync = saveTaskAsync ?? MissingTaskRepositorySaveAsync;
         _todayProvider = todayProvider ?? (() => DateOnly.FromDateTime(DateTime.Today));
         RefreshCommand = new AsyncRelayCommand(
             () => LoadTasksAsync(CancellationToken.None),
@@ -241,6 +266,26 @@ public sealed class StartWorkViewModel : ScreenViewModelBase, INotifyPropertyCha
         get => _focusSessionWinText;
         private set => SetProperty(ref _focusSessionWinText, value);
     }
+
+    public string FocusSessionStorageText
+    {
+        get => _focusSessionStorageText;
+        private set => SetProperty(ref _focusSessionStorageText, value);
+    }
+
+    public Guid? LastSavedFocusSessionId
+    {
+        get => _lastSavedFocusSessionId;
+        private set
+        {
+            if (SetProperty(ref _lastSavedFocusSessionId, value))
+            {
+                OnPropertyChanged(nameof(HasSavedFocusSession));
+            }
+        }
+    }
+
+    public bool HasSavedFocusSession => LastSavedFocusSessionId.HasValue;
 
     public string BlockedReasonDraft
     {
@@ -493,87 +538,102 @@ public sealed class StartWorkViewModel : ScreenViewModelBase, INotifyPropertyCha
         return Task.CompletedTask;
     }
 
-    public Task StartFocusAsync(CancellationToken cancellationToken = default)
+    public async Task StartFocusAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
         if (!HasSelectedTask)
         {
             StatusText = "Choose a focus first.";
-            return Task.CompletedTask;
+            return;
         }
 
         if (HasActiveFocusSession)
         {
             StatusText = "Focus session already running.";
-            return Task.CompletedTask;
+            return;
         }
 
         _activeFocusSession = FocusSession.StartForTask(SelectedTaskId, FocusIntention, PlannedMinutes);
-        if (SelectedTaskId.HasValue && _loadedTasksById.TryGetValue(SelectedTaskId.Value, out TaskItem? selectedTask))
+        LastSavedFocusSessionId = null;
+        TaskItem? selectedTask = null;
+        if (SelectedTaskId.HasValue && _loadedTasksById.TryGetValue(SelectedTaskId.Value, out TaskItem? loadedTask))
         {
+            selectedTask = loadedTask;
             selectedTask?.Start();
         }
 
         BlockedReasonDraft = string.Empty;
-        UpdateFocusSessionState("Focus session started.");
-        return Task.CompletedTask;
+        UpdateFocusSessionState("Saving focus session.");
+        await SaveCurrentFocusSessionAsync(
+            selectedTask,
+            "Focus session started and saved locally.",
+            cancellationToken);
     }
 
-    public Task PauseFocusAsync(CancellationToken cancellationToken = default)
+    public async Task PauseFocusAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
         if (!CanPauseFocus)
         {
             StatusText = "No running session to pause.";
-            return Task.CompletedTask;
+            return;
         }
 
         _activeFocusSession!.Pause();
-        UpdateFocusSessionState("Focus session paused.");
-        return Task.CompletedTask;
+        UpdateFocusSessionState("Saving focus session.");
+        await SaveCurrentFocusSessionAsync(
+            taskToSave: null,
+            "Focus session paused and saved locally.",
+            cancellationToken);
     }
 
-    public Task ResumeFocusAsync(CancellationToken cancellationToken = default)
+    public async Task ResumeFocusAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
         if (!CanResumeFocus)
         {
             StatusText = "No paused session to resume.";
-            return Task.CompletedTask;
+            return;
         }
 
         _activeFocusSession!.Resume();
-        UpdateFocusSessionState("Focus session resumed.");
-        return Task.CompletedTask;
+        UpdateFocusSessionState("Saving focus session.");
+        await SaveCurrentFocusSessionAsync(
+            taskToSave: null,
+            "Focus session resumed and saved locally.",
+            cancellationToken);
     }
 
-    public Task CompleteFocusAsync(CancellationToken cancellationToken = default)
+    public async Task CompleteFocusAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
         if (!CanCompleteFocus)
         {
             StatusText = "No active session to complete.";
-            return Task.CompletedTask;
+            return;
         }
 
         FocusSession session = _activeFocusSession!;
         session.Complete($"Completed {session.PlannedMinutes} minute focus: {session.Intention}");
-        UpdateFocusSessionState("Focus session completed.");
-        return Task.CompletedTask;
+        UpdateFocusSessionState("Saving focus session.");
+        await SaveCurrentFocusSessionAsync(
+            taskToSave: null,
+            "Focus session completed and saved locally.",
+            cancellationToken);
     }
 
-    public Task BlockFocusAsync(CancellationToken cancellationToken = default)
+    public async Task BlockFocusAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
         if (!CanBlockFocus)
         {
             StatusText = "No active session to block.";
-            return Task.CompletedTask;
+            return;
         }
 
         string reason = string.IsNullOrWhiteSpace(BlockedReasonDraft)
@@ -581,8 +641,11 @@ public sealed class StartWorkViewModel : ScreenViewModelBase, INotifyPropertyCha
             : BlockedReasonDraft.Trim();
         _activeFocusSession!.MarkBlocked(reason);
         BlockedReasonDraft = reason;
-        UpdateFocusSessionState("Focus session blocked.");
-        return Task.CompletedTask;
+        UpdateFocusSessionState("Saving focus session.");
+        await SaveCurrentFocusSessionAsync(
+            taskToSave: null,
+            "Focus session blocked and saved locally.",
+            cancellationToken);
     }
 
     public static bool ShouldShowTask(TaskItem task, DateOnly today)
@@ -604,6 +667,20 @@ public sealed class StartWorkViewModel : ScreenViewModelBase, INotifyPropertyCha
     {
         ArgumentNullException.ThrowIfNull(loadTasksAsync);
         return (_, cancellationToken) => loadTasksAsync(cancellationToken);
+    }
+
+    private static Task MissingFocusSessionRepositorySaveAsync(
+        FocusSession session,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.CompletedTask;
+    }
+
+    private static Task MissingTaskRepositorySaveAsync(TaskItem task, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.CompletedTask;
     }
 
     private Task SelectTaskAsync(StartWorkTaskOptionViewModel taskOption)
@@ -877,6 +954,42 @@ public sealed class StartWorkViewModel : ScreenViewModelBase, INotifyPropertyCha
         StatusText = statusMessage;
     }
 
+    private async Task SaveCurrentFocusSessionAsync(
+        TaskItem? taskToSave,
+        string successStatusText,
+        CancellationToken cancellationToken)
+    {
+        if (_activeFocusSession is null)
+        {
+            FocusSessionStorageText = "No focus session to save.";
+            StatusText = "No focus session to save.";
+            return;
+        }
+
+        FocusSessionStorageText = "Saving focus session locally.";
+        try
+        {
+            if (taskToSave is not null)
+            {
+                await _saveTaskAsync(taskToSave, cancellationToken);
+            }
+
+            await _saveFocusSessionAsync(_activeFocusSession, cancellationToken);
+            LastSavedFocusSessionId = _activeFocusSession.Id;
+            FocusSessionStorageText = BuildFocusSessionStorageText(_activeFocusSession);
+            StatusText = successStatusText;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            FocusSessionStorageText = "Focus session was not saved locally.";
+            StatusText = "Focus session needs local save.";
+        }
+    }
+
     private void ApplyFocusSessionDisplay(FocusSession session)
     {
         FocusSessionStatusText = session.Status switch
@@ -933,6 +1046,21 @@ public sealed class StartWorkViewModel : ScreenViewModelBase, INotifyPropertyCha
             FocusSessionStatus.Cancelled => "Session stopped.",
             _ => "Start a focus block to record a win."
         };
+    }
+
+    private static string BuildFocusSessionStorageText(FocusSession session)
+    {
+        string statusText = session.Status switch
+        {
+            FocusSessionStatus.InProgress => "running",
+            FocusSessionStatus.Paused => "paused",
+            FocusSessionStatus.Completed => "completed",
+            FocusSessionStatus.Blocked => "blocked",
+            FocusSessionStatus.Cancelled => "stopped",
+            _ => session.Status.ToString()
+        };
+
+        return $"Saved locally: {statusText} focus session.";
     }
 
     private void RaiseFocusCommandStatesChanged()

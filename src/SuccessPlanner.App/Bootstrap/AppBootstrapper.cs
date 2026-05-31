@@ -13,6 +13,7 @@ public sealed class AppBootstrapper
     private readonly DatabaseStartupMigrationService _databaseStartupMigrationService;
     private readonly TaskRepository _taskRepository;
     private readonly NoteRepository _noteRepository;
+    private readonly FocusSessionRepository _focusSessionRepository;
     private readonly BackgroundWorkerHost _backgroundWorkerHost;
     private readonly NavigationService _navigationService;
     private AppSettings? _loadedSettings;
@@ -32,6 +33,7 @@ public sealed class AppBootstrapper
         _databaseStartupMigrationService = new DatabaseStartupMigrationService(_databaseService);
         _taskRepository = new TaskRepository(_paths);
         _noteRepository = new NoteRepository(_paths);
+        _focusSessionRepository = new FocusSessionRepository(_paths);
         _backgroundWorkerHost = new BackgroundWorkerHost();
         _navigationService = new NavigationService();
         RegisterScreens();
@@ -91,7 +93,10 @@ public sealed class AppBootstrapper
             _taskRepository.GetTodayAsync,
             _taskRepository.SaveAsync));
         _navigationService.Register(AppScreen.Plan, () => new InitialScreenViewModel(ScreenCatalog.Plan));
-        _navigationService.Register(AppScreen.StartWork, () => new StartWorkViewModel(_taskRepository.GetTodayAsync));
+        _navigationService.Register(AppScreen.StartWork, () => new StartWorkViewModel(
+            _taskRepository.GetTodayAsync,
+            _focusSessionRepository.SaveAsync,
+            _taskRepository.SaveAsync));
         _navigationService.Register(AppScreen.Done, () => new DoneViewModel(
             _taskRepository.GetRecentActiveAsync,
             _taskRepository.SaveAsync,

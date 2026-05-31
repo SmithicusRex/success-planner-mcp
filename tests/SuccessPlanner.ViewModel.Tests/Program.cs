@@ -36,6 +36,7 @@ TestRunner.RunAll(
     ("StartWorkViewModel pauses and resumes a focus session", StartWorkViewModelPausesAndResumesFocusSession),
     ("StartWorkViewModel completes a focus session", StartWorkViewModelCompletesFocusSession),
     ("StartWorkViewModel blocks a focus session without completing the task", StartWorkViewModelBlocksFocusSessionWithoutCompletingTask),
+    ("StartWorkViewModel saves focus session state changes", StartWorkViewModelSavesFocusSessionStateChanges),
     ("StartWorkViewModel creates task option display state", StartWorkViewModelCreatesTaskOptionDisplayState),
     ("StartWorkViewModel shows an empty focus state", StartWorkViewModelShowsEmptyFocusState),
     ("StartWorkViewModel reports load failures", StartWorkViewModelReportsLoadFailures));
@@ -706,6 +707,9 @@ static void StartWorkViewModelStartsReady()
     Assert.Equal("Ready", viewModel.FocusSessionBadgeText);
     Assert.Equal("20:00 planned", viewModel.FocusTimerText);
     Assert.Contains("Select one focus option", viewModel.FocusSessionPanelText);
+    Assert.Equal("Session not saved yet.", viewModel.FocusSessionStorageText);
+    Assert.False(viewModel.HasSavedFocusSession, "Start should not begin with a saved focus session.");
+    Assert.Null(viewModel.LastSavedFocusSessionId, "Start should not begin with a saved focus session id.");
     Assert.False(viewModel.CanStartFocus, "Start Focus should wait for a selected task.");
     Assert.False(viewModel.StartFocusCommand.CanExecute(null), "Start Focus command should wait for a selected task.");
     Assert.False(viewModel.PauseFocusCommand.CanExecute(null), "Pause should wait for a running session.");
@@ -1019,6 +1023,59 @@ static void StartWorkViewModelBlocksFocusSessionWithoutCompletingTask()
     Assert.True(viewModel.CanStartFocus, "A blocked focus session should allow a new session.");
     Assert.False(viewModel.CanCompleteFocus, "Complete should disable after blocked.");
     Assert.False(viewModel.CanBlockFocus, "Blocked should disable after blocked.");
+}
+
+static void StartWorkViewModelSavesFocusSessionStateChanges()
+{
+    DateOnly today = new(2026, 5, 30);
+    TaskItem focusTask = CreateTask("Draft the local save path", dueDate: today);
+    List<(Guid Id, FocusSessionStatus Status, int PlannedMinutes, Guid? TaskId)> savedSessions = [];
+    List<(Guid Id, TaskItemStatus Status)> savedTasks = [];
+    StartWorkViewModel viewModel = new(
+        (_, _) => Task.FromResult<IReadOnlyList<TaskItem>>([focusTask]),
+        (session, _) =>
+        {
+            savedSessions.Add((session.Id, session.Status, session.PlannedMinutes, session.TaskId));
+            return Task.CompletedTask;
+        },
+        (task, _) =>
+        {
+            savedTasks.Add((task.Id, task.Status));
+            return Task.CompletedTask;
+        },
+        () => today);
+
+    viewModel.LoadTasksAsync().GetAwaiter().GetResult();
+    viewModel.UseSuggestedTaskAsync().GetAwaiter().GetResult();
+    viewModel.SetSessionLength(10);
+    viewModel.StartFocusAsync().GetAwaiter().GetResult();
+
+    Assert.Equal(1, savedSessions.Count);
+    Assert.Equal(FocusSessionStatus.InProgress, savedSessions[^1].Status);
+    Assert.Equal(10, savedSessions[^1].PlannedMinutes);
+    Assert.Equal(focusTask.Id, savedSessions[^1].TaskId.GetValueOrDefault());
+    Assert.Equal(1, savedTasks.Count);
+    Assert.Equal(TaskItemStatus.InProgress, savedTasks[^1].Status);
+    Assert.True(viewModel.HasSavedFocusSession, "Start should expose the saved session id.");
+    Assert.Equal(savedSessions[^1].Id, viewModel.LastSavedFocusSessionId.GetValueOrDefault());
+    Assert.Equal("Saved locally: running focus session.", viewModel.FocusSessionStorageText);
+    Assert.Equal("Focus session started and saved locally.", viewModel.StatusText);
+
+    viewModel.PauseFocusAsync().GetAwaiter().GetResult();
+    Assert.Equal(2, savedSessions.Count);
+    Assert.Equal(FocusSessionStatus.Paused, savedSessions[^1].Status);
+    Assert.Equal("Saved locally: paused focus session.", viewModel.FocusSessionStorageText);
+
+    viewModel.ResumeFocusAsync().GetAwaiter().GetResult();
+    Assert.Equal(3, savedSessions.Count);
+    Assert.Equal(FocusSessionStatus.InProgress, savedSessions[^1].Status);
+    Assert.Equal("Saved locally: running focus session.", viewModel.FocusSessionStorageText);
+
+    viewModel.CompleteFocusAsync().GetAwaiter().GetResult();
+    Assert.Equal(4, savedSessions.Count);
+    Assert.Equal(FocusSessionStatus.Completed, savedSessions[^1].Status);
+    Assert.Equal("Saved locally: completed focus session.", viewModel.FocusSessionStorageText);
+    Assert.Equal("Focus session completed and saved locally.", viewModel.StatusText);
 }
 
 static void StartWorkViewModelCreatesTaskOptionDisplayState()

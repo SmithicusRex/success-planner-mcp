@@ -742,6 +742,12 @@
                                            FontSize="13"
                                            TextWrapping="Wrap"
                                            Margin="0,8,0,0" />
+                                <TextBlock Text="{Binding FocusSessionStorageText}"
+                                           Foreground="{StaticResource StartInkBrush}"
+                                           FontSize="12"
+                                           FontWeight="SemiBold"
+                                           TextWrapping="Wrap"
+                                           Margin="0,8,0,0" />
                             </StackPanel>
                         </Border>
 

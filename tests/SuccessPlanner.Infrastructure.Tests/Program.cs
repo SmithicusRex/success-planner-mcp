@@ -21,6 +21,8 @@ TestRunner.RunAll(
     ("DoneViewModel completes selected task through TaskRepository", DoneViewModelCompletesSelectedTaskThroughTaskRepository),
     ("TaskRepository deletes tasks", TaskRepositoryDeletesTasks),
     ("CaptureViewModel saves captured tasks through TaskRepository", CaptureViewModelSavesCapturedTasksThroughTaskRepository),
+    ("FocusSessionRepository saves and loads focus session state", FocusSessionRepositorySavesAndLoadsFocusSessionState),
+    ("StartWorkViewModel records focus sessions through repositories", StartWorkViewModelRecordsFocusSessionsThroughRepositories),
     ("SettingsMetadataRepository upserts and deletes metadata", SettingsMetadataRepositoryUpsertsAndDeletesMetadata));
 
 static async Task DatabaseServiceCreatesSqliteDatabase()
@@ -521,6 +523,96 @@ static async Task CaptureViewModelSavesCapturedTasksThroughTaskRepository()
     Assert.Equal(DateOnly.FromDateTime(DateTime.Today).AddDays(1), savedTask.DueDate);
     Assert.Equal(TaskItemStatus.Planned, savedTask.Status);
     Assert.Equal(CaptureDestinationPreference.MicrosoftToDo, viewModel.SelectedDestination);
+}
+
+static async Task FocusSessionRepositorySavesAndLoadsFocusSessionState()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+    await CreateMigratedDatabaseAsync(paths);
+
+    TaskRepository taskRepository = new(paths);
+    TaskItem task = CreateRepositoryTask("Draft the focus repository", dueDate: new DateOnly(2026, 5, 30));
+    await taskRepository.AddAsync(task, CancellationToken.None);
+
+    FocusSessionRepository repository = new(paths);
+    FocusSession session = FocusSession.StartForTask(task.Id, "Draft the focus repository", 15);
+    await repository.SaveAsync(session, CancellationToken.None);
+
+    FocusSession? started = await repository.GetByIdAsync(session.Id, CancellationToken.None);
+    Assert.NotNull(started, "Started focus session should load by id.");
+    Assert.Equal(FocusSessionStatus.InProgress, started!.Status);
+    Assert.Equal(task.Id, started.TaskId.GetValueOrDefault());
+    Assert.Equal(15, started.PlannedMinutes);
+    Assert.Equal("Draft the focus repository", started.Intention);
+
+    session.Pause();
+    await repository.SaveAsync(session, CancellationToken.None);
+    FocusSession? paused = await repository.GetByIdAsync(session.Id, CancellationToken.None);
+    Assert.NotNull(paused, "Paused focus session should load by id.");
+    Assert.Equal(FocusSessionStatus.Paused, paused!.Status);
+    Assert.True(paused.PausedAt.HasValue, "Paused time should persist.");
+
+    session.Resume();
+    session.Complete("Small focus win.");
+    await repository.SaveAsync(session, CancellationToken.None);
+
+    FocusSession? completed = await repository.GetByIdAsync(session.Id, CancellationToken.None);
+    IReadOnlyList<FocusSession> taskSessions = await repository.GetForTaskAsync(task.Id, CancellationToken.None);
+    IReadOnlyList<FocusSession> recentSessions = await repository.GetRecentAsync(5, CancellationToken.None);
+
+    Assert.NotNull(completed, "Completed focus session should load by id.");
+    Assert.Equal(FocusSessionStatus.Completed, completed!.Status);
+    Assert.True(completed.CompletedAt.HasValue, "Completed time should persist.");
+    Assert.True(completed.EndedAt.HasValue, "Ended time should persist.");
+    Assert.Equal("Small focus win.", completed.WinNote);
+    Assert.Contains("Win", completed.Tags);
+    Assert.Equal(1, taskSessions.Count);
+    Assert.Equal(session.Id, taskSessions[0].Id);
+    Assert.Equal(1, recentSessions.Count);
+    Assert.Equal(session.Id, recentSessions[0].Id);
+}
+
+static async Task StartWorkViewModelRecordsFocusSessionsThroughRepositories()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+    await CreateMigratedDatabaseAsync(paths);
+
+    DateOnly today = new(2026, 5, 30);
+    TaskRepository taskRepository = new(paths);
+    FocusSessionRepository focusSessionRepository = new(paths);
+    TaskItem focusTask = CreateRepositoryTask("Save the focus session", dueDate: today);
+    await taskRepository.AddAsync(focusTask, CancellationToken.None);
+
+    StartWorkViewModel viewModel = new(
+        taskRepository.GetTodayAsync,
+        focusSessionRepository.SaveAsync,
+        taskRepository.SaveAsync,
+        () => today);
+
+    await viewModel.LoadTasksAsync(CancellationToken.None);
+    await viewModel.UseSuggestedTaskAsync(CancellationToken.None);
+    await viewModel.StartFocusAsync(CancellationToken.None);
+    await viewModel.PauseFocusAsync(CancellationToken.None);
+    await viewModel.ResumeFocusAsync(CancellationToken.None);
+    await viewModel.CompleteFocusAsync(CancellationToken.None);
+
+    Assert.True(viewModel.LastSavedFocusSessionId.HasValue, "Start should expose the saved focus session id.");
+    FocusSession? savedSession = await focusSessionRepository.GetByIdAsync(
+        viewModel.LastSavedFocusSessionId.GetValueOrDefault(),
+        CancellationToken.None);
+    TaskItem? savedTask = await taskRepository.GetByIdAsync(focusTask.Id, CancellationToken.None);
+
+    Assert.NotNull(savedSession, "Completed focus session should persist in SQLite.");
+    Assert.Equal(FocusSessionStatus.Completed, savedSession!.Status);
+    Assert.Equal(focusTask.Id, savedSession.TaskId.GetValueOrDefault());
+    Assert.Equal(FocusSession.DefaultPlannedMinutes, savedSession.PlannedMinutes);
+    Assert.Contains("Completed 20 minute focus", savedSession.WinNote);
+    Assert.Equal("Saved locally: completed focus session.", viewModel.FocusSessionStorageText);
+    Assert.Equal("Focus session completed and saved locally.", viewModel.StatusText);
+    Assert.NotNull(savedTask, "Starting focus should save the task status locally.");
+    Assert.Equal(TaskItemStatus.InProgress, savedTask!.Status);
 }
 
 static async Task SettingsMetadataRepositoryUpsertsAndDeletesMetadata()
