@@ -76,6 +76,15 @@
                 </DataTrigger>
             </Style.Triggers>
         </Style>
+
+        <Style x:Key="TaskNotesVisibilityStyle" TargetType="TextBlock">
+            <Setter Property="Visibility" Value="Visible" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding HasNotes}" Value="False">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
     </UserControl.Resources>
 
     <Grid>
@@ -210,82 +219,92 @@
                                   Margin="0,20,0,0"
                                   VerticalScrollBarVisibility="Auto"
                                   Style="{StaticResource TaskListVisibilityStyle}">
-                        <ItemsControl ItemsSource="{Binding Tasks}">
+                        <ItemsControl ItemsSource="{Binding TaskCards}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
                                     <Border Background="#FFFFFF"
-                                            BorderBrush="#DDE6DF"
+                                            BorderBrush="{Binding CardBorderColor}"
                                             BorderThickness="1"
                                             CornerRadius="8"
                                             Padding="18"
-                                            Margin="0,0,0,12">
+                                            Margin="0,0,0,12"
+                                            MinHeight="118"
+                                            ToolTip="{Binding CardToolTip}">
                                         <Grid>
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="8" />
                                                 <ColumnDefinition Width="16" />
+                                                <ColumnDefinition Width="44" />
+                                                <ColumnDefinition Width="14" />
                                                 <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
                                             </Grid.ColumnDefinitions>
 
-                                            <Border Background="{StaticResource TodayBrush}"
+                                            <Border Background="{Binding CardAccentColor}"
                                                     CornerRadius="4" />
 
-                                            <StackPanel Grid.Column="2">
+                                            <Border Grid.Column="2"
+                                                    Width="44"
+                                                    Height="44"
+                                                    CornerRadius="8"
+                                                    Background="{Binding CardAccentColor}"
+                                                    VerticalAlignment="Top">
+                                                <TextBlock Text="{Binding CardIconGlyph}"
+                                                           FontFamily="Segoe MDL2 Assets"
+                                                           FontSize="19"
+                                                           Foreground="{StaticResource InkBrush}"
+                                                           HorizontalAlignment="Center"
+                                                           VerticalAlignment="Center" />
+                                            </Border>
+
+                                            <StackPanel Grid.Column="4">
                                                 <TextBlock Text="{Binding Title}"
                                                            Foreground="{StaticResource InkBrush}"
                                                            FontSize="19"
                                                            FontWeight="SemiBold"
                                                            TextWrapping="Wrap" />
-                                                <TextBlock Text="{Binding Notes}"
+                                                <TextBlock Text="{Binding NotesPreview}"
                                                            Foreground="{StaticResource MutedBrush}"
                                                            FontSize="13"
                                                            TextWrapping="Wrap"
-                                                           Margin="0,5,0,0" />
+                                                           Margin="0,5,0,0"
+                                                           Style="{StaticResource TaskNotesVisibilityStyle}" />
 
                                                 <WrapPanel Margin="0,12,0,0">
-                                                    <Border Background="#ECF8EE"
+                                                    <Border Background="{Binding DueBadgeBackground}"
                                                             BorderBrush="#CFEBD3"
                                                             BorderThickness="1"
                                                             CornerRadius="8"
                                                             Padding="9,5"
                                                             Margin="0,0,8,8">
                                                         <TextBlock Text="{Binding DueText}"
-                                                                   Foreground="#1E6B3A"
+                                                                   Foreground="{Binding DueBadgeForeground}"
                                                                    FontSize="12"
                                                                    FontWeight="SemiBold" />
                                                     </Border>
-                                                    <Border Background="#F5F3EE"
+                                                    <Border Background="{Binding PriorityBadgeBackground}"
                                                             BorderBrush="#E7E2D8"
                                                             BorderThickness="1"
                                                             CornerRadius="8"
                                                             Padding="9,5"
                                                             Margin="0,0,8,8">
-                                                        <TextBlock Text="{Binding PriorityText}"
-                                                                   Foreground="#5F656C"
+                                                        <TextBlock Text="{Binding PriorityBadgeText}"
+                                                                   Foreground="{Binding PriorityBadgeForeground}"
                                                                    FontSize="12"
                                                                    FontWeight="SemiBold" />
                                                     </Border>
-                                                    <Border Background="#F5F3EE"
+                                                    <Border Background="{Binding StatusBadgeBackground}"
                                                             BorderBrush="#E7E2D8"
                                                             BorderThickness="1"
                                                             CornerRadius="8"
                                                             Padding="9,5"
                                                             Margin="0,0,8,8">
-                                                        <TextBlock Text="{Binding StatusText}"
-                                                                   Foreground="#5F656C"
+                                                        <TextBlock Text="{Binding StatusBadgeText}"
+                                                                   Foreground="{Binding StatusBadgeForeground}"
                                                                    FontSize="12"
                                                                    FontWeight="SemiBold" />
                                                     </Border>
                                                 </WrapPanel>
                                             </StackPanel>
-
-                                            <TextBlock Grid.Column="3"
-                                                       Text="&#xE76C;"
-                                                       FontFamily="Segoe MDL2 Assets"
-                                                       FontSize="18"
-                                                       Foreground="#A8D8B0"
-                                                       VerticalAlignment="Top"
-                                                       Margin="18,2,0,0" />
                                         </Grid>
                                     </Border>
                                 </DataTemplate>

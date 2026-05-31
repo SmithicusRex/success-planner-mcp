@@ -899,7 +899,7 @@ Status:
 
 ~~7.3. Load tasks due today or selected for today.~~
 
-7.4. Show tasks as cards.
+~~7.4. Show tasks as cards.~~
 
 7.5. Add Start, Done, Snooze, and Note actions.
 

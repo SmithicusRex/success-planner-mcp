@@ -15,6 +15,7 @@ TestRunner.RunAll(
     ("CaptureViewModel raises property change notifications", CaptureViewModelRaisesPropertyChangeNotifications),
     ("TodayViewModel starts in a simple ready state", TodayViewModelStartsReady),
     ("TodayViewModel loads today tasks", TodayViewModelLoadsTodayTasks),
+    ("TodayViewModel creates task card display state", TodayViewModelCreatesTaskCardDisplayState),
     ("TodayViewModel shows an empty today state", TodayViewModelShowsEmptyTodayState),
     ("TodayViewModel reports load failures", TodayViewModelReportsLoadFailures));
 
@@ -280,6 +281,7 @@ static void TodayViewModelLoadsTodayTasks()
     Assert.True(requestedToday.HasValue, "Today load should pass the current date to its loader.");
     Assert.Equal(today, requestedToday.GetValueOrDefault());
     Assert.Equal(4, viewModel.Tasks.Count);
+    Assert.Equal(4, viewModel.TaskCards.Count);
     Assert.Equal("Call the pharmacy", viewModel.Tasks[0].Title);
     Assert.True(viewModel.Tasks[0].IsOverdue, "Overdue task should be marked overdue.");
     Assert.Equal("Pay the bill", viewModel.Tasks[1].Title);
@@ -294,6 +296,34 @@ static void TodayViewModelLoadsTodayTasks()
     Assert.Equal("4 tasks", viewModel.TaskCountText);
     Assert.Equal("Today is ready.", viewModel.StatusText);
     Assert.Equal("Choose one small action.", viewModel.EmptyStateText);
+}
+
+static void TodayViewModelCreatesTaskCardDisplayState()
+{
+    DateOnly today = new(2026, 5, 30);
+    TaskItem overdue = CreateTask("Call the pharmacy", dueDate: today.AddDays(-1), priority: TaskPriority.Critical);
+    overdue.UpdateNotes("Ask about the refill, bring the glucose log, and keep the call under ten minutes.");
+
+    TodayTaskCardViewModel overdueCard = TodayTaskCardViewModel.FromTask(overdue, today);
+
+    Assert.Equal("Call the pharmacy", overdueCard.Title);
+    Assert.True(overdueCard.HasNotes, "Task card should show notes when notes exist.");
+    Assert.Contains("glucose log", overdueCard.NotesPreview);
+    Assert.Equal("Overdue", overdueCard.DueBadgeText);
+    Assert.Contains("Overdue", overdueCard.DueText);
+    Assert.Equal("Critical", overdueCard.PriorityBadgeText);
+    Assert.Equal("Planned", overdueCard.StatusBadgeText);
+    Assert.Equal("#FFBE7A", overdueCard.CardAccentColor);
+    Assert.Equal("\uE823", overdueCard.CardIconGlyph);
+    Assert.Contains("Call the pharmacy", overdueCard.CardToolTip);
+
+    TaskItem selectedToday = CreateTask("Sketch the next panel", startDate: today);
+    TodayTaskCardViewModel selectedCard = TodayTaskCardViewModel.FromTask(selectedToday, today);
+
+    Assert.False(selectedCard.HasNotes, "Task card should hide blank notes.");
+    Assert.Equal(string.Empty, selectedCard.NotesPreview);
+    Assert.Equal("Selected today", selectedCard.DueBadgeText);
+    Assert.Equal("#EAF4FF", selectedCard.DueBadgeBackground);
 }
 
 static void TodayViewModelShowsEmptyTodayState()
