@@ -265,13 +265,20 @@ static void TodayViewModelLoadsTodayTasks()
     TaskItem inProgress = CreateTask("Finish active task", inProgress: true);
     TaskItem future = CreateTask("Future task", dueDate: today.AddDays(1));
     TaskItem doneToday = CreateTask("Already done", dueDate: today, done: true);
+    DateOnly? requestedToday = null;
     TodayViewModel viewModel = new(
-        _ => Task.FromResult<IReadOnlyList<TaskItem>>(
-            [future, selectedToday, doneToday, dueToday, inProgress, overdue]),
+        (todayToLoad, _) =>
+        {
+            requestedToday = todayToLoad;
+            return Task.FromResult<IReadOnlyList<TaskItem>>(
+                [future, selectedToday, doneToday, dueToday, inProgress, overdue]);
+        },
         () => today);
 
     viewModel.LoadTasksAsync().GetAwaiter().GetResult();
 
+    Assert.True(requestedToday.HasValue, "Today load should pass the current date to its loader.");
+    Assert.Equal(today, requestedToday.GetValueOrDefault());
     Assert.Equal(4, viewModel.Tasks.Count);
     Assert.Equal("Call the pharmacy", viewModel.Tasks[0].Title);
     Assert.True(viewModel.Tasks[0].IsOverdue, "Overdue task should be marked overdue.");

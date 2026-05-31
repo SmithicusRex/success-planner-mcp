@@ -10,7 +10,7 @@ namespace SuccessPlanner.App.ViewModels;
 public sealed class TodayViewModel : ScreenViewModelBase, INotifyPropertyChanged
 {
     private const string ReadyStatus = "Ready to load today.";
-    private readonly Func<CancellationToken, Task<IReadOnlyList<TaskItem>>> _loadTasksAsync;
+    private readonly Func<DateOnly, CancellationToken, Task<IReadOnlyList<TaskItem>>> _loadTodayTasksAsync;
     private readonly Func<DateOnly> _todayProvider;
     private bool _isLoading;
     private string _statusText = ReadyStatus;
@@ -18,17 +18,24 @@ public sealed class TodayViewModel : ScreenViewModelBase, INotifyPropertyChanged
     private string _taskCountText = "0 tasks";
 
     public TodayViewModel()
-        : this(_ => Task.FromResult<IReadOnlyList<TaskItem>>([]))
+        : this((_, _) => Task.FromResult<IReadOnlyList<TaskItem>>([]))
     {
     }
 
     public TodayViewModel(
         Func<CancellationToken, Task<IReadOnlyList<TaskItem>>> loadTasksAsync,
         Func<DateOnly>? todayProvider = null)
+        : this(CreateTodayLoader(loadTasksAsync), todayProvider)
+    {
+    }
+
+    public TodayViewModel(
+        Func<DateOnly, CancellationToken, Task<IReadOnlyList<TaskItem>>> loadTodayTasksAsync,
+        Func<DateOnly>? todayProvider = null)
         : base(ScreenCatalog.Today)
     {
-        ArgumentNullException.ThrowIfNull(loadTasksAsync);
-        _loadTasksAsync = loadTasksAsync;
+        ArgumentNullException.ThrowIfNull(loadTodayTasksAsync);
+        _loadTodayTasksAsync = loadTodayTasksAsync;
         _todayProvider = todayProvider ?? (() => DateOnly.FromDateTime(DateTime.Today));
         RefreshCommand = new AsyncRelayCommand(
             () => LoadTasksAsync(CancellationToken.None),
@@ -95,8 +102,8 @@ public sealed class TodayViewModel : ScreenViewModelBase, INotifyPropertyChanged
         try
         {
             DateOnly today = _todayProvider();
-            IReadOnlyList<TaskItem> allTasks = await _loadTasksAsync(cancellationToken);
-            IReadOnlyList<TodayTaskViewModel> todayTasks = allTasks
+            IReadOnlyList<TaskItem> loadedTasks = await _loadTodayTasksAsync(today, cancellationToken);
+            IReadOnlyList<TodayTaskViewModel> todayTasks = loadedTasks
                 .Where(task => ShouldShowTask(task, today))
                 .OrderBy(task => TodaySortDate(task, today))
                 .ThenBy(task => PrioritySortValue(task.Priority))
@@ -145,6 +152,13 @@ public sealed class TodayViewModel : ScreenViewModelBase, INotifyPropertyChanged
         return task.Status == TaskItemStatus.InProgress
             || (task.DueDate.HasValue && task.DueDate.Value <= today)
             || (task.StartDate.HasValue && task.StartDate.Value <= today);
+    }
+
+    private static Func<DateOnly, CancellationToken, Task<IReadOnlyList<TaskItem>>> CreateTodayLoader(
+        Func<CancellationToken, Task<IReadOnlyList<TaskItem>>> loadTasksAsync)
+    {
+        ArgumentNullException.ThrowIfNull(loadTasksAsync);
+        return (_, cancellationToken) => loadTasksAsync(cancellationToken);
     }
 
     private static DateOnly TodaySortDate(TaskItem task, DateOnly today)

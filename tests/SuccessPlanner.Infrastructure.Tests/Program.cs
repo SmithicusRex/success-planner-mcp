@@ -15,6 +15,7 @@ TestRunner.RunAll(
     ("DatabaseStartupMigrationService preserves data on restart", DatabaseStartupMigrationServicePreservesDataOnRestart),
     ("AppBootstrapper shows a simple database failure message", AppBootstrapperShowsSimpleDatabaseFailureMessage),
     ("TaskRepository saves and loads task state", TaskRepositorySavesAndLoadsTaskState),
+    ("TaskRepository loads today tasks", TaskRepositoryLoadsTodayTasks),
     ("TaskRepository deletes tasks", TaskRepositoryDeletesTasks),
     ("CaptureViewModel saves captured tasks through TaskRepository", CaptureViewModelSavesCapturedTasksThroughTaskRepository),
     ("SettingsMetadataRepository upserts and deletes metadata", SettingsMetadataRepositoryUpsertsAndDeletesMetadata));
@@ -289,6 +290,40 @@ static async Task TaskRepositoryDeletesTasks()
     Assert.Null(deleted, "Deleted task should not load by id.");
 }
 
+static async Task TaskRepositoryLoadsTodayTasks()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+    await CreateMigratedDatabaseAsync(paths);
+
+    DateOnly today = new(2026, 5, 30);
+    TaskItem overdue = CreateRepositoryTask("Call the pharmacy", dueDate: today.AddDays(-1));
+    TaskItem dueToday = CreateRepositoryTask("Pay the bill", dueDate: today, priority: TaskPriority.High);
+    TaskItem selectedToday = CreateRepositoryTask("Draft next plan", dueDate: today.AddDays(5), startDate: today);
+    TaskItem inProgress = CreateRepositoryTask("Finish active task", inProgress: true);
+    TaskItem future = CreateRepositoryTask("Future task", dueDate: today.AddDays(1));
+    TaskItem doneToday = CreateRepositoryTask("Already done", dueDate: today, done: true);
+    TaskItem looseCapture = CreateRepositoryTask("Loose capture");
+
+    TaskRepository repository = new(paths);
+    TaskItem[] tasks = [future, selectedToday, doneToday, dueToday, inProgress, overdue, looseCapture];
+    foreach (TaskItem task in tasks)
+    {
+        await repository.AddAsync(task, CancellationToken.None);
+    }
+
+    IReadOnlyList<TaskItem> todayTasks = await repository.GetTodayAsync(today, CancellationToken.None);
+
+    Assert.Equal(4, todayTasks.Count);
+    Assert.Equal("Call the pharmacy", todayTasks[0].Title);
+    Assert.Equal("Pay the bill", todayTasks[1].Title);
+    Assert.Equal("Draft next plan", todayTasks[2].Title);
+    Assert.Equal("Finish active task", todayTasks[3].Title);
+    Assert.False(todayTasks.Any(task => task.Title == "Future task"), "Future tasks should not load into Today.");
+    Assert.False(todayTasks.Any(task => task.Title == "Already done"), "Completed tasks should not load into Today.");
+    Assert.False(todayTasks.Any(task => task.Title == "Loose capture"), "Undated captured tasks should not load into Today.");
+}
+
 static async Task CaptureViewModelSavesCapturedTasksThroughTaskRepository()
 {
     using TestWorkspace workspace = TestWorkspace.Create();
@@ -361,6 +396,34 @@ static async Task CreateMigratedDatabaseAsync(AppPaths paths)
     await database.OpenAsync(CancellationToken.None);
     await database.MigrateAsync(CancellationToken.None);
     await database.CloseAsync(CancellationToken.None);
+}
+
+static TaskItem CreateRepositoryTask(
+    string title,
+    DateOnly? dueDate = null,
+    DateOnly? startDate = null,
+    TaskPriority priority = TaskPriority.Normal,
+    bool inProgress = false,
+    bool done = false)
+{
+    TaskItem task = TaskItem.Capture(title);
+    if (dueDate.HasValue || startDate.HasValue)
+    {
+        task.Schedule(dueDate, startDate);
+    }
+
+    task.SetPriority(priority);
+    if (inProgress)
+    {
+        task.Start();
+    }
+
+    if (done)
+    {
+        task.Complete();
+    }
+
+    return task;
 }
 
 static async Task<object?> ReadScalarAsync(string databasePath, string commandText)
