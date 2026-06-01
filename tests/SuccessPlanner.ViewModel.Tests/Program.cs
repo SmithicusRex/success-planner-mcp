@@ -4,6 +4,8 @@ using SuccessPlanner.App.Services;
 using SuccessPlanner.App.ViewModels;
 
 TestRunner.RunAll(
+    ("AppShellViewModel refreshes visible sync status", AppShellViewModelRefreshesVisibleSyncStatus),
+    ("AppShellViewModel reports sync status read failure", AppShellViewModelReportsSyncStatusReadFailure),
     ("CaptureViewModel starts in a simple ready state", CaptureViewModelStartsReady),
     ("CaptureViewModel applies date hint buttons", CaptureViewModelAppliesDateHintButtons),
     ("CaptureViewModel applies destination choices", CaptureViewModelAppliesDestinationChoices),
@@ -77,6 +79,54 @@ TestRunner.RunAll(
     ("MoveViewModel applies mind occupier choices", MoveViewModelAppliesMindOccupierChoices),
     ("MoveViewModel applies spouse option choices", MoveViewModelAppliesSpouseOptionChoices),
     ("MoveViewModel saves movement activity locally", MoveViewModelSavesMovementActivityLocally));
+
+static void AppShellViewModelRefreshesVisibleSyncStatus()
+{
+    NavigationService navigationService = CreateShellNavigationService();
+    AppShellViewModel viewModel = new(
+        "Ready",
+        "Local control center",
+        navigationService,
+        _ => Task.FromResult(new SyncQueueStatus(
+            PendingCount: 2,
+            SyncingCount: 1,
+            SyncedCount: 4,
+            FailedCount: 0,
+            ConflictCount: 0,
+            DisabledCount: 0)));
+
+    viewModel.RefreshSyncStatusAsync().GetAwaiter().GetResult();
+
+    Assert.Equal("Syncing now", viewModel.SyncStatusText);
+    Assert.Equal("#EAF2FF", viewModel.SyncStatusBackgroundColor);
+    Assert.Equal("#2F6FED", viewModel.SyncStatusDotColor);
+    Assert.Contains("Pending: 2", viewModel.SyncStatusDetailText);
+    Assert.Contains("Syncing: 1", viewModel.SyncStatusDetailText);
+}
+
+static void AppShellViewModelReportsSyncStatusReadFailure()
+{
+    NavigationService navigationService = CreateShellNavigationService();
+    AppShellViewModel viewModel = new(
+        "Ready",
+        "Local control center",
+        navigationService,
+        _ => throw new InvalidOperationException("database unavailable"));
+
+    viewModel.RefreshSyncStatusAsync().GetAwaiter().GetResult();
+
+    Assert.Equal("Sync unavailable", viewModel.SyncStatusText);
+    Assert.Equal("#FFF1D6", viewModel.SyncStatusBackgroundColor);
+    Assert.Contains("Local data is still stored safely.", viewModel.SyncStatusDetailText);
+}
+
+static NavigationService CreateShellNavigationService()
+{
+    NavigationService navigationService = new();
+    navigationService.Register(AppScreen.Home, () => new HomeScreenViewModel(navigationService));
+    navigationService.GoHomeAsync().GetAwaiter().GetResult();
+    return navigationService;
+}
 
 static void CaptureViewModelStartsReady()
 {

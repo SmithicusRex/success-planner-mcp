@@ -165,21 +165,56 @@
                 </StackPanel>
             </StackPanel>
 
-            <Border Grid.Column="1"
-                    Padding="14,8"
-                    CornerRadius="8"
-                    Background="#E6F4EA"
-                    BorderBrush="#CDEAD5"
-                    BorderThickness="1"
-                    VerticalAlignment="Top">
-                <StackPanel Orientation="Horizontal">
-                    <Ellipse Width="8" Height="8" Fill="#24984E" Margin="0,0,8,0" />
-                    <TextBlock Text="{Binding StatusText}"
-                               Foreground="#1E6B3A"
-                               FontWeight="SemiBold"
-                               FontSize="13" />
-                </StackPanel>
-            </Border>
+            <StackPanel Grid.Column="1"
+                        HorizontalAlignment="Right"
+                        VerticalAlignment="Top">
+                <Border Padding="14,8"
+                        CornerRadius="8"
+                        Background="#E6F4EA"
+                        BorderBrush="#CDEAD5"
+                        BorderThickness="1"
+                        HorizontalAlignment="Right">
+                    <StackPanel Orientation="Horizontal">
+                        <Ellipse Width="8" Height="8" Fill="#24984E" Margin="0,0,8,0" />
+                        <TextBlock Text="{Binding StatusText}"
+                                   Foreground="#1E6B3A"
+                                   FontWeight="SemiBold"
+                                   FontSize="13" />
+                    </StackPanel>
+                </Border>
+
+                <Border Padding="12,7"
+                        CornerRadius="8"
+                        Background="{Binding SyncStatusBackgroundColor}"
+                        BorderBrush="{Binding SyncStatusBorderColor}"
+                        BorderThickness="1"
+                        HorizontalAlignment="Right"
+                        Margin="0,8,0,0"
+                        ToolTip="{Binding SyncStatusDetailText}">
+                    <StackPanel Orientation="Horizontal">
+                        <Ellipse Width="8"
+                                 Height="8"
+                                 Fill="{Binding SyncStatusDotColor}"
+                                 Margin="0,0,8,0" />
+                        <TextBlock Text="{Binding SyncStatusText}"
+                                   Foreground="{Binding SyncStatusForegroundColor}"
+                                   FontWeight="SemiBold"
+                                   FontSize="13"
+                                   VerticalAlignment="Center" />
+                        <Button Content="&#xE72C;"
+                                Command="{Binding RefreshSyncStatusCommand}"
+                                FontFamily="Segoe MDL2 Assets"
+                                FontSize="12"
+                                Foreground="{Binding SyncStatusForegroundColor}"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Padding="5,1,0,0"
+                                Margin="7,0,0,0"
+                                Cursor="Hand"
+                                ToolTip="Refresh sync status" />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
         </Grid>
 
         <ContentControl Grid.Row="1"

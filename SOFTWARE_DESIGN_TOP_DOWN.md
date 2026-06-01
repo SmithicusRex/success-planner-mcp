@@ -1055,7 +1055,7 @@ Benchmark gate:
 
 ~~14.4. Add background sync worker.~~
 
-14.5. Show sync status in app header or diagnostics.
+~~14.5. Show sync status in app header or diagnostics.~~
 
 14.6. Add retry and failure state.
 
@@ -1065,7 +1065,7 @@ Benchmark gate:
 - ~~Sync queue repository can add, read, update, and delete queue items.~~
 - ~~Local changes create queue items.~~
 - ~~Background sync worker starts and picks ready queue items.~~
-- Header or diagnostics shows sync state.
+- ~~Header or diagnostics shows sync state.~~
 - Failed sync does not lose local data.
 - ~~Queue survives app restart.~~
 - ~~Build and tests pass.~~

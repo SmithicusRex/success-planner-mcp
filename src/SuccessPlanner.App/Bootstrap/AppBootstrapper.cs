@@ -76,7 +76,10 @@ public sealed class AppBootstrapper
             AppShellViewModel shellViewModel = new(
                 statusText: databaseStartup.StatusText,
                 footerText: $"Local control center - {settings.ProfileName}",
-                navigationService: _navigationService);
+                navigationService: _navigationService,
+                loadSyncStatusAsync: _syncService.GetStatusAsync);
+
+            await shellViewModel.RefreshSyncStatusAsync(cancellationToken);
 
             MainWindow mainWindow = new()
             {
