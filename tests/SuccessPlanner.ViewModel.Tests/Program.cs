@@ -26,6 +26,7 @@ TestRunner.RunAll(
     ("DoneViewModel shows brief success feedback", DoneViewModelShowsBriefSuccessFeedback),
     ("DoneViewModel shows an empty done state", DoneViewModelShowsEmptyDoneState),
     ("DoneViewModel reports load failures", DoneViewModelReportsLoadFailures),
+    ("PlanViewModel starts in a simple ready state", PlanViewModelStartsReady),
     ("StartWorkViewModel starts in a simple ready state", StartWorkViewModelStartsReady),
     ("StartWorkViewModel applies session choices", StartWorkViewModelAppliesSessionChoices),
     ("StartWorkViewModel loads focus task options", StartWorkViewModelLoadsFocusTaskOptions),
@@ -1210,6 +1211,36 @@ static void StartWorkViewModelReportsLoadFailures()
     Assert.False(viewModel.UseSuggestionCommand.CanExecute(null), "Use Suggestion should disable after failure.");
     Assert.False(viewModel.IsLoading, "Loading flag should clear after failure.");
     Assert.True(viewModel.RefreshCommand.CanExecute(null), "Refresh should be available after failure.");
+}
+
+static void PlanViewModelStartsReady()
+{
+    PlanViewModel viewModel = new();
+
+    Assert.Equal(ScreenCatalog.Plan, viewModel.Descriptor);
+    Assert.Equal("Plan", viewModel.Title);
+    Assert.Equal("Make the next step smaller.", viewModel.Subtitle);
+    Assert.Equal("\uE9D5", viewModel.IconGlyph);
+    Assert.Equal("#FFE08A", viewModel.AccentColor);
+    Assert.Equal("Ready to plan.", viewModel.StatusText);
+    Assert.Equal("Plan Small", viewModel.PlanPanelTitle);
+    Assert.Contains("one realistic next action", viewModel.PlanPanelText);
+    Assert.Equal("Unplanned inbox not loaded yet.", viewModel.InboxStatusText);
+    Assert.Equal("No inbox item selected.", viewModel.SelectedInboxItemText);
+    Assert.Equal("No planning changes yet.", viewModel.PlanningStatusText);
+    Assert.Equal("No minimum win selected.", viewModel.MinimumWinText);
+    Assert.Equal("Plan is local-first and not saved yet.", viewModel.SaveStatusText);
+    Assert.Equal("Load unplanned inbox next.", viewModel.EmptyStateText);
+    Assert.Equal("0 unplanned", viewModel.InboxCountText);
+    Assert.False(viewModel.IsLoading, "Plan should start idle.");
+    Assert.False(viewModel.HasInboxItems, "Plan should wait for inbox loading.");
+    Assert.False(viewModel.HasSelectedInboxItem, "Plan should start without a selected inbox item.");
+    Assert.False(viewModel.HasPlanningChanges, "Plan should start without planning changes.");
+    Assert.False(viewModel.CanSavePlan, "Plan should not save before planning changes.");
+
+    viewModel.OnNavigatedToAsync(CancellationToken.None).GetAwaiter().GetResult();
+
+    Assert.Equal("Ready to plan.", viewModel.StatusText);
 }
 
 static void MoveViewModelStartsReady()

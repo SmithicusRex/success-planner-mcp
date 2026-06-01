@@ -29,6 +29,10 @@
             <views:TodayView />
         </DataTemplate>
 
+        <DataTemplate DataType="{x:Type viewModels:PlanViewModel}">
+            <views:InitialScreenView />
+        </DataTemplate>
+
         <DataTemplate DataType="{x:Type viewModels:StartWorkViewModel}">
             <views:StartWorkView />
         </DataTemplate>

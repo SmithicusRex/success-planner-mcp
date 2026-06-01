@@ -983,7 +983,7 @@ Benchmark gate:
 
 ### 11. Plan Workflow
 
-11.1. Create `PlanViewModel`.
+~~11.1. Create `PlanViewModel`.~~
 
 11.2. Create `PlanView`.
 
