@@ -1072,7 +1072,7 @@ Benchmark gate:
 
 ### 15. Microsoft To Do Adapter
 
-15.1. Add Microsoft To Do connection status model.
+~~15.1. Add Microsoft To Do connection status model.~~
 
 15.2. Add the first usable authentication or connection-test path.
 

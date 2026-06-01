@@ -1,4 +1,5 @@
 using SuccessPlanner.App.Domain;
+using SuccessPlanner.App.Services;
 
 TestRunner.RunAll(
     ("TaskItem creation and status transitions", TaskItemCreationAndStatusTransitions),
@@ -8,6 +9,7 @@ TestRunner.RunAll(
     ("FocusSession creation and status transitions", FocusSessionCreationAndStatusTransitions),
     ("SuccessGoal creation and status transitions", SuccessGoalCreationAndStatusTransitions),
     ("MovementSession creation and status transitions", MovementSessionCreationAndStatusTransitions),
+    ("Microsoft To Do connection status model", MicrosoftToDoConnectionStatusModel),
     ("SourceLink creation and sync transitions", SourceLinkCreationAndSyncTransitions),
     ("SyncQueueItem creation and sync transitions", SyncQueueItemCreationAndSyncTransitions));
 
@@ -202,6 +204,63 @@ static void MovementSessionCreationAndStatusTransitions()
     Assert.Equal(19, session.ActualMinutes);
     Assert.Equal("Walk completed.", session.WinNote);
     Assert.Contains("Win", session.Tags);
+}
+
+static void MicrosoftToDoConnectionStatusModel()
+{
+    MicrosoftToDoConnectionStatus disabled = MicrosoftToDoConnectionStatus.Disabled();
+
+    Assert.Equal(SourceSystem.MicrosoftToDo, disabled.SourceSystem);
+    Assert.Equal("Microsoft To Do", disabled.DisplayName);
+    Assert.Equal(MicrosoftToDoConnectionState.Disabled, disabled.State);
+    Assert.Equal("To Do is off", disabled.StatusText);
+    Assert.Equal("Microsoft To Do is turned off in Settings.", disabled.DetailText);
+    Assert.False(disabled.IsEnabled, "Disabled To Do connection should not be enabled.");
+    Assert.False(disabled.CanTestConnection, "Disabled To Do connection should not allow testing.");
+    Assert.False(disabled.CanSync, "Disabled To Do connection should not sync.");
+
+    DateTimeOffset checkedAt = new(2026, 6, 1, 18, 0, 0, TimeSpan.Zero);
+    MicrosoftToDoConnectionStatus connected = MicrosoftToDoConnectionStatus.Connected(
+        "  smith@example.com  ",
+        checkedAt);
+
+    Assert.Equal(MicrosoftToDoConnectionState.Connected, connected.State);
+    Assert.Equal("smith@example.com", connected.AccountDisplayName);
+    Assert.Equal(checkedAt, connected.LastCheckedAt);
+    Assert.Equal("To Do connected", connected.StatusText);
+    Assert.Equal("Connected as smith@example.com.", connected.DetailText);
+    Assert.True(connected.IsConnected, "Connected To Do status should be connected.");
+    Assert.True(connected.CanSync, "Connected To Do status should allow sync.");
+    Assert.True(connected.CanTestConnection, "Connected To Do status should allow retesting.");
+    Assert.False(connected.NeedsAttention, "Connected To Do status should not need attention.");
+
+    MicrosoftToDoConnectionStatus needsSignIn = MicrosoftToDoConnectionStatus.NeedsSignIn(
+        "  Sign in again to refresh To Do access.  ",
+        checkedAt);
+
+    Assert.Equal(MicrosoftToDoConnectionState.NeedsSignIn, needsSignIn.State);
+    Assert.Equal("Sign in needed", needsSignIn.StatusText);
+    Assert.Equal("Sign in again to refresh To Do access.", needsSignIn.DetailText);
+    Assert.True(needsSignIn.CanStartSignIn, "Needs sign-in status should offer sign-in.");
+    Assert.True(needsSignIn.NeedsAttention, "Needs sign-in status should need attention.");
+    Assert.False(needsSignIn.CanSync, "Needs sign-in status should not sync.");
+
+    MicrosoftToDoConnectionStatus failed = MicrosoftToDoConnectionStatus.Failed(
+        "  Network unavailable.  ",
+        checkedAt);
+
+    Assert.Equal(MicrosoftToDoConnectionState.Failed, failed.State);
+    Assert.Equal("Connection failed", failed.StatusText);
+    Assert.Equal("Network unavailable.", failed.DetailText);
+    Assert.True(failed.NeedsAttention, "Failed To Do connection should need attention.");
+    Assert.True(failed.CanStartSignIn, "Failed To Do connection should allow a fresh sign-in path.");
+
+    MicrosoftToDoConnectionStatus testing = MicrosoftToDoConnectionStatus.Testing(checkedAt);
+
+    Assert.Equal(MicrosoftToDoConnectionState.Testing, testing.State);
+    Assert.Equal("Checking To Do", testing.StatusText);
+    Assert.False(testing.CanTestConnection, "Testing state should not start another test.");
+    Assert.False(testing.CanSync, "Testing state should not sync yet.");
 }
 
 static void SourceLinkCreationAndSyncTransitions()
