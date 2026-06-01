@@ -15,6 +15,7 @@ TestRunner.RunAll(
     ("DatabaseStartupMigrationService preserves data on restart", DatabaseStartupMigrationServicePreservesDataOnRestart),
     ("AppBootstrapper shows a simple database failure message", AppBootstrapperShowsSimpleDatabaseFailureMessage),
     ("TaskRepository saves and loads task state", TaskRepositorySavesAndLoadsTaskState),
+    ("TaskRepository loads unplanned tasks", TaskRepositoryLoadsUnplannedTasks),
     ("TaskRepository loads today tasks", TaskRepositoryLoadsTodayTasks),
     ("TaskRepository loads recent active tasks", TaskRepositoryLoadsRecentActiveTasks),
     ("TodayViewModel saves task actions through TaskRepository", TodayViewModelSavesTaskActionsThroughTaskRepository),
@@ -295,6 +296,41 @@ static async Task TaskRepositoryDeletesTasks()
 
     TaskItem? deleted = await repository.GetByIdAsync(task.Id, CancellationToken.None);
     Assert.Null(deleted, "Deleted task should not load by id.");
+}
+
+static async Task TaskRepositoryLoadsUnplannedTasks()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+    await CreateMigratedDatabaseAsync(paths);
+
+    DateOnly today = new(2026, 5, 30);
+    TaskItem highCapture = CreateRepositoryTask("High loose capture", priority: TaskPriority.High);
+    TaskItem normalCapture = CreateRepositoryTask("Normal loose capture");
+    TaskItem plannedTask = CreateRepositoryTask("Dated task", dueDate: today);
+    TaskItem inProgressTask = CreateRepositoryTask("Started task", inProgress: true);
+    TaskItem doneTask = CreateRepositoryTask("Done task", done: true);
+    TaskItem assignedProject = CreateRepositoryTask("Assigned project");
+    Guid projectId = Guid.NewGuid();
+    await InsertProjectRowAsync(paths, projectId, "Existing project");
+    assignedProject.AssignProject(projectId);
+
+    TaskRepository repository = new(paths);
+    TaskItem[] tasks = [normalCapture, plannedTask, doneTask, highCapture, assignedProject, inProgressTask];
+    foreach (TaskItem task in tasks)
+    {
+        await repository.AddAsync(task, CancellationToken.None);
+    }
+
+    IReadOnlyList<TaskItem> unplannedTasks = await repository.GetUnplannedAsync(CancellationToken.None);
+
+    Assert.Equal(2, unplannedTasks.Count);
+    Assert.Equal("High loose capture", unplannedTasks[0].Title);
+    Assert.Equal("Normal loose capture", unplannedTasks[1].Title);
+    Assert.False(unplannedTasks.Any(task => task.Title == "Dated task"), "Planned dated tasks should not load into Plan inbox.");
+    Assert.False(unplannedTasks.Any(task => task.Title == "Started task"), "In-progress tasks should not load into Plan inbox.");
+    Assert.False(unplannedTasks.Any(task => task.Title == "Done task"), "Completed tasks should not load into Plan inbox.");
+    Assert.False(unplannedTasks.Any(task => task.Title == "Assigned project"), "Project-assigned captures should not load into Plan inbox.");
 }
 
 static async Task TaskRepositoryLoadsTodayTasks()
@@ -729,6 +765,48 @@ static async Task CreateMigratedDatabaseAsync(AppPaths paths)
     await database.OpenAsync(CancellationToken.None);
     await database.MigrateAsync(CancellationToken.None);
     await database.CloseAsync(CancellationToken.None);
+}
+
+static async Task InsertProjectRowAsync(AppPaths paths, Guid projectId, string name)
+{
+    await using SqliteConnection connection = new($"Data Source={paths.DatabasePath};Pooling=False");
+    await connection.OpenAsync();
+
+    await using SqliteCommand command = connection.CreateCommand();
+    command.CommandText =
+        """
+        INSERT INTO projects (
+            id,
+            name,
+            notes,
+            status,
+            priority,
+            created_at,
+            immediate_need,
+            minimum_win,
+            task_ids_json,
+            milestone_ids_json,
+            tags_json)
+        VALUES (
+            $id,
+            $name,
+            '',
+            $status,
+            $priority,
+            $createdAt,
+            '',
+            '',
+            '[]',
+            '[]',
+            '[]');
+        """;
+    command.Parameters.AddWithValue("$id", projectId.ToString("D"));
+    command.Parameters.AddWithValue("$name", name);
+    command.Parameters.AddWithValue("$status", ProjectStatus.Active.ToString());
+    command.Parameters.AddWithValue("$priority", TaskPriority.Normal.ToString());
+    command.Parameters.AddWithValue("$createdAt", DateTimeOffset.UtcNow.ToString("O"));
+
+    await command.ExecuteNonQueryAsync();
 }
 
 static TaskItem CreateRepositoryTask(

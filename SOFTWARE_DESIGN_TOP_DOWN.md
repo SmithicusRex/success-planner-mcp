@@ -987,7 +987,7 @@ Benchmark gate:
 
 ~~11.2. Create `PlanView`.~~
 
-11.3. Show unplanned inbox.
+~~11.3. Show unplanned inbox.~~
 
 11.4. Add priority, date, project, and minimum win controls.
 

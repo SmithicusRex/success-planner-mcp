@@ -27,6 +27,10 @@ TestRunner.RunAll(
     ("DoneViewModel shows an empty done state", DoneViewModelShowsEmptyDoneState),
     ("DoneViewModel reports load failures", DoneViewModelReportsLoadFailures),
     ("PlanViewModel starts in a simple ready state", PlanViewModelStartsReady),
+    ("PlanViewModel loads unplanned inbox", PlanViewModelLoadsUnplannedInbox),
+    ("PlanViewModel creates inbox card display state", PlanViewModelCreatesInboxCardDisplayState),
+    ("PlanViewModel shows an empty unplanned inbox", PlanViewModelShowsEmptyUnplannedInbox),
+    ("PlanViewModel reports load failures", PlanViewModelReportsLoadFailures),
     ("StartWorkViewModel starts in a simple ready state", StartWorkViewModelStartsReady),
     ("StartWorkViewModel applies session choices", StartWorkViewModelAppliesSessionChoices),
     ("StartWorkViewModel loads focus task options", StartWorkViewModelLoadsFocusTaskOptions),
@@ -1237,10 +1241,97 @@ static void PlanViewModelStartsReady()
     Assert.False(viewModel.HasSelectedInboxItem, "Plan should start without a selected inbox item.");
     Assert.False(viewModel.HasPlanningChanges, "Plan should start without planning changes.");
     Assert.False(viewModel.CanSavePlan, "Plan should not save before planning changes.");
+    Assert.True(viewModel.RefreshCommand.CanExecute(null), "Refresh should be available when Plan is idle.");
+}
 
-    viewModel.OnNavigatedToAsync(CancellationToken.None).GetAwaiter().GetResult();
+static void PlanViewModelLoadsUnplannedInbox()
+{
+    DateOnly today = new(2026, 5, 30);
+    TaskItem looseCapture = CreateTask("Loose capture");
+    looseCapture.UpdateNotes("A loose thought that needs a next action.");
+    TaskItem highCapture = CreateTask("High priority capture", priority: TaskPriority.High);
+    TaskItem plannedTask = CreateTask("Already planned", dueDate: today);
+    TaskItem inProgressTask = CreateTask("Already started", inProgress: true);
+    TaskItem doneTask = CreateTask("Already done", done: true);
+    PlanViewModel viewModel = new(_ => Task.FromResult<IReadOnlyList<TaskItem>>(
+        [plannedTask, doneTask, looseCapture, highCapture, inProgressTask]));
 
-    Assert.Equal("Ready to plan.", viewModel.StatusText);
+    viewModel.LoadInboxAsync().GetAwaiter().GetResult();
+
+    Assert.Equal(2, viewModel.InboxItems.Count);
+    Assert.Equal(2, viewModel.Tasks.Count);
+    Assert.Equal("High priority capture", viewModel.InboxItems[0].Title);
+    Assert.Equal("Loose capture", viewModel.InboxItems[1].Title);
+    Assert.True(viewModel.HasInboxItems, "Loaded unplanned captures should be visible.");
+    Assert.Equal("2 unplanned", viewModel.InboxCountText);
+    Assert.Equal("2 unplanned items ready.", viewModel.InboxStatusText);
+    Assert.Equal("Inbox ready.", viewModel.StatusText);
+    Assert.Contains("Choose one loose capture", viewModel.EmptyStateText);
+    Assert.Equal("Choose an inbox item to start planning.", viewModel.PlanningStatusText);
+    Assert.False(viewModel.HasSelectedInboxItem, "Loading inbox should not auto-select an item.");
+
+    viewModel.SelectInboxItem(viewModel.InboxItems[1]);
+
+    Assert.True(viewModel.HasSelectedInboxItem, "Clicking an inbox item should select it.");
+    Assert.Equal(looseCapture.Id, viewModel.SelectedInboxItemId.GetValueOrDefault());
+    Assert.Equal("Selected: Loose capture", viewModel.SelectedInboxItemText);
+    Assert.Equal("Ready to plan Loose capture.", viewModel.PlanningStatusText);
+    Assert.Equal("Minimum win pending for Loose capture.", viewModel.MinimumWinText);
+    Assert.Equal("Planning changes not saved yet.", viewModel.SaveStatusText);
+    Assert.Equal("Inbox item selected.", viewModel.StatusText);
+}
+
+static void PlanViewModelCreatesInboxCardDisplayState()
+{
+    TaskItem task = CreateTask("Sketch the first tiny step", priority: TaskPriority.Critical);
+    task.UpdateNotes("Keep it small enough to finish in one short focus block.");
+
+    PlanInboxTaskViewModel card = PlanInboxTaskViewModel.FromTask(task);
+
+    Assert.Equal(task.Id, card.Id);
+    Assert.Equal("Sketch the first tiny step", card.Title);
+    Assert.True(card.HasNotes, "Inbox card should show notes when notes exist.");
+    Assert.Contains("short focus block", card.NotesPreview);
+    Assert.Equal(TaskItemStatus.Captured, card.Status);
+    Assert.Equal("Critical", card.PriorityBadgeText);
+    Assert.Equal("Unplanned", card.StatusBadgeText);
+    Assert.Equal("\uE9D5", card.CardIconGlyph);
+    Assert.Contains("Sketch the first tiny step", card.CardToolTip);
+}
+
+static void PlanViewModelShowsEmptyUnplannedInbox()
+{
+    DateOnly today = new(2026, 5, 30);
+    TaskItem plannedTask = CreateTask("Already planned", dueDate: today);
+    TaskItem doneTask = CreateTask("Already done", done: true);
+    PlanViewModel viewModel = new(_ => Task.FromResult<IReadOnlyList<TaskItem>>([plannedTask, doneTask]));
+
+    viewModel.LoadInboxAsync().GetAwaiter().GetResult();
+
+    Assert.False(viewModel.HasInboxItems, "Planned and done tasks should leave Plan inbox empty.");
+    Assert.Equal(0, viewModel.InboxItems.Count);
+    Assert.Equal("0 unplanned", viewModel.InboxCountText);
+    Assert.Equal("No unplanned inbox items.", viewModel.InboxStatusText);
+    Assert.Equal("Inbox is clear.", viewModel.StatusText);
+    Assert.Contains("Capture a loose thought", viewModel.EmptyStateText);
+    Assert.Equal("No unplanned items to plan.", viewModel.PlanningStatusText);
+    Assert.False(viewModel.HasSelectedInboxItem, "Empty inbox should not select an item.");
+}
+
+static void PlanViewModelReportsLoadFailures()
+{
+    PlanViewModel viewModel = new(_ => throw new InvalidOperationException("Task storage unavailable."));
+
+    viewModel.LoadInboxAsync().GetAwaiter().GetResult();
+
+    Assert.False(viewModel.HasInboxItems, "Failed load should not leave stale inbox items visible.");
+    Assert.Equal("0 unplanned", viewModel.InboxCountText);
+    Assert.Equal("Plan could not load.", viewModel.StatusText);
+    Assert.Equal("Unplanned inbox could not load.", viewModel.InboxStatusText);
+    Assert.Contains("Try Refresh", viewModel.EmptyStateText);
+    Assert.False(viewModel.HasSelectedInboxItem, "Failed load should clear selected inbox item.");
+    Assert.False(viewModel.IsLoading, "Loading flag should clear after failure.");
+    Assert.True(viewModel.RefreshCommand.CanExecute(null), "Refresh should be available after failure.");
 }
 
 static void MoveViewModelStartsReady()

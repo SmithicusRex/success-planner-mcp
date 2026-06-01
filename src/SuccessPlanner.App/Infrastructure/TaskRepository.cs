@@ -190,6 +190,58 @@ public sealed class TaskRepository
         return tasks;
     }
 
+    public async Task<IReadOnlyList<TaskItem>> GetUnplannedAsync(CancellationToken cancellationToken = default)
+    {
+        List<TaskItem> tasks = [];
+
+        await using SqliteConnection connection = await SqliteConnectionFactory.OpenAsync(_paths, cancellationToken);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT
+                id,
+                title,
+                notes,
+                status,
+                priority,
+                due_date,
+                start_date,
+                created_at,
+                completed_at,
+                project_id,
+                estimated_minutes,
+                energy_level,
+                is_tiny_step,
+                is_physical_activity,
+                tags_json
+            FROM tasks
+            WHERE status = $capturedStatus
+                AND due_date IS NULL
+                AND start_date IS NULL
+                AND project_id IS NULL
+            ORDER BY
+                CASE priority
+                    WHEN 'Critical' THEN 0
+                    WHEN 'High' THEN 1
+                    WHEN 'Normal' THEN 2
+                    WHEN 'Low' THEN 3
+                    ELSE 4
+                END,
+                created_at,
+                title COLLATE NOCASE;
+            """;
+
+        command.Parameters.AddWithValue("$capturedStatus", TaskItemStatus.Captured.ToString());
+
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            tasks.Add(ReadTask(reader));
+        }
+
+        return tasks;
+    }
+
     public async Task<IReadOnlyList<TaskItem>> GetTodayAsync(
         DateOnly today,
         CancellationToken cancellationToken = default)

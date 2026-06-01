@@ -47,6 +47,110 @@
             <Setter Property="Padding" Value="18" />
             <Setter Property="MinHeight" Value="138" />
         </Style>
+
+        <Style x:Key="PlanActionButtonStyle" TargetType="Button">
+            <Setter Property="MinHeight" Value="42" />
+            <Setter Property="MinWidth" Value="118" />
+            <Setter Property="Padding" Value="14,0" />
+            <Setter Property="Background" Value="#FFFFFF" />
+            <Setter Property="BorderBrush" Value="#D7DADF" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chrome"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="8">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{StaticResource PlanSoftBrush}" />
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="#E4CD75" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="#F8E7AA" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Chrome" Property="Opacity" Value="0.52" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="PlanInboxCardButtonStyle" TargetType="Button">
+            <Setter Property="MinHeight" Value="118" />
+            <Setter Property="Padding" Value="18" />
+            <Setter Property="Margin" Value="0,0,0,12" />
+            <Setter Property="Background" Value="#FFFFFF" />
+            <Setter Property="BorderBrush" Value="#D7DADF" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="VerticalContentAlignment" Value="Stretch" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chrome"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="8">
+                            <ContentPresenter Margin="{TemplateBinding Padding}"
+                                              HorizontalAlignment="Stretch"
+                                              VerticalAlignment="Stretch" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{StaticResource PlanSoftBrush}" />
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="#E4CD75" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="#F8E7AA" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Chrome" Property="Opacity" Value="0.52" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="InboxListVisibilityStyle" TargetType="ScrollViewer">
+            <Setter Property="Visibility" Value="Visible" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding HasInboxItems}" Value="False">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="EmptyStateVisibilityStyle" TargetType="Border">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding HasInboxItems}" Value="False">
+                    <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="NotesVisibilityStyle" TargetType="TextBlock">
+            <Setter Property="Visibility" Value="Visible" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding HasNotes}" Value="False">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
     </UserControl.Resources>
 
     <Grid>
@@ -92,25 +196,42 @@
                     </StackPanel>
                 </StackPanel>
 
-                <Border Grid.Column="1"
-                        Padding="14,8"
-                        CornerRadius="8"
-                        Background="#E6F4EA"
-                        BorderBrush="#CDEAD5"
-                        BorderThickness="1"
-                        VerticalAlignment="Center"
-                        Margin="18,0,0,0">
-                    <StackPanel Orientation="Horizontal">
-                        <Ellipse Width="8"
-                                 Height="8"
-                                 Fill="#24984E"
-                                 Margin="0,0,8,0" />
-                        <TextBlock Text="{Binding StatusText}"
-                                   Foreground="#1E6B3A"
-                                   FontWeight="SemiBold"
-                                   FontSize="13" />
-                    </StackPanel>
-                </Border>
+                <StackPanel Grid.Column="1"
+                            Orientation="Horizontal"
+                            VerticalAlignment="Center"
+                            Margin="18,0,0,0">
+                    <Border Padding="14,8"
+                            CornerRadius="8"
+                            Background="#E6F4EA"
+                            BorderBrush="#CDEAD5"
+                            BorderThickness="1"
+                            Margin="0,0,10,0">
+                        <StackPanel Orientation="Horizontal">
+                            <Ellipse Width="8"
+                                     Height="8"
+                                     Fill="#24984E"
+                                     Margin="0,0,8,0" />
+                            <TextBlock Text="{Binding StatusText}"
+                                       Foreground="#1E6B3A"
+                                       FontWeight="SemiBold"
+                                       FontSize="13" />
+                        </StackPanel>
+                    </Border>
+
+                    <Button Command="{Binding RefreshCommand}"
+                            Style="{StaticResource PlanActionButtonStyle}"
+                            ToolTip="Refresh Plan">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE72C;"
+                                       FontFamily="Segoe MDL2 Assets"
+                                       FontSize="15"
+                                       Margin="0,0,8,0"
+                                       VerticalAlignment="Center" />
+                            <TextBlock Text="Refresh"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
             </Grid>
         </Border>
 
@@ -132,6 +253,7 @@
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
 
                     <Grid>
@@ -167,7 +289,7 @@
                             BorderBrush="#E4CD75"
                             BorderThickness="1"
                             CornerRadius="8"
-                            Padding="24"
+                            Padding="20"
                             Margin="0,22,0,0">
                         <Grid>
                             <Grid.ColumnDefinitions>
@@ -176,13 +298,13 @@
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
 
-                            <Border Width="72"
-                                    Height="72"
+                            <Border Width="64"
+                                    Height="64"
                                     CornerRadius="8"
                                     Background="{StaticResource PlanBrush}">
                                 <TextBlock Text="{Binding IconGlyph}"
                                            FontFamily="Segoe MDL2 Assets"
-                                           FontSize="30"
+                                           FontSize="28"
                                            Foreground="{StaticResource InkBrush}"
                                            HorizontalAlignment="Center"
                                            VerticalAlignment="Center" />
@@ -192,7 +314,7 @@
                                         VerticalAlignment="Center">
                                 <TextBlock Text="Inbox"
                                            Foreground="{StaticResource InkBrush}"
-                                           FontSize="28"
+                                           FontSize="26"
                                            FontWeight="SemiBold"
                                            TextWrapping="Wrap" />
                                 <TextBlock Text="{Binding EmptyStateText}"
@@ -205,7 +327,135 @@
                         </Grid>
                     </Border>
 
-                    <UniformGrid Grid.Row="2"
+                    <ScrollViewer Grid.Row="2"
+                                  Margin="0,18,0,0"
+                                  VerticalScrollBarVisibility="Auto"
+                                  Style="{StaticResource InboxListVisibilityStyle}">
+                        <ItemsControl ItemsSource="{Binding InboxItems}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Button Command="{Binding SelectCommand}"
+                                            BorderBrush="{Binding CardBorderColor}"
+                                            Background="#FFFFFF"
+                                            Style="{StaticResource PlanInboxCardButtonStyle}"
+                                            ToolTip="{Binding CardToolTip}">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="8" />
+                                                <ColumnDefinition Width="16" />
+                                                <ColumnDefinition Width="44" />
+                                                <ColumnDefinition Width="14" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+
+                                            <Border Background="{Binding CardAccentColor}"
+                                                    CornerRadius="4" />
+
+                                            <Border Grid.Column="2"
+                                                    Width="44"
+                                                    Height="44"
+                                                    CornerRadius="8"
+                                                    Background="{Binding CardAccentColor}"
+                                                    VerticalAlignment="Top">
+                                                <TextBlock Text="{Binding CardIconGlyph}"
+                                                           FontFamily="Segoe MDL2 Assets"
+                                                           FontSize="19"
+                                                           Foreground="{StaticResource InkBrush}"
+                                                           HorizontalAlignment="Center"
+                                                           VerticalAlignment="Center" />
+                                            </Border>
+
+                                            <StackPanel Grid.Column="4">
+                                                <TextBlock Text="{Binding Title}"
+                                                           Foreground="{StaticResource InkBrush}"
+                                                           FontSize="19"
+                                                           FontWeight="SemiBold"
+                                                           TextWrapping="Wrap" />
+                                                <TextBlock Text="{Binding NotesPreview}"
+                                                           Foreground="{StaticResource MutedBrush}"
+                                                           FontSize="13"
+                                                           TextWrapping="Wrap"
+                                                           Margin="0,5,0,0"
+                                                           Style="{StaticResource NotesVisibilityStyle}" />
+
+                                                <WrapPanel Margin="0,12,0,0">
+                                                    <Border Background="{Binding PriorityBadgeBackground}"
+                                                            BorderBrush="#E7E2D8"
+                                                            BorderThickness="1"
+                                                            CornerRadius="8"
+                                                            Padding="9,5"
+                                                            Margin="0,0,8,8">
+                                                        <TextBlock Text="{Binding PriorityBadgeText}"
+                                                                   Foreground="{Binding PriorityBadgeForeground}"
+                                                                   FontSize="12"
+                                                                   FontWeight="SemiBold" />
+                                                    </Border>
+                                                    <Border Background="{Binding StatusBadgeBackground}"
+                                                            BorderBrush="#E7E2D8"
+                                                            BorderThickness="1"
+                                                            CornerRadius="8"
+                                                            Padding="9,5"
+                                                            Margin="0,0,8,8">
+                                                        <TextBlock Text="{Binding StatusBadgeText}"
+                                                                   Foreground="{Binding StatusBadgeForeground}"
+                                                                   FontSize="12"
+                                                                   FontWeight="SemiBold" />
+                                                    </Border>
+                                                    <Border Background="#F5F3EE"
+                                                            BorderBrush="#E7E2D8"
+                                                            BorderThickness="1"
+                                                            CornerRadius="8"
+                                                            Padding="9,5"
+                                                            Margin="0,0,8,8">
+                                                        <TextBlock Text="{Binding CreatedText}"
+                                                                   Foreground="{StaticResource MutedBrush}"
+                                                                   FontSize="12"
+                                                                   FontWeight="SemiBold" />
+                                                    </Border>
+                                                </WrapPanel>
+                                            </StackPanel>
+                                        </Grid>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+
+                    <Border Grid.Row="2"
+                            Margin="0,18,0,0"
+                            Background="#F5F3EE"
+                            BorderBrush="#E7E2D8"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Padding="34"
+                            Style="{StaticResource EmptyStateVisibilityStyle}">
+                        <StackPanel HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    MaxWidth="420">
+                            <Border Width="72"
+                                    Height="72"
+                                    CornerRadius="8"
+                                    Background="{StaticResource PlanSoftBrush}"
+                                    BorderBrush="#E4CD75"
+                                    BorderThickness="1"
+                                    HorizontalAlignment="Center"
+                                    Margin="0,0,0,18">
+                                <TextBlock Text="&#xE9D5;"
+                                           FontFamily="Segoe MDL2 Assets"
+                                           FontSize="30"
+                                           Foreground="{StaticResource PlanInkBrush}"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center" />
+                            </Border>
+                            <TextBlock Text="{Binding EmptyStateText}"
+                                       Foreground="{StaticResource MutedBrush}"
+                                       FontSize="18"
+                                       TextAlignment="Center"
+                                       TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Border>
+
+                    <UniformGrid Grid.Row="3"
                                  Columns="3"
                                  Margin="0,18,0,0">
                         <Border Style="{StaticResource StatusCardStyle}"
