@@ -36,6 +36,7 @@ TestRunner.RunAll(
     ("PlanViewModel creates tiny step display state", PlanViewModelCreatesTinyStepDisplayState),
     ("PlanViewModel shows an empty unplanned inbox", PlanViewModelShowsEmptyUnplannedInbox),
     ("PlanViewModel reports load failures", PlanViewModelReportsLoadFailures),
+    ("ReviewViewModel starts in a simple ready state", ReviewViewModelStartsReady),
     ("StartWorkViewModel starts in a simple ready state", StartWorkViewModelStartsReady),
     ("StartWorkViewModel applies session choices", StartWorkViewModelAppliesSessionChoices),
     ("StartWorkViewModel loads focus task options", StartWorkViewModelLoadsFocusTaskOptions),
@@ -1600,6 +1601,35 @@ static void PlanViewModelReportsLoadFailures()
     Assert.False(viewModel.HasSelectedInboxItem, "Failed load should clear selected inbox item.");
     Assert.False(viewModel.IsLoading, "Loading flag should clear after failure.");
     Assert.True(viewModel.RefreshCommand.CanExecute(null), "Refresh should be available after failure.");
+}
+
+static void ReviewViewModelStartsReady()
+{
+    ReviewViewModel viewModel = new();
+
+    Assert.Equal(ScreenCatalog.Review, viewModel.Descriptor);
+    Assert.Equal("Review", viewModel.Title);
+    Assert.Equal("Notice progress and choose what matters next.", viewModel.Subtitle);
+    Assert.Equal("\uE9D2", viewModel.IconGlyph);
+    Assert.Equal("#C8B6FF", viewModel.AccentColor);
+    Assert.Equal("Ready to review.", viewModel.StatusText);
+    Assert.Equal("Review Gently", viewModel.ReviewPanelTitle);
+    Assert.Contains("small wins", viewModel.ReviewPanelText);
+    Assert.Equal("Week summary not loaded yet.", viewModel.WeekSummaryText);
+    Assert.Equal("Small wins not loaded yet.", viewModel.SmallWinsText);
+    Assert.Equal("Stuck items not loaded yet.", viewModel.StuckItemsText);
+    Assert.Equal("Needs-decision items not loaded yet.", viewModel.NeedsDecisionText);
+    Assert.Equal("No next focus selected.", viewModel.NextFocusText);
+    Assert.Equal("Review is local-first and not saved yet.", viewModel.SaveReviewStatusText);
+    Assert.Equal("Review will show progress after local activity is loaded.", viewModel.EmptyStateText);
+    Assert.Equal("0 review items", viewModel.ReviewCountText);
+    Assert.False(viewModel.IsLoadingReview, "Review should start idle.");
+    Assert.False(viewModel.HasReviewData, "Review should wait for loaded summary data.");
+    Assert.False(viewModel.HasSmallWins, "Small wins should wait for Review loading.");
+    Assert.False(viewModel.HasStuckItems, "Stuck items should wait for Review loading.");
+    Assert.False(viewModel.HasNeedsDecisionItems, "Needs-decision items should wait for Review loading.");
+    Assert.False(viewModel.HasNextFocus, "Next focus should wait for user selection.");
+    Assert.False(viewModel.CanSaveReview, "Review should not save before a next focus is selected.");
 }
 
 static void MoveViewModelStartsReady()

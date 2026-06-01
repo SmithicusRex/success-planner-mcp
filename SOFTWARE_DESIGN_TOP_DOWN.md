@@ -1004,7 +1004,7 @@ Benchmark gate:
 
 ### 12. Review Workflow
 
-12.1. Create `ReviewViewModel`.
+~~12.1. Create `ReviewViewModel`.~~
 
 12.2. Create `ReviewView`.
 
