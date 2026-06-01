@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http;
 using System.Text;
+using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using SuccessPlanner.App.Bootstrap;
 using SuccessPlanner.App.Domain;
@@ -32,6 +33,10 @@ TestRunner.RunAll(
     ("MicrosoftToDoGraphTaskAdapter needs sign-in without token", MicrosoftToDoGraphTaskAdapterNeedsSignInWithoutToken),
     ("MicrosoftToDoGraphTaskAdapter pulls lists and tasks", MicrosoftToDoGraphTaskAdapterPullsListsAndTasks),
     ("MicrosoftToDoGraphTaskAdapter maps pull failures", MicrosoftToDoGraphTaskAdapterMapsPullFailures),
+    ("MicrosoftToDoGraphTaskAdapter pushes captured tasks", MicrosoftToDoGraphTaskAdapterPushesCapturedTasks),
+    ("MicrosoftToDoGraphTaskAdapter does not push without token", MicrosoftToDoGraphTaskAdapterDoesNotPushWithoutToken),
+    ("MicrosoftToDoGraphTaskAdapter maps push failures", MicrosoftToDoGraphTaskAdapterMapsPushFailures),
+    ("MicrosoftToDoTaskPushService saves source links", MicrosoftToDoTaskPushServiceSavesSourceLinks),
     ("DatabaseService reports a healthy database", DatabaseServiceReportsHealthyDatabase),
     ("DatabaseService reports missing migration health failures", DatabaseServiceReportsMissingMigrationHealthFailures),
     ("DatabaseStartupMigrationService migrates a new database at startup", DatabaseStartupMigrationServiceMigratesNewDatabaseAtStartup),
@@ -976,6 +981,228 @@ static async Task MicrosoftToDoGraphTaskAdapterMapsPullFailures()
     Assert.Equal(MicrosoftToDoConnectionState.Unavailable, unavailable.ConnectionStatus.State);
     Assert.Contains("503", unavailable.ConnectionStatus.DetailText);
     Assert.False(unavailable.HasData, "Unavailable pull should not return data.");
+}
+
+static async Task MicrosoftToDoGraphTaskAdapterPushesCapturedTasks()
+{
+    DateTimeOffset now = new(2026, 6, 1, 21, 30, 0, TimeSpan.Zero);
+    string postedBody = string.Empty;
+    TaskItem task = TaskItem.Capture("  Call the pharmacy  ");
+    task.UpdateNotes("Pick up refill");
+    task.Schedule(new DateOnly(2026, 6, 2));
+    task.SetPriority(TaskPriority.High);
+
+    TestHttpMessageHandler handler = new(request =>
+    {
+        Assert.Equal(HttpMethod.Post, request.Method);
+        Assert.Equal("Bearer", request.Headers.Authorization?.Scheme);
+        Assert.Equal("token-123", request.Headers.Authorization?.Parameter);
+        Assert.Equal(
+            "https://graph.test/v1.0/me/todo/lists/list-1/tasks",
+            request.RequestUri?.ToString() ?? string.Empty);
+
+        Assert.NotNull(request.Content, "Push request should include JSON content.");
+        postedBody = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+        using JsonDocument postedJson = JsonDocument.Parse(postedBody);
+        JsonElement root = postedJson.RootElement;
+
+        Assert.Equal("Call the pharmacy", root.GetProperty("title").GetString());
+        Assert.Equal("high", root.GetProperty("importance").GetString());
+        Assert.Equal("Pick up refill", root.GetProperty("body").GetProperty("content").GetString());
+        Assert.Equal("text", root.GetProperty("body").GetProperty("contentType").GetString());
+        Assert.Equal("2026-06-02T00:00:00", root.GetProperty("dueDateTime").GetProperty("dateTime").GetString());
+        Assert.Equal("UTC", root.GetProperty("dueDateTime").GetProperty("timeZone").GetString());
+
+        return JsonResponse(
+            """
+            {
+              "id": "todo-task-1",
+              "title": "Call the pharmacy",
+              "status": "notStarted",
+              "importance": "high",
+              "body": {
+                "content": "Pick up refill",
+                "contentType": "text"
+              },
+              "dueDateTime": {
+                "dateTime": "2026-06-02T00:00:00Z",
+                "timeZone": "UTC"
+              },
+              "lastModifiedDateTime": "2026-06-01T21:29:00Z",
+              "webLink": "https://to-do.office.com/tasks/todo-task-1",
+              "@odata.etag": "W/\"etag-1\""
+            }
+            """,
+            HttpStatusCode.Created);
+    });
+    MicrosoftToDoGraphTaskAdapter adapter = new(
+        new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://graph.test/v1.0/")
+        },
+        new TestMicrosoftToDoAccessTokenProvider(" token-123 "),
+        () => now);
+
+    MicrosoftToDoPushResult result = await adapter.PushCapturedTaskAsync(
+        new MicrosoftToDoPushRequest(task, " list-1 "),
+        CancellationToken.None);
+
+    Assert.Equal(MicrosoftToDoConnectionState.Connected, result.ConnectionStatus.State);
+    Assert.Equal(now, result.ConnectionStatus.LastCheckedAt);
+    Assert.Contains("Pushed", result.ConnectionStatus.DetailText);
+    Assert.True(result.WasPushed, "Successful push should expose created task and source link.");
+    Assert.Equal(1, handler.CallCount);
+    Assert.True(!string.IsNullOrWhiteSpace(postedBody), "Push should send a JSON body.");
+
+    Assert.NotNull(result.PushedTask, "Successful push should include the To Do task.");
+    MicrosoftToDoTaskItem pushedTask = result.PushedTask!;
+    Assert.Equal("todo-task-1", pushedTask.Id);
+    Assert.Equal("list-1", pushedTask.ListId);
+    Assert.Equal("Call the pharmacy", pushedTask.Title);
+    Assert.Equal("high", pushedTask.Importance);
+    Assert.Equal("Pick up refill", pushedTask.BodyContent);
+    Assert.Equal("https://to-do.office.com/tasks/todo-task-1", pushedTask.WebLink);
+
+    Assert.NotNull(result.SourceLink, "Successful push should include a source link.");
+    SourceLink sourceLink = result.SourceLink!;
+    Assert.Equal(SourceLinkItemType.Task, sourceLink.LocalItemType);
+    Assert.Equal(task.Id, sourceLink.LocalItemId);
+    Assert.Equal(SourceSystem.MicrosoftToDo, sourceLink.SourceSystem);
+    Assert.Equal("todo-task-1", sourceLink.ExternalId);
+    Assert.Equal("list-1", sourceLink.ExternalContainerId);
+    Assert.Equal("Call the pharmacy", sourceLink.ExternalDisplayName);
+    Assert.Equal("https://to-do.office.com/tasks/todo-task-1", sourceLink.ExternalWebUrl);
+    Assert.Equal("W/\"etag-1\"", sourceLink.SourceVersion);
+    Assert.Equal(SyncState.Synced, sourceLink.SyncState);
+    Assert.Equal(now, sourceLink.LastSyncedAt);
+}
+
+static async Task MicrosoftToDoGraphTaskAdapterDoesNotPushWithoutToken()
+{
+    DateTimeOffset now = new(2026, 6, 1, 21, 45, 0, TimeSpan.Zero);
+    TaskItem task = TaskItem.Capture("Write local success note");
+    TestHttpMessageHandler handler = new(_ =>
+        throw new InvalidOperationException("No-token adapter should not call Graph."));
+    MicrosoftToDoGraphTaskAdapter adapter = new(
+        new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://graph.test/v1.0/")
+        },
+        new TestMicrosoftToDoAccessTokenProvider(null),
+        () => now);
+
+    MicrosoftToDoPushResult result = await adapter.PushCapturedTaskAsync(
+        new MicrosoftToDoPushRequest(task, "list-1"),
+        CancellationToken.None);
+
+    Assert.Equal(MicrosoftToDoConnectionState.NeedsSignIn, result.ConnectionStatus.State);
+    Assert.Equal(now, result.ConnectionStatus.LastCheckedAt);
+    Assert.False(result.WasPushed, "No-token push should not report a pushed task.");
+    Assert.Null(result.PushedTask, "No-token push should not return a To Do task.");
+    Assert.Null(result.SourceLink, "No-token push should not return a source link.");
+    Assert.Equal(0, handler.CallCount);
+}
+
+static async Task MicrosoftToDoGraphTaskAdapterMapsPushFailures()
+{
+    DateTimeOffset now = new(2026, 6, 1, 22, 0, 0, TimeSpan.Zero);
+    TaskItem task = TaskItem.Capture("Send test push");
+    TestHttpMessageHandler unauthorizedHandler = new(_ =>
+        new HttpResponseMessage(HttpStatusCode.Unauthorized));
+    MicrosoftToDoGraphTaskAdapter unauthorizedAdapter = new(
+        new HttpClient(unauthorizedHandler)
+        {
+            BaseAddress = new Uri("https://graph.test/v1.0/")
+        },
+        new TestMicrosoftToDoAccessTokenProvider("expired-token"),
+        () => now);
+    TestHttpMessageHandler unavailableHandler = new(_ =>
+        new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
+    MicrosoftToDoGraphTaskAdapter unavailableAdapter = new(
+        new HttpClient(unavailableHandler)
+        {
+            BaseAddress = new Uri("https://graph.test/v1.0/")
+        },
+        new TestMicrosoftToDoAccessTokenProvider("token-123"),
+        () => now);
+
+    MicrosoftToDoPushResult unauthorized = await unauthorizedAdapter.PushCapturedTaskAsync(
+        new MicrosoftToDoPushRequest(task, "list-1"),
+        CancellationToken.None);
+    MicrosoftToDoPushResult unavailable = await unavailableAdapter.PushCapturedTaskAsync(
+        new MicrosoftToDoPushRequest(task, "list-1"),
+        CancellationToken.None);
+
+    Assert.Equal(MicrosoftToDoConnectionState.NeedsSignIn, unauthorized.ConnectionStatus.State);
+    Assert.True(unauthorized.ConnectionStatus.CanStartSignIn, "Unauthorized push should allow sign-in.");
+    Assert.False(unauthorized.WasPushed, "Unauthorized push should not report success.");
+
+    Assert.Equal(MicrosoftToDoConnectionState.Unavailable, unavailable.ConnectionStatus.State);
+    Assert.Contains("503", unavailable.ConnectionStatus.DetailText);
+    Assert.False(unavailable.WasPushed, "Unavailable push should not report success.");
+}
+
+static async Task MicrosoftToDoTaskPushServiceSavesSourceLinks()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+    DatabaseService database = new(paths);
+    await database.OpenAsync(CancellationToken.None);
+    await database.MigrateAsync(CancellationToken.None);
+    await database.CloseAsync(CancellationToken.None);
+
+    DateTimeOffset now = new(2026, 6, 1, 22, 15, 0, TimeSpan.Zero);
+    TaskItem task = TaskItem.Capture("File the receipt");
+    SourceLinkRepository sourceLinkRepository = new(paths);
+    TestHttpMessageHandler handler = new(_ =>
+        JsonResponse(
+            """
+            {
+              "id": "todo-task-2",
+              "title": "File the receipt",
+              "status": "notStarted",
+              "importance": "normal",
+              "lastModifiedDateTime": "2026-06-01T22:14:00Z",
+              "webLink": "https://to-do.office.com/tasks/todo-task-2",
+              "@odata.etag": "W/\"etag-2\""
+            }
+            """,
+            HttpStatusCode.Created));
+    MicrosoftToDoGraphTaskAdapter adapter = new(
+        new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://graph.test/v1.0/")
+        },
+        new TestMicrosoftToDoAccessTokenProvider("token-123"),
+        () => now);
+    MicrosoftToDoTaskPushService service = new(adapter, sourceLinkRepository);
+
+    MicrosoftToDoPushResult result = await service.PushCapturedTaskAsync(
+        task,
+        "list-2",
+        CancellationToken.None);
+
+    Assert.True(result.WasPushed, "Push service should report successful Graph creation.");
+
+    IReadOnlyList<SourceLink> links = await sourceLinkRepository.GetForLocalItemAsync(
+        SourceLinkItemType.Task,
+        task.Id,
+        CancellationToken.None);
+    Assert.Equal(1, links.Count);
+    SourceLink savedLink = links[0];
+    Assert.Equal(SourceSystem.MicrosoftToDo, savedLink.SourceSystem);
+    Assert.Equal("todo-task-2", savedLink.ExternalId);
+    Assert.Equal("list-2", savedLink.ExternalContainerId);
+    Assert.Equal("File the receipt", savedLink.ExternalDisplayName);
+    Assert.Equal("W/\"etag-2\"", savedLink.SourceVersion);
+    Assert.Equal(SyncState.Synced, savedLink.SyncState);
+    Assert.Equal(now, savedLink.LastSyncedAt);
+
+    SourceLink? reloadedById = await sourceLinkRepository.GetByIdAsync(
+        savedLink.Id,
+        CancellationToken.None);
+    Assert.NotNull(reloadedById, "Saved source link should reload by id.");
+    Assert.Equal(savedLink.ExternalId, reloadedById!.ExternalId);
 }
 
 static async Task DatabaseServiceReportsHealthyDatabase()
@@ -2223,9 +2450,11 @@ static bool IsSqliteDatabase(string path)
     return headerText.StartsWith("SQLite format 3", StringComparison.Ordinal);
 }
 
-static HttpResponseMessage JsonResponse(string json)
+static HttpResponseMessage JsonResponse(
+    string json,
+    HttpStatusCode statusCode = HttpStatusCode.OK)
 {
-    return new HttpResponseMessage(HttpStatusCode.OK)
+    return new HttpResponseMessage(statusCode)
     {
         Content = new StringContent(json, Encoding.UTF8, "application/json")
     };

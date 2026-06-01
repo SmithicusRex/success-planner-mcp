@@ -1078,7 +1078,7 @@ Benchmark gate:
 
 ~~15.3. Pull To Do lists and tasks where available.~~
 
-15.4. Push captured tasks to To Do where configured.
+~~15.4. Push captured tasks to To Do where configured.~~
 
 15.5. Show To Do connection status in Settings.
 
@@ -1086,7 +1086,7 @@ Benchmark gate:
 
 - Settings shows To Do connection status.
 - ~~App can test whether To Do integration is available.~~
-- Successful sync updates source links.
+- ~~Successful sync updates source links.~~
 - Failed sync remains visible and recoverable.
 - ~~Build and tests pass.~~
 
