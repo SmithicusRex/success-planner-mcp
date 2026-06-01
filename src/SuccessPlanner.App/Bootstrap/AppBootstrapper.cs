@@ -114,7 +114,7 @@ public sealed class AppBootstrapper
             cancellationToken => _focusSessionRepository.GetRecentAsync(20, cancellationToken),
             cancellationToken => _movementSessionRepository.GetRecentAsync(20, cancellationToken),
             SaveReviewNextFocusAsync));
-        _navigationService.Register(AppScreen.Find, () => new InitialScreenViewModel(ScreenCatalog.Find));
+        _navigationService.Register(AppScreen.Find, () => new FindViewModel());
         _navigationService.Register(AppScreen.Settings, CreateSettingsViewModel);
     }
 

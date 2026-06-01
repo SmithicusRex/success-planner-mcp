@@ -49,6 +49,10 @@
             <views:ReviewView />
         </DataTemplate>
 
+        <DataTemplate DataType="{x:Type viewModels:FindViewModel}">
+            <views:FindView />
+        </DataTemplate>
+
         <DataTemplate DataType="{x:Type viewModels:InitialScreenViewModel}">
             <views:InitialScreenView />
         </DataTemplate>

@@ -1029,7 +1029,7 @@ Status:
 
 ~~13.1. Create `FindViewModel`.~~
 
-13.2. Create `FindView`.
+~~13.2. Create `FindView`.~~
 
 13.3. Search task titles, notes, projects, and source links.
 
