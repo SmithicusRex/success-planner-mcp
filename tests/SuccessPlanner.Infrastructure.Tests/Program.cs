@@ -15,6 +15,9 @@ TestRunner.RunAll(
     ("SyncQueueRepository saves and loads queue items", SyncQueueRepositorySavesAndLoadsQueueItems),
     ("SyncQueueRepository loads ready queue items", SyncQueueRepositoryLoadsReadyQueueItems),
     ("SyncQueueRepository updates state and deletes queue items", SyncQueueRepositoryUpdatesStateAndDeletesQueueItems),
+    ("SyncService queues local changes", SyncServiceQueuesLocalChanges),
+    ("SyncService reports ready work and status", SyncServiceReportsReadyWorkAndStatus),
+    ("SyncService updates queue item states", SyncServiceUpdatesQueueItemStates),
     ("DatabaseService reports a healthy database", DatabaseServiceReportsHealthyDatabase),
     ("DatabaseService reports missing migration health failures", DatabaseServiceReportsMissingMigrationHealthFailures),
     ("DatabaseStartupMigrationService migrates a new database at startup", DatabaseStartupMigrationServiceMigratesNewDatabaseAtStartup),
@@ -368,6 +371,117 @@ static async Task SyncQueueRepositoryUpdatesStateAndDeletesQueueItems()
     await repository.DeleteAsync(item.Id, CancellationToken.None);
     SyncQueueItem? deleted = await repository.GetByIdAsync(item.Id, CancellationToken.None);
     Assert.Null(deleted, "Deleted queue item should not load by id.");
+}
+
+static async Task SyncServiceQueuesLocalChanges()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+    await CreateMigratedDatabaseAsync(paths);
+
+    DateTimeOffset now = new(2026, 6, 1, 12, 0, 0, TimeSpan.Zero);
+    SyncQueueRepository repository = new(paths);
+    SyncService service = new(repository, () => now);
+    Guid taskId = Guid.NewGuid();
+
+    SyncQueueItem queued = await service.QueueUpdateAsync(
+        SourceLinkItemType.Task,
+        taskId,
+        SourceSystem.MicrosoftToDo,
+        """{"title":"Call the pharmacy"}""",
+        cancellationToken: CancellationToken.None);
+
+    SyncQueueItem? loaded = await repository.GetByIdAsync(queued.Id, CancellationToken.None);
+
+    Assert.NotNull(loaded, "SyncService should persist a queue item for the local change.");
+    Assert.Equal(queued.Id, loaded!.Id);
+    Assert.Equal(taskId, loaded.LocalItemId);
+    Assert.Equal(SourceLinkItemType.Task, loaded.LocalItemType);
+    Assert.Equal(SourceSystem.MicrosoftToDo, loaded.SourceSystem);
+    Assert.Equal(SyncQueueActionType.Update, loaded.ActionType);
+    Assert.Equal(SyncState.Pending, loaded.SyncState);
+    Assert.Equal("""{"title":"Call the pharmacy"}""", loaded.PayloadJson);
+    Assert.Equal(now.ToUniversalTime(), loaded.CreatedAt);
+}
+
+static async Task SyncServiceReportsReadyWorkAndStatus()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+    await CreateMigratedDatabaseAsync(paths);
+
+    DateTimeOffset now = new(2026, 6, 1, 13, 0, 0, TimeSpan.Zero);
+    SyncQueueRepository repository = new(paths);
+    SyncService service = new(repository, () => now);
+
+    SyncQueueItem pending = await service.QueueCreateAsync(
+        SourceLinkItemType.Note,
+        Guid.NewGuid(),
+        SourceSystem.LocalImport,
+        """{"text":"Remember the win"}""",
+        cancellationToken: CancellationToken.None);
+    SyncQueueItem syncing = await service.QueueDeleteAsync(
+        SourceLinkItemType.Task,
+        Guid.NewGuid(),
+        SourceSystem.MicrosoftToDo,
+        cancellationToken: CancellationToken.None);
+    await service.MarkSyncingAsync(syncing.Id, now.AddMinutes(1), CancellationToken.None);
+
+    IReadOnlyList<SyncQueueItem> readyItems = await service.GetReadyItemsAsync(10, CancellationToken.None);
+    SyncQueueStatus status = await service.GetStatusAsync(CancellationToken.None);
+
+    Assert.Equal(1, readyItems.Count);
+    Assert.Equal(pending.Id, readyItems[0].Id);
+    Assert.Equal(1, status.PendingCount);
+    Assert.Equal(1, status.SyncingCount);
+    Assert.Equal(0, status.FailedCount);
+    Assert.Equal(2, status.TotalCount);
+    Assert.True(status.HasActiveWork, "Pending or syncing work should be visible to the service.");
+    Assert.Equal("1 sync item is running.", status.SummaryText);
+}
+
+static async Task SyncServiceUpdatesQueueItemStates()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+    await CreateMigratedDatabaseAsync(paths);
+
+    DateTimeOffset now = new(2026, 6, 1, 14, 0, 0, TimeSpan.Zero);
+    SyncQueueRepository repository = new(paths);
+    SyncService service = new(repository, () => now);
+    SyncQueueItem queued = await service.QueueCreateAsync(
+        SourceLinkItemType.Project,
+        Guid.NewGuid(),
+        SourceSystem.MicrosoftPlanner,
+        "{}",
+        cancellationToken: CancellationToken.None);
+
+    SyncQueueItem? syncing = await service.MarkSyncingAsync(queued.Id, now.AddMinutes(1), CancellationToken.None);
+    Assert.NotNull(syncing, "SyncService should return the item after marking it syncing.");
+    Assert.Equal(SyncState.Syncing, syncing!.SyncState);
+    Assert.Equal(now.AddMinutes(1).ToUniversalTime(), syncing.LastAttemptedAt);
+
+    SyncQueueItem? failed = await service.MarkFailedAsync(
+        queued.Id,
+        "Planner adapter not connected.",
+        nextAttemptAt: now.AddMinutes(30),
+        failedAt: now.AddMinutes(2),
+        cancellationToken: CancellationToken.None);
+    Assert.NotNull(failed, "SyncService should return the item after marking it failed.");
+    Assert.Equal(SyncState.Failed, failed!.SyncState);
+    Assert.Equal(1, failed.RetryCount);
+    Assert.Equal(now.AddMinutes(30).ToUniversalTime(), failed.NextAttemptAt);
+    Assert.Equal("Planner adapter not connected.", failed.FailureMessage);
+
+    SyncQueueItem? storedFailed = await repository.GetByIdAsync(queued.Id, CancellationToken.None);
+    Assert.NotNull(storedFailed, "Failed sync queue item should remain stored for retry.");
+    Assert.Equal(SyncState.Failed, storedFailed!.SyncState);
+
+    SyncQueueItem? synced = await service.MarkSyncedAsync(queued.Id, now.AddMinutes(35), CancellationToken.None);
+    Assert.NotNull(synced, "SyncService should return the item after marking it synced.");
+    Assert.Equal(SyncState.Synced, synced!.SyncState);
+    Assert.Equal(0, synced.RetryCount);
+    Assert.Equal(string.Empty, synced.FailureMessage);
 }
 
 static async Task DatabaseServiceReportsHealthyDatabase()
