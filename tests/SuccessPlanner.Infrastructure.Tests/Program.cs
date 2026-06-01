@@ -12,6 +12,9 @@ TestRunner.RunAll(
     ("DatabaseService creates core application tables", DatabaseServiceCreatesCoreApplicationTables),
     ("DatabaseService creates sync queue table", DatabaseServiceCreatesSyncQueueTable),
     ("DatabaseService adds sync queue table to existing stores", DatabaseServiceAddsSyncQueueTableToExistingStores),
+    ("SyncQueueRepository saves and loads queue items", SyncQueueRepositorySavesAndLoadsQueueItems),
+    ("SyncQueueRepository loads ready queue items", SyncQueueRepositoryLoadsReadyQueueItems),
+    ("SyncQueueRepository updates state and deletes queue items", SyncQueueRepositoryUpdatesStateAndDeletesQueueItems),
     ("DatabaseService reports a healthy database", DatabaseServiceReportsHealthyDatabase),
     ("DatabaseService reports missing migration health failures", DatabaseServiceReportsMissingMigrationHealthFailures),
     ("DatabaseStartupMigrationService migrates a new database at startup", DatabaseStartupMigrationServiceMigratesNewDatabaseAtStartup),
@@ -204,6 +207,167 @@ static async Task DatabaseServiceAddsSyncQueueTableToExistingStores()
     Assert.Equal(
         "Create sync queue table",
         await ReadScalarAsync(paths.DatabasePath, "SELECT name FROM schema_migrations WHERE version = 3;"));
+}
+
+static async Task SyncQueueRepositorySavesAndLoadsQueueItems()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+    await CreateMigratedDatabaseAsync(paths);
+
+    Guid taskId = Guid.NewGuid();
+    Guid sourceLinkId = Guid.NewGuid();
+    await InsertSourceLinkRowAsync(
+        paths,
+        sourceLinkId,
+        SourceLinkItemType.Task,
+        taskId,
+        SourceSystem.MicrosoftToDo,
+        "todo-task-321",
+        "Call the pharmacy");
+
+    SyncQueueRepository repository = new(paths);
+    SyncQueueItem item = SyncQueueItem.Create(
+        SourceLinkItemType.Task,
+        taskId,
+        SourceSystem.MicrosoftToDo,
+        SyncQueueActionType.Update,
+        """{"title":"Call the pharmacy"}""",
+        sourceLinkId);
+
+    await repository.EnqueueAsync(item, CancellationToken.None);
+
+    SyncQueueItem? loaded = await repository.GetByIdAsync(item.Id, CancellationToken.None);
+    Assert.NotNull(loaded, "Queued item should load by id.");
+    Assert.Equal(item.Id, loaded!.Id);
+    Assert.Equal(SourceLinkItemType.Task, loaded.LocalItemType);
+    Assert.Equal(taskId, loaded.LocalItemId);
+    Assert.Equal(SourceSystem.MicrosoftToDo, loaded.SourceSystem);
+    Assert.Equal(sourceLinkId, loaded.SourceLinkId);
+    Assert.Equal(SyncQueueActionType.Update, loaded.ActionType);
+    Assert.Equal("""{"title":"Call the pharmacy"}""", loaded.PayloadJson);
+    Assert.Equal(SyncState.Pending, loaded.SyncState);
+    Assert.Equal(0, loaded.RetryCount);
+
+    SyncQueueRepository restartedRepository = new(paths);
+    IReadOnlyList<SyncQueueItem> all = await restartedRepository.GetAllAsync(CancellationToken.None);
+    Assert.Equal(1, all.Count);
+    Assert.Equal(item.Id, all[0].Id);
+}
+
+static async Task SyncQueueRepositoryLoadsReadyQueueItems()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+    await CreateMigratedDatabaseAsync(paths);
+
+    DateTimeOffset now = new(2026, 6, 1, 10, 0, 0, TimeSpan.Zero);
+    SyncQueueItem readyPending = SyncQueueItem.Rehydrate(
+        Guid.NewGuid(),
+        SourceLinkItemType.Task,
+        Guid.NewGuid(),
+        SourceSystem.MicrosoftToDo,
+        SyncQueueActionType.Update,
+        "{}",
+        SyncState.Pending,
+        retryCount: 0,
+        createdAt: now.AddMinutes(-20),
+        updatedAt: now.AddMinutes(-20));
+    SyncQueueItem readyFailed = SyncQueueItem.Rehydrate(
+        Guid.NewGuid(),
+        SourceLinkItemType.Project,
+        Guid.NewGuid(),
+        SourceSystem.MicrosoftPlanner,
+        SyncQueueActionType.Update,
+        "{}",
+        SyncState.Failed,
+        retryCount: 1,
+        createdAt: now.AddMinutes(-15),
+        updatedAt: now.AddMinutes(-10),
+        nextAttemptAt: now.AddMinutes(-1),
+        lastAttemptedAt: now.AddMinutes(-10),
+        failureMessage: "Temporary adapter failure.");
+    SyncQueueItem futureFailed = SyncQueueItem.Rehydrate(
+        Guid.NewGuid(),
+        SourceLinkItemType.Note,
+        Guid.NewGuid(),
+        SourceSystem.LocalImport,
+        SyncQueueActionType.Create,
+        "{}",
+        SyncState.Failed,
+        retryCount: 1,
+        createdAt: now.AddMinutes(-14),
+        updatedAt: now.AddMinutes(-9),
+        nextAttemptAt: now.AddMinutes(30),
+        lastAttemptedAt: now.AddMinutes(-9),
+        failureMessage: "Wait before retry.");
+    SyncQueueItem syncing = SyncQueueItem.Rehydrate(
+        Guid.NewGuid(),
+        SourceLinkItemType.Task,
+        Guid.NewGuid(),
+        SourceSystem.MicrosoftToDo,
+        SyncQueueActionType.Delete,
+        "{}",
+        SyncState.Syncing,
+        retryCount: 0,
+        createdAt: now.AddMinutes(-13),
+        updatedAt: now.AddMinutes(-8),
+        lastAttemptedAt: now.AddMinutes(-8));
+
+    SyncQueueRepository repository = new(paths);
+    await repository.SaveAsync(futureFailed, CancellationToken.None);
+    await repository.SaveAsync(readyFailed, CancellationToken.None);
+    await repository.SaveAsync(syncing, CancellationToken.None);
+    await repository.SaveAsync(readyPending, CancellationToken.None);
+
+    IReadOnlyList<SyncQueueItem> readyItems = await repository.GetReadyAsync(now, limit: 10, CancellationToken.None);
+
+    Assert.Equal(2, readyItems.Count);
+    Assert.Equal(readyPending.Id, readyItems[0].Id);
+    Assert.Equal(readyFailed.Id, readyItems[1].Id);
+}
+
+static async Task SyncQueueRepositoryUpdatesStateAndDeletesQueueItems()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+    await CreateMigratedDatabaseAsync(paths);
+
+    DateTimeOffset now = new(2026, 6, 1, 11, 0, 0, TimeSpan.Zero);
+    SyncQueueRepository repository = new(paths);
+    SyncQueueItem item = SyncQueueItem.Create(
+        SourceLinkItemType.Milestone,
+        Guid.NewGuid(),
+        SourceSystem.MicrosoftProjectDesktop,
+        SyncQueueActionType.Update,
+        """{"status":"Completed"}""",
+        createdAt: now);
+
+    await repository.EnqueueAsync(item, CancellationToken.None);
+    item.MarkSyncing(now.AddMinutes(1));
+    await repository.SaveAsync(item, CancellationToken.None);
+
+    SyncQueueItem? syncing = await repository.GetByIdAsync(item.Id, CancellationToken.None);
+    Assert.NotNull(syncing, "Saved queue item should still exist after state update.");
+    Assert.Equal(SyncState.Syncing, syncing!.SyncState);
+    Assert.Equal(now.AddMinutes(1).ToUniversalTime(), syncing.LastAttemptedAt);
+
+    item.MarkFailed("Project desktop is closed.", now.AddMinutes(15), now.AddMinutes(2));
+    await repository.SaveAsync(item, CancellationToken.None);
+
+    SyncQueueItem? failed = await repository.GetByIdAsync(item.Id, CancellationToken.None);
+    Assert.NotNull(failed, "Failed queue item should load.");
+    Assert.Equal(SyncState.Failed, failed!.SyncState);
+    Assert.Equal(1, failed.RetryCount);
+    Assert.Equal("Project desktop is closed.", failed.FailureMessage);
+
+    IReadOnlyDictionary<SyncState, int> counts = await repository.CountByStateAsync(CancellationToken.None);
+    Assert.True(counts.TryGetValue(SyncState.Failed, out int failedCount), "Failed count should be available.");
+    Assert.Equal(1, failedCount);
+
+    await repository.DeleteAsync(item.Id, CancellationToken.None);
+    SyncQueueItem? deleted = await repository.GetByIdAsync(item.Id, CancellationToken.None);
+    Assert.Null(deleted, "Deleted queue item should not load by id.");
 }
 
 static async Task DatabaseServiceReportsHealthyDatabase()

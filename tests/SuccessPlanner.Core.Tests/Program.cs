@@ -8,7 +8,8 @@ TestRunner.RunAll(
     ("FocusSession creation and status transitions", FocusSessionCreationAndStatusTransitions),
     ("SuccessGoal creation and status transitions", SuccessGoalCreationAndStatusTransitions),
     ("MovementSession creation and status transitions", MovementSessionCreationAndStatusTransitions),
-    ("SourceLink creation and sync transitions", SourceLinkCreationAndSyncTransitions));
+    ("SourceLink creation and sync transitions", SourceLinkCreationAndSyncTransitions),
+    ("SyncQueueItem creation and sync transitions", SyncQueueItemCreationAndSyncTransitions));
 
 static void TaskItemCreationAndStatusTransitions()
 {
@@ -237,6 +238,48 @@ static void SourceLinkCreationAndSyncTransitions()
 
     link.EnableSync();
     Assert.Equal(SyncState.Pending, link.SyncState);
+}
+
+static void SyncQueueItemCreationAndSyncTransitions()
+{
+    Guid taskId = Guid.NewGuid();
+    DateTimeOffset createdAt = new(2026, 6, 1, 9, 0, 0, TimeSpan.Zero);
+    SyncQueueItem item = SyncQueueItem.Create(
+        SourceLinkItemType.Task,
+        taskId,
+        SourceSystem.MicrosoftToDo,
+        SyncQueueActionType.Update,
+        """{"title":"Call the pharmacy"}""",
+        createdAt: createdAt);
+
+    Assert.Equal(SourceLinkItemType.Task, item.LocalItemType);
+    Assert.Equal(taskId, item.LocalItemId);
+    Assert.Equal(SourceSystem.MicrosoftToDo, item.SourceSystem);
+    Assert.Equal(SyncQueueActionType.Update, item.ActionType);
+    Assert.Equal("""{"title":"Call the pharmacy"}""", item.PayloadJson);
+    Assert.Equal(SyncState.Pending, item.SyncState);
+    Assert.True(item.IsReady(createdAt), "New sync queue item should be ready immediately.");
+
+    DateTimeOffset syncingAt = createdAt.AddMinutes(1);
+    item.MarkSyncing(syncingAt);
+    Assert.Equal(SyncState.Syncing, item.SyncState);
+    Assert.Equal(syncingAt, item.LastAttemptedAt);
+    Assert.False(item.IsReady(syncingAt), "Syncing item should not be picked again.");
+
+    DateTimeOffset retryAt = createdAt.AddMinutes(20);
+    item.MarkFailed("Network unavailable.", retryAt, createdAt.AddMinutes(2));
+    Assert.Equal(SyncState.Failed, item.SyncState);
+    Assert.Equal(1, item.RetryCount);
+    Assert.Equal(retryAt, item.NextAttemptAt);
+    Assert.Equal("Network unavailable.", item.FailureMessage);
+    Assert.False(item.IsReady(createdAt.AddMinutes(10)), "Future retry should wait.");
+    Assert.True(item.IsReady(retryAt), "Retry should become ready when next attempt time arrives.");
+
+    item.MarkSynced(createdAt.AddMinutes(25));
+    Assert.Equal(SyncState.Synced, item.SyncState);
+    Assert.Equal(0, item.RetryCount);
+    Assert.Equal(string.Empty, item.FailureMessage);
+    Assert.False(item.IsReady(createdAt.AddMinutes(30)), "Synced item should not be picked.");
 }
 
 internal static class TestRunner
