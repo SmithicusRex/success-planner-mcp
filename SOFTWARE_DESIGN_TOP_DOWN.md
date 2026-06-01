@@ -1014,14 +1014,16 @@ Benchmark gate:
 
 ~~12.5. Show needs-decision items.~~
 
-12.6. Let user choose next focus.
+~~12.6. Let user choose next focus.~~
+
+12.7. Add focus-session and movement-session success items to Review.
 
 Benchmark gate:
 
 - Review screen summarizes completed tasks, focus sessions, and movement.
-- Stuck items are visible.
-- User can save next focus.
-- Build and tests pass.
+- ~~Stuck items are visible.~~
+- ~~User can save next focus.~~
+- ~~Build and tests pass.~~
 
 ### 13. Find Workflow
 

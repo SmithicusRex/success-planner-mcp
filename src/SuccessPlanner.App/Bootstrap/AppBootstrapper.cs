@@ -13,6 +13,7 @@ public sealed class AppBootstrapper
     private readonly DatabaseStartupMigrationService _databaseStartupMigrationService;
     private readonly TaskRepository _taskRepository;
     private readonly NoteRepository _noteRepository;
+    private readonly SettingsMetadataRepository _settingsMetadataRepository;
     private readonly FocusSessionRepository _focusSessionRepository;
     private readonly MovementSessionRepository _movementSessionRepository;
     private readonly BackgroundWorkerHost _backgroundWorkerHost;
@@ -34,6 +35,7 @@ public sealed class AppBootstrapper
         _databaseStartupMigrationService = new DatabaseStartupMigrationService(_databaseService);
         _taskRepository = new TaskRepository(_paths);
         _noteRepository = new NoteRepository(_paths);
+        _settingsMetadataRepository = new SettingsMetadataRepository(_paths);
         _focusSessionRepository = new FocusSessionRepository(_paths);
         _movementSessionRepository = new MovementSessionRepository(_paths);
         _backgroundWorkerHost = new BackgroundWorkerHost();
@@ -108,9 +110,42 @@ public sealed class AppBootstrapper
         _navigationService.Register(AppScreen.Move, () => new MoveViewModel(_movementSessionRepository.SaveAsync));
         _navigationService.Register(AppScreen.Review, () => new ReviewViewModel(
             _noteRepository.GetReviewHighlightsAsync,
-            _taskRepository.GetAllAsync));
+            _taskRepository.GetAllAsync,
+            SaveReviewNextFocusAsync));
         _navigationService.Register(AppScreen.Find, () => new InitialScreenViewModel(ScreenCatalog.Find));
         _navigationService.Register(AppScreen.Settings, CreateSettingsViewModel);
+    }
+
+    private async Task SaveReviewNextFocusAsync(
+        ReviewNextFocusSelection selection,
+        CancellationToken cancellationToken)
+    {
+        DateTimeOffset savedAt = DateTimeOffset.UtcNow;
+        await _settingsMetadataRepository.UpsertAsync(
+            ReviewNextFocusMetadataKeys.Kind,
+            selection.Kind.ToString(),
+            savedAt,
+            cancellationToken);
+        await _settingsMetadataRepository.UpsertAsync(
+            ReviewNextFocusMetadataKeys.ItemId,
+            selection.ItemId.ToString("D"),
+            savedAt,
+            cancellationToken);
+        await _settingsMetadataRepository.UpsertAsync(
+            ReviewNextFocusMetadataKeys.Title,
+            selection.Title,
+            savedAt,
+            cancellationToken);
+        await _settingsMetadataRepository.UpsertAsync(
+            ReviewNextFocusMetadataKeys.Source,
+            selection.SourceText,
+            savedAt,
+            cancellationToken);
+        await _settingsMetadataRepository.UpsertAsync(
+            ReviewNextFocusMetadataKeys.SelectedAt,
+            selection.SelectedAt.ToUniversalTime().ToString("O"),
+            savedAt,
+            cancellationToken);
     }
 
     private SettingsViewModel CreateSettingsViewModel()

@@ -11,6 +11,7 @@ public sealed class ReviewViewModel : ScreenViewModelBase, INotifyPropertyChange
 {
     private readonly Func<CancellationToken, Task<IReadOnlyList<NoteItem>>> _loadSmallWinsAsync;
     private readonly Func<CancellationToken, Task<IReadOnlyList<TaskItem>>> _loadReviewTasksAsync;
+    private readonly Func<ReviewNextFocusSelection, CancellationToken, Task> _saveNextFocusAsync;
     private string _statusText = "Ready to review.";
     private string _reviewPanelTitle = "Review Gently";
     private string _reviewPanelText = "Notice small wins, stuck places, and one realistic next focus.";
@@ -22,7 +23,11 @@ public sealed class ReviewViewModel : ScreenViewModelBase, INotifyPropertyChange
     private string _saveReviewStatusText = "Review is local-first and not saved yet.";
     private string _emptyStateText = "Review will show progress after local activity is loaded.";
     private string _reviewCountText = "0 review items";
+    private ReviewNextFocusSelection? _selectedNextFocus;
+    private Guid? _lastSavedNextFocusId;
     private bool _isLoadingReview;
+    private bool _isSavingReview;
+    private bool _hasSavedNextFocus;
 
     public ReviewViewModel()
         : this(
@@ -39,15 +44,28 @@ public sealed class ReviewViewModel : ScreenViewModelBase, INotifyPropertyChange
     public ReviewViewModel(
         Func<CancellationToken, Task<IReadOnlyList<NoteItem>>> loadSmallWinsAsync,
         Func<CancellationToken, Task<IReadOnlyList<TaskItem>>> loadReviewTasksAsync)
+        : this(loadSmallWinsAsync, loadReviewTasksAsync, MissingNextFocusSaveAsync)
+    {
+    }
+
+    public ReviewViewModel(
+        Func<CancellationToken, Task<IReadOnlyList<NoteItem>>> loadSmallWinsAsync,
+        Func<CancellationToken, Task<IReadOnlyList<TaskItem>>> loadReviewTasksAsync,
+        Func<ReviewNextFocusSelection, CancellationToken, Task> saveNextFocusAsync)
         : base(ScreenCatalog.Review)
     {
         ArgumentNullException.ThrowIfNull(loadSmallWinsAsync);
         ArgumentNullException.ThrowIfNull(loadReviewTasksAsync);
+        ArgumentNullException.ThrowIfNull(saveNextFocusAsync);
         _loadSmallWinsAsync = loadSmallWinsAsync;
         _loadReviewTasksAsync = loadReviewTasksAsync;
+        _saveNextFocusAsync = saveNextFocusAsync;
         RefreshCommand = new AsyncRelayCommand(
             () => LoadReviewAsync(CancellationToken.None),
             () => !IsLoadingReview);
+        SaveReviewCommand = new AsyncRelayCommand(
+            () => SaveReviewAsync(CancellationToken.None),
+            () => CanSaveReview);
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -67,6 +85,8 @@ public sealed class ReviewViewModel : ScreenViewModelBase, INotifyPropertyChange
     public ObservableCollection<ReviewNeedsDecisionItemViewModel> NeedsDecisionItems { get; } = [];
 
     public AsyncRelayCommand RefreshCommand { get; }
+
+    public AsyncRelayCommand SaveReviewCommand { get; }
 
     public string StatusText
     {
@@ -146,6 +166,19 @@ public sealed class ReviewViewModel : ScreenViewModelBase, INotifyPropertyChange
         }
     }
 
+    public bool IsSavingReview
+    {
+        get => _isSavingReview;
+        private set
+        {
+            if (SetProperty(ref _isSavingReview, value))
+            {
+                OnPropertyChanged(nameof(CanSaveReview));
+                SaveReviewCommand.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
     public bool HasReviewData => HasSmallWins || HasStuckItems || HasNeedsDecisionItems;
 
     public bool HasSmallWins => SmallWins.Count > 0;
@@ -154,9 +187,32 @@ public sealed class ReviewViewModel : ScreenViewModelBase, INotifyPropertyChange
 
     public bool HasNeedsDecisionItems => NeedsDecisionItems.Count > 0;
 
-    public bool HasNextFocus => false;
+    public bool HasNextFocus => _selectedNextFocus is not null;
 
-    public bool CanSaveReview => false;
+    public ReviewNextFocusKind? SelectedNextFocusKind => _selectedNextFocus?.Kind;
+
+    public Guid? SelectedNextFocusId => _selectedNextFocus?.ItemId;
+
+    public string SelectedNextFocusTitle => _selectedNextFocus?.Title ?? string.Empty;
+
+    public string SelectedNextFocusSourceText => _selectedNextFocus?.SourceText ?? string.Empty;
+
+    public Guid? LastSavedNextFocusId => _lastSavedNextFocusId;
+
+    public bool HasSavedNextFocus
+    {
+        get => _hasSavedNextFocus;
+        private set
+        {
+            if (SetProperty(ref _hasSavedNextFocus, value))
+            {
+                OnPropertyChanged(nameof(CanSaveReview));
+                SaveReviewCommand.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
+    public bool CanSaveReview => HasNextFocus && !IsSavingReview && !HasSavedNextFocus;
 
     public override Task OnNavigatedToAsync(CancellationToken cancellationToken)
     {
@@ -181,21 +237,21 @@ public sealed class ReviewViewModel : ScreenViewModelBase, INotifyPropertyChange
                 .Where(note => note.IsReviewHighlight)
                 .OrderByDescending(note => note.CreatedAt)
                 .ThenBy(note => note.Text, StringComparer.OrdinalIgnoreCase)
-                .Select(ReviewSmallWinViewModel.FromNote)
+                .Select(note => ReviewSmallWinViewModel.FromNote(note, ChooseNextFocus))
                 .ToList();
             IReadOnlyList<ReviewStuckItemViewModel> stuckCards = loadedReviewTasks
                 .Where(ShouldShowStuckItem)
                 .OrderBy(task => StuckSortValue(task))
                 .ThenBy(task => task.DueDate ?? task.StartDate ?? DateOnly.MaxValue)
                 .ThenBy(task => task.Title, StringComparer.OrdinalIgnoreCase)
-                .Select(ReviewStuckItemViewModel.FromTask)
+                .Select(task => ReviewStuckItemViewModel.FromTask(task, ChooseNextFocus))
                 .ToList();
             IReadOnlyList<ReviewNeedsDecisionItemViewModel> needsDecisionCards = loadedReviewTasks
                 .Where(ShouldShowNeedsDecisionItem)
                 .OrderBy(task => PrioritySortValue(task.Priority))
                 .ThenBy(task => task.DueDate ?? task.StartDate ?? DateOnly.MaxValue)
                 .ThenBy(task => task.Title, StringComparer.OrdinalIgnoreCase)
-                .Select(ReviewNeedsDecisionItemViewModel.FromTask)
+                .Select(task => ReviewNeedsDecisionItemViewModel.FromTask(task, ChooseNextFocus))
                 .ToList();
 
             SmallWins.Clear();
@@ -240,6 +296,66 @@ public sealed class ReviewViewModel : ScreenViewModelBase, INotifyPropertyChange
         finally
         {
             IsLoadingReview = false;
+        }
+    }
+
+    public void ChooseNextFocus(ReviewNextFocusSelection selection)
+    {
+        ArgumentNullException.ThrowIfNull(selection);
+
+        _selectedNextFocus = selection;
+        _lastSavedNextFocusId = null;
+        HasSavedNextFocus = false;
+        NextFocusText = $"{selection.SourceText}: {selection.Title}";
+        SaveReviewStatusText = "Next focus ready to save locally.";
+        StatusText = "Next focus selected.";
+
+        OnPropertyChanged(nameof(HasNextFocus));
+        OnPropertyChanged(nameof(SelectedNextFocusKind));
+        OnPropertyChanged(nameof(SelectedNextFocusId));
+        OnPropertyChanged(nameof(SelectedNextFocusTitle));
+        OnPropertyChanged(nameof(SelectedNextFocusSourceText));
+        OnPropertyChanged(nameof(LastSavedNextFocusId));
+        OnPropertyChanged(nameof(CanSaveReview));
+        SaveReviewCommand.RaiseCanExecuteChanged();
+    }
+
+    public async Task SaveReviewAsync(CancellationToken cancellationToken = default)
+    {
+        if (_selectedNextFocus is null)
+        {
+            SaveReviewStatusText = "Choose one review item before saving.";
+            StatusText = "Choose a next focus first.";
+            return;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        IsSavingReview = true;
+        SaveReviewStatusText = "Saving next focus locally.";
+        StatusText = "Saving review focus.";
+
+        try
+        {
+            await _saveNextFocusAsync(_selectedNextFocus, cancellationToken);
+            _lastSavedNextFocusId = _selectedNextFocus.ItemId;
+            OnPropertyChanged(nameof(LastSavedNextFocusId));
+            HasSavedNextFocus = true;
+            SaveReviewStatusText = $"Saved locally: {_selectedNextFocus.Title}";
+            StatusText = "Next focus saved.";
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            HasSavedNextFocus = false;
+            SaveReviewStatusText = "Next focus could not save locally.";
+            StatusText = "Review save failed.";
+        }
+        finally
+        {
+            IsSavingReview = false;
         }
     }
 
@@ -428,6 +544,13 @@ public sealed class ReviewViewModel : ScreenViewModelBase, INotifyPropertyChange
         };
     }
 
+    private static Task MissingNextFocusSaveAsync(
+        ReviewNextFocusSelection selection,
+        CancellationToken cancellationToken)
+    {
+        return Task.FromException(new InvalidOperationException("No next-focus save repository is configured."));
+    }
+
     private bool SetProperty<T>(
         ref T field,
         T value,
@@ -449,9 +572,34 @@ public sealed class ReviewViewModel : ScreenViewModelBase, INotifyPropertyChange
     }
 }
 
+public enum ReviewNextFocusKind
+{
+    SmallWin,
+    StuckItem,
+    NeedsDecision
+}
+
+public sealed record ReviewNextFocusSelection(
+    ReviewNextFocusKind Kind,
+    Guid ItemId,
+    string Title,
+    string SourceText,
+    DateTimeOffset SelectedAt);
+
+public static class ReviewNextFocusMetadataKeys
+{
+    public const string Kind = "review.next_focus.kind";
+    public const string ItemId = "review.next_focus.item_id";
+    public const string Title = "review.next_focus.title";
+    public const string Source = "review.next_focus.source";
+    public const string SelectedAt = "review.next_focus.selected_at";
+}
+
 public sealed class ReviewSmallWinViewModel
 {
-    private ReviewSmallWinViewModel(NoteItem note)
+    private ReviewSmallWinViewModel(
+        NoteItem note,
+        Action<ReviewNextFocusSelection>? chooseNextFocus)
     {
         Id = note.Id;
         OwnerType = note.OwnerType;
@@ -466,6 +614,13 @@ public sealed class ReviewSmallWinViewModel
         CardBorderColor = "#CDEAD5";
         CardToolTip = $"{BadgeText}: {Text}";
         HasSource = !string.IsNullOrWhiteSpace(SourceText);
+        ChooseNextFocusCommand = new AsyncRelayCommand(
+            () =>
+            {
+                chooseNextFocus?.Invoke(ToNextFocusSelection());
+                return Task.CompletedTask;
+            },
+            () => chooseNextFocus is not null);
     }
 
     public Guid Id { get; }
@@ -494,10 +649,31 @@ public sealed class ReviewSmallWinViewModel
 
     public string CardToolTip { get; }
 
+    public AsyncRelayCommand ChooseNextFocusCommand { get; }
+
     public static ReviewSmallWinViewModel FromNote(NoteItem note)
     {
         ArgumentNullException.ThrowIfNull(note);
-        return new ReviewSmallWinViewModel(note);
+        return new ReviewSmallWinViewModel(note, null);
+    }
+
+    public static ReviewSmallWinViewModel FromNote(
+        NoteItem note,
+        Action<ReviewNextFocusSelection> chooseNextFocus)
+    {
+        ArgumentNullException.ThrowIfNull(note);
+        ArgumentNullException.ThrowIfNull(chooseNextFocus);
+        return new ReviewSmallWinViewModel(note, chooseNextFocus);
+    }
+
+    public ReviewNextFocusSelection ToNextFocusSelection()
+    {
+        return new ReviewNextFocusSelection(
+            ReviewNextFocusKind.SmallWin,
+            Id,
+            Text,
+            SourceText,
+            DateTimeOffset.UtcNow);
     }
 
     private static string BuildSourceText(NoteItem note)
@@ -515,7 +691,9 @@ public sealed class ReviewSmallWinViewModel
 
 public sealed class ReviewStuckItemViewModel
 {
-    private ReviewStuckItemViewModel(TaskItem task)
+    private ReviewStuckItemViewModel(
+        TaskItem task,
+        Action<ReviewNextFocusSelection>? chooseNextFocus)
     {
         Id = task.Id;
         Title = task.Title;
@@ -537,6 +715,13 @@ public sealed class ReviewStuckItemViewModel
         CardToolTip = HasNotes
             ? $"{Title} - {NotesPreview}"
             : $"{Title} - {StatusText.ToLowerInvariant()}";
+        ChooseNextFocusCommand = new AsyncRelayCommand(
+            () =>
+            {
+                chooseNextFocus?.Invoke(ToNextFocusSelection());
+                return Task.CompletedTask;
+            },
+            () => chooseNextFocus is not null);
     }
 
     public Guid Id { get; }
@@ -575,10 +760,31 @@ public sealed class ReviewStuckItemViewModel
 
     public string CardToolTip { get; }
 
+    public AsyncRelayCommand ChooseNextFocusCommand { get; }
+
     public static ReviewStuckItemViewModel FromTask(TaskItem task)
     {
         ArgumentNullException.ThrowIfNull(task);
-        return new ReviewStuckItemViewModel(task);
+        return new ReviewStuckItemViewModel(task, null);
+    }
+
+    public static ReviewStuckItemViewModel FromTask(
+        TaskItem task,
+        Action<ReviewNextFocusSelection> chooseNextFocus)
+    {
+        ArgumentNullException.ThrowIfNull(task);
+        ArgumentNullException.ThrowIfNull(chooseNextFocus);
+        return new ReviewStuckItemViewModel(task, chooseNextFocus);
+    }
+
+    public ReviewNextFocusSelection ToNextFocusSelection()
+    {
+        return new ReviewNextFocusSelection(
+            ReviewNextFocusKind.StuckItem,
+            Id,
+            Title,
+            StatusText,
+            DateTimeOffset.UtcNow);
     }
 
     private static string BuildStatusText(TaskItem task)
@@ -626,7 +832,9 @@ public sealed class ReviewStuckItemViewModel
 
 public sealed class ReviewNeedsDecisionItemViewModel
 {
-    private ReviewNeedsDecisionItemViewModel(TaskItem task)
+    private ReviewNeedsDecisionItemViewModel(
+        TaskItem task,
+        Action<ReviewNextFocusSelection>? chooseNextFocus)
     {
         Id = task.Id;
         Title = task.Title;
@@ -646,6 +854,13 @@ public sealed class ReviewNeedsDecisionItemViewModel
         CardToolTip = HasNotes
             ? $"{Title} - {NotesPreview}"
             : $"{Title} - needs a decision";
+        ChooseNextFocusCommand = new AsyncRelayCommand(
+            () =>
+            {
+                chooseNextFocus?.Invoke(ToNextFocusSelection());
+                return Task.CompletedTask;
+            },
+            () => chooseNextFocus is not null);
     }
 
     public Guid Id { get; }
@@ -680,10 +895,31 @@ public sealed class ReviewNeedsDecisionItemViewModel
 
     public string CardToolTip { get; }
 
+    public AsyncRelayCommand ChooseNextFocusCommand { get; }
+
     public static ReviewNeedsDecisionItemViewModel FromTask(TaskItem task)
     {
         ArgumentNullException.ThrowIfNull(task);
-        return new ReviewNeedsDecisionItemViewModel(task);
+        return new ReviewNeedsDecisionItemViewModel(task, null);
+    }
+
+    public static ReviewNeedsDecisionItemViewModel FromTask(
+        TaskItem task,
+        Action<ReviewNextFocusSelection> chooseNextFocus)
+    {
+        ArgumentNullException.ThrowIfNull(task);
+        ArgumentNullException.ThrowIfNull(chooseNextFocus);
+        return new ReviewNeedsDecisionItemViewModel(task, chooseNextFocus);
+    }
+
+    public ReviewNextFocusSelection ToNextFocusSelection()
+    {
+        return new ReviewNextFocusSelection(
+            ReviewNextFocusKind.NeedsDecision,
+            Id,
+            Title,
+            BadgeText,
+            DateTimeOffset.UtcNow);
     }
 
     private static string BuildPriorityText(TaskPriority priority)

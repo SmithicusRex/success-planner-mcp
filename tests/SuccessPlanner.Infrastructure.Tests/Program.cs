@@ -26,6 +26,7 @@ TestRunner.RunAll(
     ("ReviewViewModel loads small wins through NoteRepository", ReviewViewModelLoadsSmallWinsThroughNoteRepository),
     ("ReviewViewModel loads stuck items through TaskRepository", ReviewViewModelLoadsStuckItemsThroughTaskRepository),
     ("ReviewViewModel loads needs-decision items through TaskRepository", ReviewViewModelLoadsNeedsDecisionItemsThroughTaskRepository),
+    ("ReviewViewModel saves next focus through SettingsMetadataRepository", ReviewViewModelSavesNextFocusThroughSettingsMetadataRepository),
     ("FocusSessionRepository saves and loads focus session state", FocusSessionRepositorySavesAndLoadsFocusSessionState),
     ("StartWorkViewModel records focus sessions through repositories", StartWorkViewModelRecordsFocusSessionsThroughRepositories),
     ("MovementSessionRepository saves and loads movement state", MovementSessionRepositorySavesAndLoadsMovementSessionState),
@@ -728,6 +729,77 @@ static async Task ReviewViewModelLoadsNeedsDecisionItemsThroughTaskRepository()
     Assert.Equal("1 needs-decision item this review.", viewModel.WeekSummaryText);
     Assert.Equal("1 needs-decision item ready.", viewModel.NeedsDecisionText);
     Assert.Equal("Needs-decision items ready.", viewModel.StatusText);
+}
+
+static async Task ReviewViewModelSavesNextFocusThroughSettingsMetadataRepository()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+    await CreateMigratedDatabaseAsync(paths);
+
+    DateOnly today = new(2026, 5, 30);
+    TaskRepository taskRepository = new(paths);
+    SettingsMetadataRepository metadataRepository = new(paths);
+    DateTimeOffset savedAt = new(2026, 5, 30, 16, 0, 0, TimeSpan.Zero);
+    TaskItem decisionTask = CreateRepositoryTask("Choose the project scope", dueDate: today.AddDays(1), priority: TaskPriority.High);
+    decisionTask.AddTag("Needs Decision");
+    await taskRepository.AddAsync(decisionTask, CancellationToken.None);
+
+    ReviewViewModel viewModel = new(
+        _ => Task.FromResult<IReadOnlyList<NoteItem>>([]),
+        taskRepository.GetAllAsync,
+        async (selection, cancellationToken) =>
+        {
+            await metadataRepository.UpsertAsync(
+                ReviewNextFocusMetadataKeys.Kind,
+                selection.Kind.ToString(),
+                savedAt,
+                cancellationToken);
+            await metadataRepository.UpsertAsync(
+                ReviewNextFocusMetadataKeys.ItemId,
+                selection.ItemId.ToString("D"),
+                savedAt,
+                cancellationToken);
+            await metadataRepository.UpsertAsync(
+                ReviewNextFocusMetadataKeys.Title,
+                selection.Title,
+                savedAt,
+                cancellationToken);
+            await metadataRepository.UpsertAsync(
+                ReviewNextFocusMetadataKeys.Source,
+                selection.SourceText,
+                savedAt,
+                cancellationToken);
+            await metadataRepository.UpsertAsync(
+                ReviewNextFocusMetadataKeys.SelectedAt,
+                selection.SelectedAt.ToUniversalTime().ToString("O"),
+                savedAt,
+                cancellationToken);
+        });
+
+    await viewModel.LoadReviewAsync(CancellationToken.None);
+    viewModel.NeedsDecisionItems[0].ChooseNextFocusCommand.Execute(null);
+    await viewModel.SaveReviewAsync(CancellationToken.None);
+
+    SettingsMetadataEntry? kind = await metadataRepository.GetAsync(ReviewNextFocusMetadataKeys.Kind, CancellationToken.None);
+    SettingsMetadataEntry? itemId = await metadataRepository.GetAsync(ReviewNextFocusMetadataKeys.ItemId, CancellationToken.None);
+    SettingsMetadataEntry? title = await metadataRepository.GetAsync(ReviewNextFocusMetadataKeys.Title, CancellationToken.None);
+    SettingsMetadataEntry? source = await metadataRepository.GetAsync(ReviewNextFocusMetadataKeys.Source, CancellationToken.None);
+    SettingsMetadataEntry? selectedAt = await metadataRepository.GetAsync(ReviewNextFocusMetadataKeys.SelectedAt, CancellationToken.None);
+
+    Assert.NotNull(kind, "Next focus kind should save in settings metadata.");
+    Assert.NotNull(itemId, "Next focus item id should save in settings metadata.");
+    Assert.NotNull(title, "Next focus title should save in settings metadata.");
+    Assert.NotNull(source, "Next focus source should save in settings metadata.");
+    Assert.NotNull(selectedAt, "Next focus selected timestamp should save in settings metadata.");
+    Assert.Equal(ReviewNextFocusKind.NeedsDecision.ToString(), kind!.Value);
+    Assert.Equal(decisionTask.Id.ToString("D"), itemId!.Value);
+    Assert.Equal("Choose the project scope", title!.Value);
+    Assert.Equal("Needs Decision", source!.Value);
+    Assert.True(DateTimeOffset.TryParse(selectedAt!.Value, out _), "Next focus selected timestamp should be round-trippable.");
+    Assert.Equal(savedAt.ToUniversalTime(), kind.UpdatedAt);
+    Assert.True(viewModel.HasSavedNextFocus, "Saved review focus should be visible in the view model.");
+    Assert.Equal(decisionTask.Id, viewModel.LastSavedNextFocusId.GetValueOrDefault());
 }
 
 static async Task FocusSessionRepositorySavesAndLoadsFocusSessionState()

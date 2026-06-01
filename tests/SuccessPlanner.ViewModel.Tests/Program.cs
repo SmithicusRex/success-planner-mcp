@@ -40,6 +40,8 @@ TestRunner.RunAll(
     ("ReviewViewModel loads small wins", ReviewViewModelLoadsSmallWins),
     ("ReviewViewModel loads stuck items", ReviewViewModelLoadsStuckItems),
     ("ReviewViewModel loads needs-decision items", ReviewViewModelLoadsNeedsDecisionItems),
+    ("ReviewViewModel lets user choose next focus", ReviewViewModelLetsUserChooseNextFocus),
+    ("ReviewViewModel saves next focus", ReviewViewModelSavesNextFocus),
     ("ReviewViewModel shows empty small wins state", ReviewViewModelShowsEmptySmallWinsState),
     ("ReviewViewModel reports load failures", ReviewViewModelReportsLoadFailures),
     ("ReviewViewModel creates small win display state", ReviewViewModelCreatesSmallWinDisplayState),
@@ -1640,7 +1642,15 @@ static void ReviewViewModelStartsReady()
     Assert.False(viewModel.HasStuckItems, "Stuck items should wait for Review loading.");
     Assert.False(viewModel.HasNeedsDecisionItems, "Needs-decision items should wait for Review loading.");
     Assert.False(viewModel.HasNextFocus, "Next focus should wait for user selection.");
+    Assert.Null(viewModel.SelectedNextFocusKind, "Next focus kind should start empty.");
+    Assert.Null(viewModel.SelectedNextFocusId, "Next focus id should start empty.");
+    Assert.Equal(string.Empty, viewModel.SelectedNextFocusTitle);
+    Assert.Equal(string.Empty, viewModel.SelectedNextFocusSourceText);
+    Assert.Null(viewModel.LastSavedNextFocusId, "No review focus should be saved yet.");
+    Assert.False(viewModel.HasSavedNextFocus, "Review focus should start unsaved.");
     Assert.False(viewModel.CanSaveReview, "Review should not save before a next focus is selected.");
+    Assert.False(viewModel.IsSavingReview, "Review should not start in a saving state.");
+    Assert.False(viewModel.SaveReviewCommand.CanExecute(null), "Save Review should wait for next focus selection.");
     Assert.True(viewModel.RefreshCommand.CanExecute(null), "Refresh should be available when Review is idle.");
 }
 
@@ -1738,6 +1748,76 @@ static void ReviewViewModelLoadsNeedsDecisionItems()
     Assert.Equal("Needs-decision items ready.", viewModel.StatusText);
     Assert.Contains("local task tags", viewModel.EmptyStateText);
     Assert.False(viewModel.IsLoadingReview, "Loading flag should clear after needs-decision items load.");
+}
+
+static void ReviewViewModelLetsUserChooseNextFocus()
+{
+    DateOnly today = new(2026, 5, 30);
+    TaskItem decision = CreateTask("Choose the project scope", dueDate: today.AddDays(1), priority: TaskPriority.High);
+    decision.UpdateNotes("Pick the smallest shippable shape.");
+    decision.AddTag("Needs Decision");
+    ReviewViewModel viewModel = new(
+        _ => Task.FromResult<IReadOnlyList<NoteItem>>([]),
+        _ => Task.FromResult<IReadOnlyList<TaskItem>>([decision]),
+        (_, _) => Task.CompletedTask);
+
+    viewModel.LoadReviewAsync().GetAwaiter().GetResult();
+    ReviewNeedsDecisionItemViewModel card = viewModel.NeedsDecisionItems[0];
+    Assert.True(card.ChooseNextFocusCommand.CanExecute(null), "Review cards should expose a choose-next-focus command.");
+
+    card.ChooseNextFocusCommand.Execute(null);
+
+    Assert.True(viewModel.HasNextFocus, "Choosing a review card should set the next focus.");
+    Assert.Equal(ReviewNextFocusKind.NeedsDecision, viewModel.SelectedNextFocusKind.GetValueOrDefault());
+    Assert.Equal(decision.Id, viewModel.SelectedNextFocusId.GetValueOrDefault());
+    Assert.Equal("Choose the project scope", viewModel.SelectedNextFocusTitle);
+    Assert.Equal("Needs Decision", viewModel.SelectedNextFocusSourceText);
+    Assert.Contains("Choose the project scope", viewModel.NextFocusText);
+    Assert.Equal("Next focus ready to save locally.", viewModel.SaveReviewStatusText);
+    Assert.Equal("Next focus selected.", viewModel.StatusText);
+    Assert.False(viewModel.HasSavedNextFocus, "Changing next focus should clear saved state.");
+    Assert.Null(viewModel.LastSavedNextFocusId, "Changing next focus should clear the saved id.");
+    Assert.True(viewModel.CanSaveReview, "Choosing a next focus should unlock save.");
+    Assert.True(viewModel.SaveReviewCommand.CanExecute(null), "Choosing a next focus should enable Save Review.");
+}
+
+static void ReviewViewModelSavesNextFocus()
+{
+    DateOnly today = new(2026, 5, 30);
+    TaskItem stuckTask = CreateTask("Call the supplier", dueDate: today.AddDays(-1), priority: TaskPriority.High);
+    stuckTask.UpdateNotes("Waiting on a return call.");
+    stuckTask.MarkBlocked();
+    List<ReviewNextFocusSelection> savedSelections = [];
+    ReviewViewModel viewModel = new(
+        _ => Task.FromResult<IReadOnlyList<NoteItem>>([]),
+        _ => Task.FromResult<IReadOnlyList<TaskItem>>([stuckTask]),
+        (selection, _) =>
+        {
+            savedSelections.Add(selection);
+            return Task.CompletedTask;
+        });
+
+    viewModel.SaveReviewAsync(CancellationToken.None).GetAwaiter().GetResult();
+    Assert.Equal(0, savedSelections.Count);
+    Assert.Equal("Choose one review item before saving.", viewModel.SaveReviewStatusText);
+    Assert.Equal("Choose a next focus first.", viewModel.StatusText);
+
+    viewModel.LoadReviewAsync().GetAwaiter().GetResult();
+    viewModel.StuckItems[0].ChooseNextFocusCommand.Execute(null);
+    viewModel.SaveReviewAsync(CancellationToken.None).GetAwaiter().GetResult();
+
+    Assert.Equal(1, savedSelections.Count);
+    Assert.Equal(ReviewNextFocusKind.StuckItem, savedSelections[0].Kind);
+    Assert.Equal(stuckTask.Id, savedSelections[0].ItemId);
+    Assert.Equal("Call the supplier", savedSelections[0].Title);
+    Assert.Equal("Blocked", savedSelections[0].SourceText);
+    Assert.True(viewModel.HasSavedNextFocus, "Successful save should expose saved focus state.");
+    Assert.Equal(stuckTask.Id, viewModel.LastSavedNextFocusId.GetValueOrDefault());
+    Assert.Equal("Saved locally: Call the supplier", viewModel.SaveReviewStatusText);
+    Assert.Equal("Next focus saved.", viewModel.StatusText);
+    Assert.False(viewModel.IsSavingReview, "Saving flag should clear after save.");
+    Assert.False(viewModel.CanSaveReview, "Saved focus should disable another save until the focus changes.");
+    Assert.False(viewModel.SaveReviewCommand.CanExecute(null), "Saved focus should disable Save Review until the focus changes.");
 }
 
 static void ReviewViewModelShowsEmptySmallWinsState()

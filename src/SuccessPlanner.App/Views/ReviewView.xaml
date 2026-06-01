@@ -87,6 +87,43 @@
             </Setter>
         </Style>
 
+        <Style x:Key="ReviewIconButtonStyle" TargetType="Button">
+            <Setter Property="Width" Value="34" />
+            <Setter Property="Height" Value="34" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Background" Value="#FFFFFF" />
+            <Setter Property="BorderBrush" Value="#D7DADF" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chrome"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="8">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{StaticResource ReviewSoftBrush}" />
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="#B8A2F0" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="#DFD6FF" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Chrome" Property="Opacity" Value="0.52" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style x:Key="SmallWinListVisibilityStyle" TargetType="ItemsControl">
             <Setter Property="Visibility" Value="Collapsed" />
             <Style.Triggers>
@@ -313,6 +350,8 @@
                                                     <ColumnDefinition Width="Auto" />
                                                     <ColumnDefinition Width="10" />
                                                     <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="10" />
+                                                    <ColumnDefinition Width="Auto" />
                                                 </Grid.ColumnDefinitions>
 
                                                 <Border Width="34"
@@ -343,8 +382,19 @@
                                                                    Foreground="{StaticResource MutedBrush}"
                                                                    FontSize="12"
                                                                    FontWeight="SemiBold" />
-                                                    </WrapPanel>
+                                                       </WrapPanel>
                                                 </StackPanel>
+
+                                                <Button Grid.Column="4"
+                                                        Style="{StaticResource ReviewIconButtonStyle}"
+                                                        Command="{Binding ChooseNextFocusCommand}"
+                                                        ToolTip="Choose next focus"
+                                                        VerticalAlignment="Top">
+                                                    <TextBlock Text="&#xE8E5;"
+                                                               FontFamily="Segoe MDL2 Assets"
+                                                               FontSize="13"
+                                                               VerticalAlignment="Center" />
+                                                </Button>
                                             </Grid>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
@@ -386,6 +436,8 @@
                                                     <ColumnDefinition Width="Auto" />
                                                     <ColumnDefinition Width="10" />
                                                     <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="10" />
+                                                    <ColumnDefinition Width="Auto" />
                                                 </Grid.ColumnDefinitions>
 
                                                 <Border Width="34"
@@ -437,8 +489,19 @@
                                                                    Foreground="{StaticResource MutedBrush}"
                                                                    FontSize="12"
                                                                    FontWeight="SemiBold" />
-                                                    </WrapPanel>
+                                                       </WrapPanel>
                                                 </StackPanel>
+
+                                                <Button Grid.Column="4"
+                                                        Style="{StaticResource ReviewIconButtonStyle}"
+                                                        Command="{Binding ChooseNextFocusCommand}"
+                                                        ToolTip="Choose next focus"
+                                                        VerticalAlignment="Top">
+                                                    <TextBlock Text="&#xE8E5;"
+                                                               FontFamily="Segoe MDL2 Assets"
+                                                               FontSize="13"
+                                                               VerticalAlignment="Center" />
+                                                </Button>
                                             </Grid>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
@@ -479,6 +542,8 @@
                                                     <ColumnDefinition Width="Auto" />
                                                     <ColumnDefinition Width="10" />
                                                     <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="10" />
+                                                    <ColumnDefinition Width="Auto" />
                                                 </Grid.ColumnDefinitions>
 
                                                 <Border Width="34"
@@ -530,8 +595,19 @@
                                                                    Foreground="{StaticResource MutedBrush}"
                                                                    FontSize="12"
                                                                    FontWeight="SemiBold" />
-                                                    </WrapPanel>
+                                                       </WrapPanel>
                                                 </StackPanel>
+
+                                                <Button Grid.Column="4"
+                                                        Style="{StaticResource ReviewIconButtonStyle}"
+                                                        Command="{Binding ChooseNextFocusCommand}"
+                                                        ToolTip="Choose next focus"
+                                                        VerticalAlignment="Top">
+                                                    <TextBlock Text="&#xE8E5;"
+                                                               FontFamily="Segoe MDL2 Assets"
+                                                               FontSize="13"
+                                                               VerticalAlignment="Center" />
+                                                </Button>
                                             </Grid>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
@@ -568,6 +644,7 @@
                                 HorizontalAlignment="Stretch"
                                 MinWidth="0"
                                 Margin="0,16,0,0"
+                                Command="{Binding SaveReviewCommand}"
                                 IsEnabled="{Binding CanSaveReview}"
                                 ToolTip="Save review">
                             <StackPanel Orientation="Horizontal">
