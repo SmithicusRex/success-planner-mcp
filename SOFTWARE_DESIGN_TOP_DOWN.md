@@ -1074,7 +1074,7 @@ Benchmark gate:
 
 ~~15.1. Add Microsoft To Do connection status model.~~
 
-15.2. Add the first usable authentication or connection-test path.
+~~15.2. Add the first usable authentication or connection-test path.~~
 
 15.3. Pull To Do lists and tasks where available.
 
@@ -1085,7 +1085,7 @@ Benchmark gate:
 Benchmark gate:
 
 - Settings shows To Do connection status.
-- App can test whether To Do integration is available.
+- ~~App can test whether To Do integration is available.~~
 - Successful sync updates source links.
 - Failed sync remains visible and recoverable.
 - Build and tests pass.

@@ -1,3 +1,5 @@
+using System.Net;
+using System.Net.Http;
 using Microsoft.Data.Sqlite;
 using SuccessPlanner.App.Bootstrap;
 using SuccessPlanner.App.Domain;
@@ -22,6 +24,10 @@ TestRunner.RunAll(
     ("BackgroundSyncWorker records processor failures", BackgroundSyncWorkerRecordsProcessorFailures),
     ("BackgroundSyncWorker retries failed queue items", BackgroundSyncWorkerRetriesFailedQueueItems),
     ("BackgroundWorkerHost starts and stops workers", BackgroundWorkerHostStartsAndStopsWorkers),
+    ("MicrosoftToDoConnectionTestService respects disabled setting", MicrosoftToDoConnectionTestServiceRespectsDisabledSetting),
+    ("MicrosoftToDoConnectionTestService uses configured probe", MicrosoftToDoConnectionTestServiceUsesConfiguredProbe),
+    ("MicrosoftToDoConnectionTestService maps probe failures", MicrosoftToDoConnectionTestServiceMapsProbeFailures),
+    ("MicrosoftToDoGraphConnectionProbe maps token and Graph responses", MicrosoftToDoGraphConnectionProbeMapsTokenAndGraphResponses),
     ("DatabaseService reports a healthy database", DatabaseServiceReportsHealthyDatabase),
     ("DatabaseService reports missing migration health failures", DatabaseServiceReportsMissingMigrationHealthFailures),
     ("DatabaseStartupMigrationService migrates a new database at startup", DatabaseStartupMigrationServiceMigratesNewDatabaseAtStartup),
@@ -656,6 +662,156 @@ static async Task BackgroundWorkerHostStartsAndStopsWorkers()
     Assert.False(secondWorker.IsRunning, "Second worker should stop.");
     Assert.Equal(1, firstWorker.StopCount);
     Assert.Equal(1, secondWorker.StopCount);
+}
+
+static async Task MicrosoftToDoConnectionTestServiceRespectsDisabledSetting()
+{
+    DateTimeOffset now = new(2026, 6, 1, 18, 0, 0, TimeSpan.Zero);
+    TestMicrosoftToDoConnectionProbe probe = new((_, _) =>
+        throw new InvalidOperationException("Disabled connection should not call the probe."));
+    MicrosoftToDoConnectionTestService service = new(probe, () => now);
+    ConnectionSettings connectionSettings = new()
+    {
+        EnableMicrosoftToDo = false
+    };
+
+    MicrosoftToDoConnectionStatus initialStatus = service.GetInitialStatus(connectionSettings);
+    MicrosoftToDoConnectionStatus testedStatus =
+        await service.TestConnectionAsync(connectionSettings, CancellationToken.None);
+
+    Assert.Equal(MicrosoftToDoConnectionState.Disabled, initialStatus.State);
+    Assert.Equal(MicrosoftToDoConnectionState.Disabled, testedStatus.State);
+    Assert.False(testedStatus.CanTestConnection, "Disabled To Do status should not be testable.");
+    Assert.Equal(0, probe.CallCount);
+}
+
+static async Task MicrosoftToDoConnectionTestServiceUsesConfiguredProbe()
+{
+    DateTimeOffset now = new(2026, 6, 1, 18, 30, 0, TimeSpan.Zero);
+    TestMicrosoftToDoConnectionProbe probe = new((checkedAt, cancellationToken) =>
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(MicrosoftToDoConnectionStatus.Connected("smith@example.com", checkedAt));
+    });
+    MicrosoftToDoConnectionTestService service = new(probe, () => now);
+    ConnectionSettings connectionSettings = new()
+    {
+        EnableMicrosoftToDo = true
+    };
+
+    MicrosoftToDoConnectionStatus initialStatus = service.GetInitialStatus(connectionSettings);
+    MicrosoftToDoConnectionStatus testedStatus =
+        await service.TestConnectionAsync(connectionSettings, CancellationToken.None);
+
+    Assert.Equal(MicrosoftToDoConnectionState.NotConnected, initialStatus.State);
+    Assert.Equal(MicrosoftToDoConnectionState.Connected, testedStatus.State);
+    Assert.Equal("smith@example.com", testedStatus.AccountDisplayName);
+    Assert.Equal(now, testedStatus.LastCheckedAt);
+    Assert.True(testedStatus.CanSync, "Connected To Do status should sync.");
+    Assert.Equal(1, probe.CallCount);
+}
+
+static async Task MicrosoftToDoConnectionTestServiceMapsProbeFailures()
+{
+    DateTimeOffset now = new(2026, 6, 1, 19, 0, 0, TimeSpan.Zero);
+    ConnectionSettings connectionSettings = new()
+    {
+        EnableMicrosoftToDo = true
+    };
+    MicrosoftToDoConnectionTestService unavailableService = new(
+        new TestMicrosoftToDoConnectionProbe((_, _) =>
+            throw new HttpRequestException("Network unavailable.")),
+        () => now);
+    MicrosoftToDoConnectionTestService failedService = new(
+        new TestMicrosoftToDoConnectionProbe((_, _) =>
+            throw new InvalidOperationException("Unexpected token cache error.")),
+        () => now);
+
+    MicrosoftToDoConnectionStatus unavailable =
+        await unavailableService.TestConnectionAsync(connectionSettings, CancellationToken.None);
+    MicrosoftToDoConnectionStatus failed =
+        await failedService.TestConnectionAsync(connectionSettings, CancellationToken.None);
+
+    Assert.Equal(MicrosoftToDoConnectionState.Unavailable, unavailable.State);
+    Assert.Equal("Network unavailable.", unavailable.DetailText);
+    Assert.Equal(now, unavailable.LastCheckedAt);
+    Assert.True(unavailable.NeedsAttention, "Unavailable To Do status should need attention.");
+
+    Assert.Equal(MicrosoftToDoConnectionState.Failed, failed.State);
+    Assert.Equal("Unexpected token cache error.", failed.DetailText);
+    Assert.Equal(now, failed.LastCheckedAt);
+    Assert.True(failed.NeedsAttention, "Failed To Do status should need attention.");
+}
+
+static async Task MicrosoftToDoGraphConnectionProbeMapsTokenAndGraphResponses()
+{
+    DateTimeOffset now = new(2026, 6, 1, 19, 30, 0, TimeSpan.Zero);
+    TestHttpMessageHandler noTokenHandler = new(_ =>
+        throw new InvalidOperationException("No-token probe should not call Graph."));
+    MicrosoftToDoGraphConnectionProbe noTokenProbe = new(
+        new HttpClient(noTokenHandler)
+        {
+            BaseAddress = new Uri("https://graph.test/v1.0/")
+        },
+        new TestMicrosoftToDoAccessTokenProvider(null));
+
+    MicrosoftToDoConnectionStatus noTokenStatus =
+        await noTokenProbe.TestConnectionAsync(now, CancellationToken.None);
+
+    Assert.Equal(MicrosoftToDoConnectionState.NeedsSignIn, noTokenStatus.State);
+    Assert.Equal(0, noTokenHandler.CallCount);
+    Assert.Equal(now, noTokenStatus.LastCheckedAt);
+
+    TestHttpMessageHandler successHandler = new(request =>
+    {
+        Assert.Equal("Bearer", request.Headers.Authorization?.Scheme);
+        Assert.Equal("token-123", request.Headers.Authorization?.Parameter);
+        Assert.Contains("me/todo/lists", request.RequestUri?.ToString() ?? string.Empty);
+        return new HttpResponseMessage(HttpStatusCode.OK);
+    });
+    MicrosoftToDoGraphConnectionProbe successProbe = new(
+        new HttpClient(successHandler)
+        {
+            BaseAddress = new Uri("https://graph.test/v1.0/")
+        },
+        new TestMicrosoftToDoAccessTokenProvider(" token-123 "));
+
+    MicrosoftToDoConnectionStatus connected =
+        await successProbe.TestConnectionAsync(now, CancellationToken.None);
+
+    Assert.Equal(MicrosoftToDoConnectionState.Connected, connected.State);
+    Assert.True(connected.CanSync, "Successful Graph probe should allow sync.");
+    Assert.Equal(1, successHandler.CallCount);
+
+    TestHttpMessageHandler unauthorizedHandler = new(_ =>
+        new HttpResponseMessage(HttpStatusCode.Unauthorized));
+    MicrosoftToDoGraphConnectionProbe unauthorizedProbe = new(
+        new HttpClient(unauthorizedHandler)
+        {
+            BaseAddress = new Uri("https://graph.test/v1.0/")
+        },
+        new TestMicrosoftToDoAccessTokenProvider("expired-token"));
+
+    MicrosoftToDoConnectionStatus needsSignIn =
+        await unauthorizedProbe.TestConnectionAsync(now, CancellationToken.None);
+
+    Assert.Equal(MicrosoftToDoConnectionState.NeedsSignIn, needsSignIn.State);
+    Assert.True(needsSignIn.CanStartSignIn, "Unauthorized Graph response should allow sign-in.");
+
+    TestHttpMessageHandler unavailableHandler = new(_ =>
+        new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
+    MicrosoftToDoGraphConnectionProbe unavailableProbe = new(
+        new HttpClient(unavailableHandler)
+        {
+            BaseAddress = new Uri("https://graph.test/v1.0/")
+        },
+        new TestMicrosoftToDoAccessTokenProvider("token-123"));
+
+    MicrosoftToDoConnectionStatus unavailable =
+        await unavailableProbe.TestConnectionAsync(now, CancellationToken.None);
+
+    Assert.Equal(MicrosoftToDoConnectionState.Unavailable, unavailable.State);
+    Assert.Contains("503", unavailable.DetailText);
 }
 
 static async Task DatabaseServiceReportsHealthyDatabase()
@@ -1978,6 +2134,64 @@ internal sealed class TestBackgroundWorker : IBackgroundWorker
         StopCount++;
         IsRunning = false;
         return Task.CompletedTask;
+    }
+}
+
+internal sealed class TestMicrosoftToDoConnectionProbe : IMicrosoftToDoConnectionProbe
+{
+    private readonly Func<DateTimeOffset, CancellationToken, Task<MicrosoftToDoConnectionStatus>> _testAsync;
+
+    public TestMicrosoftToDoConnectionProbe(
+        Func<DateTimeOffset, CancellationToken, Task<MicrosoftToDoConnectionStatus>> testAsync)
+    {
+        _testAsync = testAsync;
+    }
+
+    public int CallCount { get; private set; }
+
+    public Task<MicrosoftToDoConnectionStatus> TestConnectionAsync(
+        DateTimeOffset checkedAt,
+        CancellationToken cancellationToken = default)
+    {
+        CallCount++;
+        return _testAsync(checkedAt, cancellationToken);
+    }
+}
+
+internal sealed class TestMicrosoftToDoAccessTokenProvider : IMicrosoftToDoAccessTokenProvider
+{
+    private readonly string? _accessToken;
+
+    public TestMicrosoftToDoAccessTokenProvider(string? accessToken)
+    {
+        _accessToken = accessToken;
+    }
+
+    public Task<string?> GetAccessTokenAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(_accessToken);
+    }
+}
+
+internal sealed class TestHttpMessageHandler : HttpMessageHandler
+{
+    private readonly Func<HttpRequestMessage, HttpResponseMessage> _handleRequest;
+
+    public TestHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> handleRequest)
+    {
+        _handleRequest = handleRequest;
+    }
+
+    public int CallCount { get; private set; }
+
+    protected override Task<HttpResponseMessage> SendAsync(
+        HttpRequestMessage request,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        CallCount++;
+        return Task.FromResult(_handleRequest(request));
     }
 }
 
