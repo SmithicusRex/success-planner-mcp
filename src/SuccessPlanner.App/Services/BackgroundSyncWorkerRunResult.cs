@@ -23,8 +23,8 @@ public sealed record BackgroundSyncWorkerRunResult(
             {
                 return FormatSummary(
                     ProcessedItemCount,
-                    "ready item was picked by the background worker",
-                    "ready items were picked by the background worker");
+                    "ready item was synced by the background worker",
+                    "ready items were synced by the background worker");
             }
 
             return "Background sync worker found no ready items.";

@@ -9,6 +9,7 @@ public sealed class BackgroundSyncWorker : IBackgroundWorker
 
     private readonly SyncService _syncService;
     private readonly Func<SyncQueueItem, CancellationToken, Task> _processItemAsync;
+    private readonly SyncRetryPolicy _retryPolicy;
     private readonly TimeSpan _pollInterval;
     private readonly int _readyItemLimit;
     private readonly Func<DateTimeOffset> _nowProvider;
@@ -26,6 +27,7 @@ public sealed class BackgroundSyncWorker : IBackgroundWorker
         Func<SyncQueueItem, CancellationToken, Task> processItemAsync,
         TimeSpan? pollInterval = null,
         int readyItemLimit = DefaultReadyItemLimit,
+        SyncRetryPolicy? retryPolicy = null,
         Func<DateTimeOffset>? nowProvider = null)
     {
         if (readyItemLimit < 1)
@@ -41,6 +43,7 @@ public sealed class BackgroundSyncWorker : IBackgroundWorker
 
         _syncService = syncService ?? throw new ArgumentNullException(nameof(syncService));
         _processItemAsync = processItemAsync ?? throw new ArgumentNullException(nameof(processItemAsync));
+        _retryPolicy = retryPolicy ?? new SyncRetryPolicy();
         _pollInterval = effectivePollInterval;
         _readyItemLimit = readyItemLimit;
         _nowProvider = nowProvider ?? (() => DateTimeOffset.Now);
@@ -109,10 +112,18 @@ public sealed class BackgroundSyncWorker : IBackgroundWorker
             foreach (SyncQueueItem item in readyItems)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                DateTimeOffset attemptedAt = _nowProvider();
+                SyncQueueItem? syncingItem =
+                    await _syncService.MarkSyncingAsync(item.Id, attemptedAt, cancellationToken);
+                if (syncingItem is null)
+                {
+                    continue;
+                }
 
                 try
                 {
-                    await _processItemAsync(item, cancellationToken);
+                    await _processItemAsync(syncingItem, cancellationToken);
+                    await _syncService.MarkSyncedAsync(syncingItem.Id, _nowProvider(), cancellationToken);
                     processedCount++;
                 }
                 catch (OperationCanceledException)
@@ -121,8 +132,19 @@ public sealed class BackgroundSyncWorker : IBackgroundWorker
                 }
                 catch (Exception ex)
                 {
+                    DateTimeOffset failedAt = _nowProvider();
+                    int retryCountAfterFailure = syncingItem.RetryCount + 1;
+                    DateTimeOffset nextAttemptAt =
+                        _retryPolicy.GetNextAttemptAt(failedAt, retryCountAfterFailure);
+                    string failureMessage = BuildFailureMessage(ex);
+                    await _syncService.MarkFailedAsync(
+                        syncingItem.Id,
+                        failureMessage,
+                        nextAttemptAt,
+                        failedAt,
+                        cancellationToken);
                     failedCount++;
-                    LastErrorText = ex.Message;
+                    LastErrorText = failureMessage;
                 }
             }
 
@@ -176,6 +198,13 @@ public sealed class BackgroundSyncWorker : IBackgroundWorker
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return Task.CompletedTask;
+        throw new InvalidOperationException("Sync adapter is not connected yet.");
+    }
+
+    private static string BuildFailureMessage(Exception exception)
+    {
+        return string.IsNullOrWhiteSpace(exception.Message)
+            ? exception.GetType().Name
+            : exception.Message.Trim();
     }
 }

@@ -1045,7 +1045,7 @@ Benchmark gate:
 - ~~Selected search result opens as a local item.~~
 - ~~Build and tests pass.~~
 
-### 14. Sync Queue With Visible Status
+### ~~14. Sync Queue With Visible Status~~
 
 ~~14.1. Create sync queue table.~~
 
@@ -1057,16 +1057,16 @@ Benchmark gate:
 
 ~~14.5. Show sync status in app header or diagnostics.~~
 
-14.6. Add retry and failure state.
+~~14.6. Add retry and failure state.~~
 
-Benchmark gate:
+~~Benchmark gate:~~
 
 - ~~Sync queue table is created by migration.~~
 - ~~Sync queue repository can add, read, update, and delete queue items.~~
 - ~~Local changes create queue items.~~
 - ~~Background sync worker starts and picks ready queue items.~~
 - ~~Header or diagnostics shows sync state.~~
-- Failed sync does not lose local data.
+- ~~Failed sync does not lose local data.~~
 - ~~Queue survives app restart.~~
 - ~~Build and tests pass.~~
 

@@ -20,6 +20,7 @@ TestRunner.RunAll(
     ("SyncService updates queue item states", SyncServiceUpdatesQueueItemStates),
     ("BackgroundSyncWorker processes ready queue items", BackgroundSyncWorkerProcessesReadyQueueItems),
     ("BackgroundSyncWorker records processor failures", BackgroundSyncWorkerRecordsProcessorFailures),
+    ("BackgroundSyncWorker retries failed queue items", BackgroundSyncWorkerRetriesFailedQueueItems),
     ("BackgroundWorkerHost starts and stops workers", BackgroundWorkerHostStartsAndStopsWorkers),
     ("DatabaseService reports a healthy database", DatabaseServiceReportsHealthyDatabase),
     ("DatabaseService reports missing migration health failures", DatabaseServiceReportsMissingMigrationHealthFailures),
@@ -515,13 +516,19 @@ static async Task BackgroundSyncWorkerProcessesReadyQueueItems()
         nowProvider: () => now);
 
     BackgroundSyncWorkerRunResult result = await worker.RunOnceAsync(CancellationToken.None);
+    SyncQueueItem? stored = await repository.GetByIdAsync(queued.Id, CancellationToken.None);
 
     Assert.Equal(1, result.ReadyItemCount);
     Assert.Equal(1, result.ProcessedItemCount);
     Assert.Equal(0, result.FailedItemCount);
     Assert.Equal(1, processedIds.Count);
     Assert.Equal(queued.Id, processedIds[0]);
-    Assert.Equal("1 ready item was picked by the background worker.", worker.LastStatusText);
+    Assert.Equal("1 ready item was synced by the background worker.", worker.LastStatusText);
+    Assert.NotNull(stored, "Processed sync queue item should still load.");
+    Assert.Equal(SyncState.Synced, stored!.SyncState);
+    Assert.Equal(0, stored.RetryCount);
+    Assert.Null(stored.NextAttemptAt, "Successful sync should clear retry scheduling.");
+    Assert.Equal(string.Empty, stored.FailureMessage);
 }
 
 static async Task BackgroundSyncWorkerRecordsProcessorFailures()
@@ -532,21 +539,29 @@ static async Task BackgroundSyncWorkerRecordsProcessorFailures()
 
     DateTimeOffset now = new(2026, 6, 1, 16, 0, 0, TimeSpan.Zero);
     SyncQueueRepository repository = new(paths);
+    TaskRepository taskRepository = new(paths);
     SyncService service = new(repository, () => now);
+    TaskItem task = TaskItem.Capture("Draft Planner adapter notes");
+    await taskRepository.AddAsync(task, CancellationToken.None);
     SyncQueueItem queued = await service.QueueCreateAsync(
-        SourceLinkItemType.Project,
-        Guid.NewGuid(),
+        SourceLinkItemType.Task,
+        task.Id,
         SourceSystem.MicrosoftPlanner,
         "{}",
         cancellationToken: CancellationToken.None);
+    SyncRetryPolicy retryPolicy = new([TimeSpan.FromMinutes(2)]);
     BackgroundSyncWorker worker = new(
         service,
         (_, _) => throw new InvalidOperationException("Planner adapter missing."),
         pollInterval: TimeSpan.FromMilliseconds(50),
+        retryPolicy: retryPolicy,
         nowProvider: () => now);
 
     BackgroundSyncWorkerRunResult result = await worker.RunOnceAsync(CancellationToken.None);
     SyncQueueItem? stored = await repository.GetByIdAsync(queued.Id, CancellationToken.None);
+    TaskItem? storedTask = await taskRepository.GetByIdAsync(task.Id, CancellationToken.None);
+    IReadOnlyList<SyncQueueItem> readyItems = await service.GetReadyItemsAsync(10, CancellationToken.None);
+    SyncQueueStatus status = await service.GetStatusAsync(CancellationToken.None);
 
     Assert.Equal(1, result.ReadyItemCount);
     Assert.Equal(0, result.ProcessedItemCount);
@@ -554,7 +569,70 @@ static async Task BackgroundSyncWorkerRecordsProcessorFailures()
     Assert.Equal("Planner adapter missing.", worker.LastErrorText);
     Assert.Equal("1 ready item failed in the background worker.", worker.LastStatusText);
     Assert.NotNull(stored, "Processor failure should not remove local queue work.");
-    Assert.Equal(SyncState.Pending, stored!.SyncState);
+    Assert.Equal(SyncState.Failed, stored!.SyncState);
+    Assert.Equal(1, stored.RetryCount);
+    Assert.Equal(now.ToUniversalTime(), stored.LastAttemptedAt);
+    Assert.Equal(now.AddMinutes(2).ToUniversalTime(), stored.NextAttemptAt);
+    Assert.Equal("Planner adapter missing.", stored.FailureMessage);
+    Assert.NotNull(storedTask, "Failed sync must not remove the local task.");
+    Assert.Equal(task.Id, storedTask!.Id);
+    Assert.Equal(0, readyItems.Count);
+    Assert.Equal(1, status.FailedCount);
+    Assert.Equal("1 sync item needs attention.", status.SummaryText);
+}
+
+static async Task BackgroundSyncWorkerRetriesFailedQueueItems()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+    await CreateMigratedDatabaseAsync(paths);
+
+    DateTimeOffset now = new(2026, 6, 1, 17, 0, 0, TimeSpan.Zero);
+    SyncQueueRepository repository = new(paths);
+    SyncService service = new(repository, () => now);
+    SyncQueueItem failedReadyItem = SyncQueueItem.Rehydrate(
+        Guid.NewGuid(),
+        SourceLinkItemType.Task,
+        Guid.NewGuid(),
+        SourceSystem.MicrosoftToDo,
+        SyncQueueActionType.Update,
+        """{"title":"Retry this"}""",
+        SyncState.Failed,
+        retryCount: 1,
+        createdAt: now.AddMinutes(-20),
+        updatedAt: now.AddMinutes(-10),
+        nextAttemptAt: now.AddMinutes(-1),
+        lastAttemptedAt: now.AddMinutes(-10),
+        failureMessage: "Temporary network failure.");
+
+    await repository.SaveAsync(failedReadyItem, CancellationToken.None);
+
+    List<Guid> processedIds = [];
+    BackgroundSyncWorker worker = new(
+        service,
+        (item, cancellationToken) =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            processedIds.Add(item.Id);
+            Assert.Equal(SyncState.Syncing, item.SyncState);
+            Assert.Equal(1, item.RetryCount);
+            return Task.CompletedTask;
+        },
+        pollInterval: TimeSpan.FromMilliseconds(50),
+        nowProvider: () => now);
+
+    BackgroundSyncWorkerRunResult result = await worker.RunOnceAsync(CancellationToken.None);
+    SyncQueueItem? stored = await repository.GetByIdAsync(failedReadyItem.Id, CancellationToken.None);
+
+    Assert.Equal(1, result.ReadyItemCount);
+    Assert.Equal(1, result.ProcessedItemCount);
+    Assert.Equal(0, result.FailedItemCount);
+    Assert.Equal(failedReadyItem.Id, processedIds[0]);
+    Assert.NotNull(stored, "Retried queue item should remain available.");
+    Assert.Equal(SyncState.Synced, stored!.SyncState);
+    Assert.Equal(0, stored.RetryCount);
+    Assert.Null(stored.NextAttemptAt, "Successful retry should clear next attempt.");
+    Assert.Equal(string.Empty, stored.FailureMessage);
 }
 
 static async Task BackgroundWorkerHostStartsAndStopsWorkers()
