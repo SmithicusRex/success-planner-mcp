@@ -177,6 +177,18 @@ public static class DatabaseMigrations
                 updated_at TEXT NOT NULL
             );
             """,
+            "CREATE INDEX IF NOT EXISTS idx_tasks_project_id ON tasks(project_id);",
+            "CREATE INDEX IF NOT EXISTS idx_tasks_status_due_date ON tasks(status, due_date);",
+            "CREATE INDEX IF NOT EXISTS idx_milestones_project_id ON milestones(project_id);",
+            "CREATE INDEX IF NOT EXISTS idx_notes_owner ON notes(owner_type, owner_id);",
+            "CREATE INDEX IF NOT EXISTS idx_focus_sessions_task_id ON focus_sessions(task_id);",
+            "CREATE INDEX IF NOT EXISTS idx_success_goals_project_id ON success_goals(project_id);",
+            "CREATE INDEX IF NOT EXISTS idx_movement_sessions_task_id ON movement_sessions(task_id);",
+            "CREATE INDEX IF NOT EXISTS idx_source_links_local_item ON source_links(local_item_type, local_item_id);",
+            "CREATE INDEX IF NOT EXISTS idx_source_links_source_item ON source_links(source_system, external_id);"),
+        new SqlDatabaseMigration(
+            version: 3,
+            name: "Create sync queue table",
             """
             CREATE TABLE IF NOT EXISTS sync_queue (
                 id TEXT NOT NULL PRIMARY KEY,
@@ -196,15 +208,8 @@ public static class DatabaseMigrations
                 FOREIGN KEY (source_link_id) REFERENCES source_links(id) ON DELETE SET NULL
             );
             """,
-            "CREATE INDEX IF NOT EXISTS idx_tasks_project_id ON tasks(project_id);",
-            "CREATE INDEX IF NOT EXISTS idx_tasks_status_due_date ON tasks(status, due_date);",
-            "CREATE INDEX IF NOT EXISTS idx_milestones_project_id ON milestones(project_id);",
-            "CREATE INDEX IF NOT EXISTS idx_notes_owner ON notes(owner_type, owner_id);",
-            "CREATE INDEX IF NOT EXISTS idx_focus_sessions_task_id ON focus_sessions(task_id);",
-            "CREATE INDEX IF NOT EXISTS idx_success_goals_project_id ON success_goals(project_id);",
-            "CREATE INDEX IF NOT EXISTS idx_movement_sessions_task_id ON movement_sessions(task_id);",
-            "CREATE INDEX IF NOT EXISTS idx_source_links_local_item ON source_links(local_item_type, local_item_id);",
-            "CREATE INDEX IF NOT EXISTS idx_source_links_source_item ON source_links(source_system, external_id);",
-            "CREATE INDEX IF NOT EXISTS idx_sync_queue_state_next_attempt ON sync_queue(sync_state, next_attempt_at);")
+            "CREATE INDEX IF NOT EXISTS idx_sync_queue_state_next_attempt ON sync_queue(sync_state, next_attempt_at);",
+            "CREATE INDEX IF NOT EXISTS idx_sync_queue_local_item ON sync_queue(local_item_type, local_item_id);",
+            "CREATE INDEX IF NOT EXISTS idx_sync_queue_source_link ON sync_queue(source_link_id);")
     ];
 }

@@ -10,6 +10,8 @@ TestRunner.RunAll(
     ("DatabaseService replaces the legacy bootstrap marker", DatabaseServiceReplacesLegacyMarker),
     ("DatabaseService records repeatable migrations", DatabaseServiceRecordsRepeatableMigrations),
     ("DatabaseService creates core application tables", DatabaseServiceCreatesCoreApplicationTables),
+    ("DatabaseService creates sync queue table", DatabaseServiceCreatesSyncQueueTable),
+    ("DatabaseService adds sync queue table to existing stores", DatabaseServiceAddsSyncQueueTableToExistingStores),
     ("DatabaseService reports a healthy database", DatabaseServiceReportsHealthyDatabase),
     ("DatabaseService reports missing migration health failures", DatabaseServiceReportsMissingMigrationHealthFailures),
     ("DatabaseStartupMigrationService migrates a new database at startup", DatabaseStartupMigrationServiceMigratesNewDatabaseAtStartup),
@@ -85,10 +87,10 @@ static async Task DatabaseServiceRecordsRepeatableMigrations()
     DatabaseMigrationResult secondRun = await database.MigrateAsync(CancellationToken.None);
     await database.CloseAsync(CancellationToken.None);
 
-    Assert.Equal(2, firstRun.AppliedCountThisRun);
+    Assert.Equal(3, firstRun.AppliedCountThisRun);
     Assert.Equal(0, secondRun.AppliedCountThisRun);
-    Assert.Equal(2, secondRun.TotalAppliedCount);
-    Assert.Equal(2L, await ReadScalarAsync(paths.DatabasePath, "SELECT COUNT(*) FROM schema_migrations;"));
+    Assert.Equal(3, secondRun.TotalAppliedCount);
+    Assert.Equal(3L, await ReadScalarAsync(paths.DatabasePath, "SELECT COUNT(*) FROM schema_migrations;"));
     Assert.Equal(1L, await ReadScalarAsync(paths.DatabasePath, "SELECT version FROM schema_migrations;"));
     Assert.Equal(
         "Create local store metadata",
@@ -96,6 +98,9 @@ static async Task DatabaseServiceRecordsRepeatableMigrations()
     Assert.Equal(
         "Create core application tables",
         await ReadScalarAsync(paths.DatabasePath, "SELECT name FROM schema_migrations WHERE version = 2;"));
+    Assert.Equal(
+        "Create sync queue table",
+        await ReadScalarAsync(paths.DatabasePath, "SELECT name FROM schema_migrations WHERE version = 3;"));
     Assert.Equal(
         "Success Planner MCP SQLite local store",
         await ReadScalarAsync(paths.DatabasePath, "SELECT value FROM local_store_metadata WHERE key = 'store_kind';"));
@@ -138,6 +143,69 @@ static async Task DatabaseServiceCreatesCoreApplicationTables()
     Assert.True(await ColumnExistsAsync(paths.DatabasePath, "sync_queue", "payload_json"), "Sync queue should store payload JSON.");
 }
 
+static async Task DatabaseServiceCreatesSyncQueueTable()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+    DatabaseService database = new(paths);
+
+    await database.OpenAsync(CancellationToken.None);
+    await database.MigrateAsync(CancellationToken.None);
+    await database.CloseAsync(CancellationToken.None);
+
+    Assert.True(await TableExistsAsync(paths.DatabasePath, "sync_queue"), "Sync queue table should exist.");
+    Assert.True(await ColumnExistsAsync(paths.DatabasePath, "sync_queue", "id"), "Sync queue should store queue ids.");
+    Assert.True(await ColumnExistsAsync(paths.DatabasePath, "sync_queue", "local_item_type"), "Sync queue should store local item type.");
+    Assert.True(await ColumnExistsAsync(paths.DatabasePath, "sync_queue", "local_item_id"), "Sync queue should store local item id.");
+    Assert.True(await ColumnExistsAsync(paths.DatabasePath, "sync_queue", "source_system"), "Sync queue should store source system.");
+    Assert.True(await ColumnExistsAsync(paths.DatabasePath, "sync_queue", "source_link_id"), "Sync queue should optionally point to source links.");
+    Assert.True(await ColumnExistsAsync(paths.DatabasePath, "sync_queue", "action_type"), "Sync queue should store the requested sync action.");
+    Assert.True(await ColumnExistsAsync(paths.DatabasePath, "sync_queue", "payload_json"), "Sync queue should store payload JSON.");
+    Assert.True(await ColumnExistsAsync(paths.DatabasePath, "sync_queue", "sync_state"), "Sync queue should store sync state.");
+    Assert.True(await ColumnExistsAsync(paths.DatabasePath, "sync_queue", "retry_count"), "Sync queue should store retry count.");
+    Assert.True(await ColumnExistsAsync(paths.DatabasePath, "sync_queue", "next_attempt_at"), "Sync queue should store next attempt time.");
+    Assert.True(await ColumnExistsAsync(paths.DatabasePath, "sync_queue", "last_attempted_at"), "Sync queue should store last attempt time.");
+    Assert.True(await ColumnExistsAsync(paths.DatabasePath, "sync_queue", "failure_message"), "Sync queue should store failure messages.");
+    Assert.True(await ColumnExistsAsync(paths.DatabasePath, "sync_queue", "created_at"), "Sync queue should store creation time.");
+    Assert.True(await ColumnExistsAsync(paths.DatabasePath, "sync_queue", "updated_at"), "Sync queue should store update time.");
+    Assert.True(
+        await IndexExistsAsync(paths.DatabasePath, "idx_sync_queue_state_next_attempt"),
+        "Sync queue should be indexed by state and next attempt.");
+    Assert.True(
+        await IndexExistsAsync(paths.DatabasePath, "idx_sync_queue_local_item"),
+        "Sync queue should be indexed by local item.");
+    Assert.True(
+        await IndexExistsAsync(paths.DatabasePath, "idx_sync_queue_source_link"),
+        "Sync queue should be indexed by source link.");
+}
+
+static async Task DatabaseServiceAddsSyncQueueTableToExistingStores()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+
+    await using (SqliteConnection connection = new($"Data Source={paths.DatabasePath};Pooling=False"))
+    {
+        await connection.OpenAsync();
+        DatabaseMigrator olderMigrator = new(DatabaseMigrations.All.Where(migration => migration.Version <= 2).ToArray());
+        await olderMigrator.MigrateAsync(connection, CancellationToken.None);
+    }
+
+    Assert.False(await TableExistsAsync(paths.DatabasePath, "sync_queue"), "Older stores should start without sync queue.");
+
+    DatabaseService database = new(paths);
+    await database.OpenAsync(CancellationToken.None);
+    DatabaseMigrationResult result = await database.MigrateAsync(CancellationToken.None);
+    await database.CloseAsync(CancellationToken.None);
+
+    Assert.Equal(1, result.AppliedCountThisRun);
+    Assert.Equal(3, result.LatestAppliedVersion);
+    Assert.True(await TableExistsAsync(paths.DatabasePath, "sync_queue"), "Migration 3 should add sync queue.");
+    Assert.Equal(
+        "Create sync queue table",
+        await ReadScalarAsync(paths.DatabasePath, "SELECT name FROM schema_migrations WHERE version = 3;"));
+}
+
 static async Task DatabaseServiceReportsHealthyDatabase()
 {
     using TestWorkspace workspace = TestWorkspace.Create();
@@ -153,10 +221,10 @@ static async Task DatabaseServiceReportsHealthyDatabase()
     Assert.True(health.IsHealthy, "Migrated database should report healthy.");
     Assert.Equal("Local database is healthy.", health.Summary);
     Assert.Equal("ok", health.QuickCheckResult);
-    Assert.Equal(2, health.AppliedMigrationCount);
-    Assert.Equal(2, health.LatestAppliedMigration);
-    Assert.Equal(2, health.RequiredMigrationCount);
-    Assert.Equal(2, health.LatestRequiredMigration);
+    Assert.Equal(3, health.AppliedMigrationCount);
+    Assert.Equal(3, health.LatestAppliedMigration);
+    Assert.Equal(3, health.RequiredMigrationCount);
+    Assert.Equal(3, health.LatestRequiredMigration);
     Assert.Equal(0, health.Findings.Count);
 }
 
@@ -191,9 +259,9 @@ static async Task DatabaseStartupMigrationServiceMigratesNewDatabaseAtStartup()
 
     Assert.True(result.Health.IsHealthy, "Startup migration should leave the database healthy.");
     Assert.True(result.Migration.AppliedMigrations, "New database should apply startup migrations.");
-    Assert.Equal(2, result.Migration.AppliedCountThisRun);
-    Assert.Equal(2, result.Migration.TotalAppliedCount);
-    Assert.Equal(2, result.Migration.LatestAppliedVersion);
+    Assert.Equal(3, result.Migration.AppliedCountThisRun);
+    Assert.Equal(3, result.Migration.TotalAppliedCount);
+    Assert.Equal(3, result.Migration.LatestAppliedVersion);
     Assert.Equal("Ready - Data Updated", result.StatusText);
     Assert.True(await TableExistsAsync(paths.DatabasePath, "tasks"), "Startup migration should create task storage.");
     Assert.True(await TableExistsAsync(paths.DatabasePath, "settings_metadata"), "Startup migration should create settings metadata storage.");
@@ -220,7 +288,7 @@ static async Task DatabaseStartupMigrationServicePreservesDataOnRestart()
     TaskItem? loaded = await repository.GetByIdAsync(task.Id, CancellationToken.None);
     await secondDatabase.CloseAsync(CancellationToken.None);
 
-    Assert.Equal(2, firstResult.Migration.AppliedCountThisRun);
+    Assert.Equal(3, firstResult.Migration.AppliedCountThisRun);
     Assert.Equal(0, secondResult.Migration.AppliedCountThisRun);
     Assert.Equal("Ready - Data OK", secondResult.StatusText);
     Assert.NotNull(loaded, "Task should remain after startup migration on restart.");
@@ -1365,6 +1433,15 @@ static async Task<bool> ColumnExistsAsync(string databasePath, string tableName,
     }
 
     return false;
+}
+
+static async Task<bool> IndexExistsAsync(string databasePath, string indexName)
+{
+    object? count = await ReadScalarAsync(
+        databasePath,
+        $"SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = '{indexName}';");
+
+    return Convert.ToInt64(count) == 1;
 }
 
 static bool IsSqliteDatabase(string path)

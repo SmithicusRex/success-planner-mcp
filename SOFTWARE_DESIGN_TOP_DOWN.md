@@ -1047,7 +1047,7 @@ Benchmark gate:
 
 ### 14. Sync Queue With Visible Status
 
-14.1. Create sync queue table.
+~~14.1. Create sync queue table.~~
 
 14.2. Create `SyncQueueRepository`.
 
@@ -1061,11 +1061,12 @@ Benchmark gate:
 
 Benchmark gate:
 
+- ~~Sync queue table is created by migration.~~
 - Local changes create queue items.
 - Header or diagnostics shows sync state.
 - Failed sync does not lose local data.
 - Queue survives app restart.
-- Build and tests pass.
+- ~~Build and tests pass.~~
 
 ### 15. Microsoft To Do Adapter
 
