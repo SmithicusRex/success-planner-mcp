@@ -87,6 +87,13 @@
             <Setter Property="Foreground" Value="#FFFFFF" />
         </Style>
 
+        <Style x:Key="SmallFindButtonStyle" TargetType="Button" BasedOn="{StaticResource FindButtonStyle}">
+            <Setter Property="MinHeight" Value="36" />
+            <Setter Property="MinWidth" Value="78" />
+            <Setter Property="Padding" Value="12,0" />
+            <Setter Property="FontSize" Value="13" />
+        </Style>
+
         <Style x:Key="ResultsListVisibilityStyle" TargetType="ItemsControl">
             <Setter Property="Visibility" Value="Collapsed" />
             <Style.Triggers>
@@ -100,6 +107,24 @@
             <Setter Property="Visibility" Value="Visible" />
             <Style.Triggers>
                 <DataTrigger Binding="{Binding HasResults}" Value="True">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="OpenedItemVisibilityStyle" TargetType="StackPanel">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding HasOpenedItem}" Value="True">
+                    <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="NoOpenedItemVisibilityStyle" TargetType="StackPanel">
+            <Setter Property="Visibility" Value="Visible" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding HasOpenedItem}" Value="True">
                     <Setter Property="Visibility" Value="Collapsed" />
                 </DataTrigger>
             </Style.Triggers>
@@ -304,7 +329,7 @@
                                               Style="{StaticResource ResultsListVisibilityStyle}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
-                                            <Border Background="#F7FAFF"
+                                            <Border Background="{Binding CardBackgroundColor}"
                                                     BorderBrush="{Binding CardBorderColor}"
                                                     BorderThickness="1"
                                                     CornerRadius="8"
@@ -359,17 +384,37 @@
                                                     </StackPanel>
 
                                                     <Border Grid.Column="3"
-                                                            Background="#FFFFFF"
-                                                            BorderBrush="{Binding CardBorderColor}"
-                                                            BorderThickness="1"
-                                                            CornerRadius="8"
-                                                            Padding="10,7"
                                                             VerticalAlignment="Top"
                                                             Margin="14,0,0,0">
-                                                        <TextBlock Text="{Binding BadgeText}"
-                                                                   Foreground="{StaticResource FindInkBrush}"
-                                                                   FontSize="12"
-                                                                   FontWeight="SemiBold" />
+                                                        <StackPanel>
+                                                            <Border Background="#FFFFFF"
+                                                                    BorderBrush="{Binding CardBorderColor}"
+                                                                    BorderThickness="1"
+                                                                    CornerRadius="8"
+                                                                    Padding="10,7"
+                                                                    HorizontalAlignment="Right">
+                                                                <TextBlock Text="{Binding BadgeText}"
+                                                                           Foreground="{StaticResource FindInkBrush}"
+                                                                           FontSize="12"
+                                                                           FontWeight="SemiBold" />
+                                                            </Border>
+
+                                                            <Button Command="{Binding OpenCommand}"
+                                                                    Style="{StaticResource SmallFindButtonStyle}"
+                                                                    ToolTip="Open local item"
+                                                                    Margin="0,10,0,0"
+                                                                    HorizontalAlignment="Right">
+                                                                <StackPanel Orientation="Horizontal">
+                                                                    <TextBlock Text="&#xE8A7;"
+                                                                               FontFamily="Segoe MDL2 Assets"
+                                                                               FontSize="13"
+                                                                               Margin="0,0,7,0"
+                                                                               VerticalAlignment="Center" />
+                                                                    <TextBlock Text="{Binding OpenButtonText}"
+                                                                               VerticalAlignment="Center" />
+                                                                </StackPanel>
+                                                            </Button>
+                                                        </StackPanel>
                                                     </Border>
                                                 </Grid>
                                             </Border>
@@ -422,14 +467,115 @@
                         CornerRadius="8"
                         Padding="22">
                     <StackPanel>
-                        <TextBlock Text="Local Only"
+                        <TextBlock Text="{Binding OpenedItemPanelTitle}"
                                    Style="{StaticResource SectionTitleStyle}" />
                         <Border Height="10"
                                 CornerRadius="5"
-                                Background="{StaticResource FindBrush}"
+                                Background="{Binding OpenedResult.CardAccentColor, FallbackValue=#D6E8FF}"
                                 Margin="0,4,0,16" />
-                        <TextBlock Text="No Microsoft connection is needed for the local search surface."
-                                   Style="{StaticResource QuietTextStyle}" />
+
+                        <StackPanel Style="{StaticResource NoOpenedItemVisibilityStyle}">
+                            <Border Width="52"
+                                    Height="52"
+                                    CornerRadius="8"
+                                    Background="{StaticResource FindBrush}"
+                                    BorderBrush="#B7D8FF"
+                                    BorderThickness="1"
+                                    HorizontalAlignment="Left"
+                                    Margin="0,0,0,14">
+                                <TextBlock Text="&#xE8A7;"
+                                           FontFamily="Segoe MDL2 Assets"
+                                           FontSize="21"
+                                           Foreground="{StaticResource FindInkBrush}"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center" />
+                            </Border>
+                            <TextBlock Text="{Binding OpenedItemPanelText}"
+                                       Style="{StaticResource QuietTextStyle}" />
+                        </StackPanel>
+
+                        <StackPanel Style="{StaticResource OpenedItemVisibilityStyle}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="12" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+
+                                <Border Width="48"
+                                        Height="48"
+                                        CornerRadius="8"
+                                        Background="{Binding OpenedResult.CardAccentColor}"
+                                        BorderBrush="{Binding OpenedResult.CardBorderColor}"
+                                        BorderThickness="1">
+                                    <TextBlock Text="{Binding OpenedResult.CardIconGlyph}"
+                                               FontFamily="Segoe MDL2 Assets"
+                                               FontSize="19"
+                                               Foreground="{StaticResource InkBrush}"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center" />
+                                </Border>
+
+                                <StackPanel Grid.Column="2"
+                                            VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding OpenedResult.Title}"
+                                               Foreground="{StaticResource InkBrush}"
+                                               FontSize="17"
+                                               FontWeight="SemiBold"
+                                               TextWrapping="Wrap" />
+                                    <TextBlock Text="{Binding OpenedResult.BadgeText}"
+                                               Foreground="{StaticResource FindInkBrush}"
+                                               FontSize="13"
+                                               FontWeight="SemiBold"
+                                               TextWrapping="Wrap"
+                                               Margin="0,3,0,0" />
+                                </StackPanel>
+                            </Grid>
+
+                            <TextBlock Text="{Binding OpenedResult.Detail}"
+                                       Foreground="{StaticResource MutedBrush}"
+                                       FontSize="14"
+                                       TextWrapping="Wrap"
+                                       Margin="0,16,0,0" />
+
+                            <Border Background="#FFFFFF"
+                                    BorderBrush="#E5E1D8"
+                                    BorderThickness="1"
+                                    CornerRadius="8"
+                                    Padding="12"
+                                    Margin="0,14,0,0">
+                                <StackPanel>
+                                    <TextBlock Text="Local Source"
+                                               Foreground="{StaticResource MutedBrush}"
+                                               FontSize="12"
+                                               FontWeight="SemiBold" />
+                                    <TextBlock Text="{Binding OpenedResult.SourceText}"
+                                               Foreground="{StaticResource InkBrush}"
+                                               FontSize="14"
+                                               TextWrapping="Wrap"
+                                               Margin="0,4,0,0" />
+                                </StackPanel>
+                            </Border>
+
+                            <Border Background="#FFFFFF"
+                                    BorderBrush="#E5E1D8"
+                                    BorderThickness="1"
+                                    CornerRadius="8"
+                                    Padding="12"
+                                    Margin="0,10,0,0">
+                                <StackPanel>
+                                    <TextBlock Text="Local ID"
+                                               Foreground="{StaticResource MutedBrush}"
+                                               FontSize="12"
+                                               FontWeight="SemiBold" />
+                                    <TextBlock Text="{Binding OpenedResult.LocalIdText}"
+                                               Foreground="{StaticResource InkBrush}"
+                                               FontSize="12"
+                                               TextWrapping="Wrap"
+                                               Margin="0,4,0,0" />
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
                     </StackPanel>
                 </Border>
 

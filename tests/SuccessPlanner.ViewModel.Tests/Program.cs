@@ -53,6 +53,7 @@ TestRunner.RunAll(
     ("FindViewModel updates query state", FindViewModelUpdatesQueryState),
     ("FindViewModel clears search state", FindViewModelClearsSearchState),
     ("FindViewModel searches local results", FindViewModelSearchesLocalResults),
+    ("FindViewModel opens selected local item", FindViewModelOpensSelectedLocalItem),
     ("FindViewModel handles no results", FindViewModelHandlesNoResults),
     ("FindViewModel reports search failures", FindViewModelReportsSearchFailures),
     ("StartWorkViewModel starts in a simple ready state", StartWorkViewModelStartsReady),
@@ -2052,6 +2053,10 @@ static void FindViewModelStartsReady()
     Assert.Equal("Type a word or phrase to search local data.", viewModel.EmptyStateText);
     Assert.Equal("0 results", viewModel.ResultsCountText);
     Assert.Equal(0, viewModel.Results.Count);
+    Assert.False(viewModel.HasOpenedItem, "Find should start without an opened item.");
+    Assert.Null(viewModel.OpenedResult, "Find should not have an opened result at startup.");
+    Assert.Equal("No Item Open", viewModel.OpenedItemPanelTitle);
+    Assert.Contains("opened here", viewModel.OpenedItemPanelText);
     Assert.False(viewModel.HasQuery, "Find should start without a query.");
     Assert.False(viewModel.HasResults, "Find should start without results.");
     Assert.False(viewModel.CanSearch, "Find should wait for a query before search is enabled.");
@@ -2098,6 +2103,8 @@ static void FindViewModelClearsSearchState()
     Assert.Equal("Type a word or phrase to search local data.", viewModel.EmptyStateText);
     Assert.Equal("0 results", viewModel.ResultsCountText);
     Assert.Equal(0, viewModel.Results.Count);
+    Assert.False(viewModel.HasOpenedItem, "Clear should close the opened local item.");
+    Assert.Null(viewModel.OpenedResult, "Clear should remove the opened result.");
 }
 
 static void FindViewModelSearchesLocalResults()
@@ -2130,8 +2137,44 @@ static void FindViewModelSearchesLocalResults()
     Assert.Equal(LocalSearchResultKind.Task, viewModel.Results[0].Kind);
     Assert.Equal("Call the pharmacy", viewModel.Results[0].Title);
     Assert.Equal("Task", viewModel.Results[0].BadgeText);
+    Assert.True(viewModel.Results[0].OpenCommand.CanExecute(null), "Each result should expose an open command.");
     Assert.True(viewModel.ClearSearchCommand.CanExecute(null), "Results should keep clear enabled.");
     Assert.False(viewModel.IsSearching, "Search should clear the loading flag.");
+}
+
+static void FindViewModelOpensSelectedLocalItem()
+{
+    FindViewModel viewModel = new((_, _) => Task.FromResult<IReadOnlyList<LocalSearchResult>>(
+    [
+        CreateSearchResult(LocalSearchResultKind.Task, "Call the pharmacy", "Task"),
+        CreateSearchResult(LocalSearchResultKind.Project, "Kitchen reset", "Project")
+    ]))
+    {
+        SearchText = "local"
+    };
+    viewModel.SearchAsync(CancellationToken.None).GetAwaiter().GetResult();
+
+    FindResultViewModel taskResult = viewModel.Results[0];
+    FindResultViewModel projectResult = viewModel.Results[1];
+
+    viewModel.OpenLocalItemAsync(taskResult).GetAwaiter().GetResult();
+
+    Assert.True(viewModel.HasOpenedItem, "Open should expose the selected local item.");
+    Assert.True(ReferenceEquals(taskResult, viewModel.OpenedResult), "Open should keep the selected result instance.");
+    Assert.True(taskResult.IsOpened, "Opened result should be marked for the view.");
+    Assert.Equal("#FFFFFF", taskResult.CardBackgroundColor);
+    Assert.Equal("Opened", taskResult.OpenButtonText);
+    Assert.Equal("Opened Item", viewModel.OpenedItemPanelTitle);
+    Assert.Equal("Task: Call the pharmacy", viewModel.OpenedItemPanelText);
+    Assert.Equal("Local item opened.", viewModel.StatusText);
+    Assert.False(string.IsNullOrWhiteSpace(taskResult.LocalIdText), "Opened item should expose a local id.");
+
+    viewModel.OpenLocalItemAsync(projectResult).GetAwaiter().GetResult();
+
+    Assert.True(ReferenceEquals(projectResult, viewModel.OpenedResult), "Opening another result should replace the opened item.");
+    Assert.False(taskResult.IsOpened, "Opening a different item should clear the previous opened marker.");
+    Assert.True(projectResult.IsOpened, "New opened item should be marked for the view.");
+    Assert.Equal("Project: Kitchen reset", viewModel.OpenedItemPanelText);
 }
 
 static void FindViewModelHandlesNoResults()

@@ -10,12 +10,15 @@ namespace SuccessPlanner.App.ViewModels;
 public sealed class FindViewModel : ScreenViewModelBase, INotifyPropertyChanged
 {
     private readonly Func<string, CancellationToken, Task<IReadOnlyList<LocalSearchResult>>> _searchAsync;
+    private FindResultViewModel? _openedResult;
     private string _searchText = string.Empty;
     private string _statusText = "Ready to find.";
     private string _searchPanelTitle = "Find Local Data";
     private string _searchPanelText = "Search tasks, projects, notes, and source links from this computer.";
     private string _emptyStateText = "Type a word or phrase to search local data.";
     private string _resultsCountText = "0 results";
+    private string _openedItemPanelTitle = "No Item Open";
+    private string _openedItemPanelText = "Search results can be opened here as local Success Planner items.";
     private bool _isSearching;
 
     public FindViewModel()
@@ -94,6 +97,45 @@ public sealed class FindViewModel : ScreenViewModelBase, INotifyPropertyChanged
         private set => SetProperty(ref _resultsCountText, value);
     }
 
+    public FindResultViewModel? OpenedResult
+    {
+        get => _openedResult;
+        private set
+        {
+            if (ReferenceEquals(_openedResult, value))
+            {
+                return;
+            }
+
+            if (_openedResult is not null)
+            {
+                _openedResult.IsOpened = false;
+            }
+
+            _openedResult = value;
+
+            if (_openedResult is not null)
+            {
+                _openedResult.IsOpened = true;
+            }
+
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasOpenedItem));
+        }
+    }
+
+    public string OpenedItemPanelTitle
+    {
+        get => _openedItemPanelTitle;
+        private set => SetProperty(ref _openedItemPanelTitle, value);
+    }
+
+    public string OpenedItemPanelText
+    {
+        get => _openedItemPanelText;
+        private set => SetProperty(ref _openedItemPanelText, value);
+    }
+
     public bool IsSearching
     {
         get => _isSearching;
@@ -110,6 +152,8 @@ public sealed class FindViewModel : ScreenViewModelBase, INotifyPropertyChanged
     public bool HasQuery => !string.IsNullOrWhiteSpace(SearchText);
 
     public bool HasResults => Results.Count > 0;
+
+    public bool HasOpenedItem => OpenedResult is not null;
 
     public bool CanSearch => HasQuery && !IsSearching;
 
@@ -133,8 +177,11 @@ public sealed class FindViewModel : ScreenViewModelBase, INotifyPropertyChanged
         try
         {
             IReadOnlyList<LocalSearchResult> results = await _searchAsync(query, cancellationToken);
+            ClearOpenedItem();
             Results.Clear();
-            foreach (FindResultViewModel result in results.Select(FindResultViewModel.FromSearchResult))
+            foreach (FindResultViewModel result in results.Select(result => FindResultViewModel.FromSearchResult(
+                         result,
+                         OpenLocalItemAsync)))
             {
                 Results.Add(result);
             }
@@ -147,6 +194,7 @@ public sealed class FindViewModel : ScreenViewModelBase, INotifyPropertyChanged
         }
         catch (Exception)
         {
+            ClearOpenedItem();
             ClearResults();
             StatusText = "Find could not search.";
             EmptyStateText = "Try the local search again.";
@@ -160,6 +208,7 @@ public sealed class FindViewModel : ScreenViewModelBase, INotifyPropertyChanged
     public Task ClearSearchAsync()
     {
         SearchText = string.Empty;
+        ClearOpenedItem();
         ClearResults();
         StatusText = "Search cleared.";
         SearchPanelTitle = "Find Local Data";
@@ -169,10 +218,22 @@ public sealed class FindViewModel : ScreenViewModelBase, INotifyPropertyChanged
         return Task.CompletedTask;
     }
 
+    public Task OpenLocalItemAsync(FindResultViewModel result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        OpenedResult = result;
+        OpenedItemPanelTitle = "Opened Item";
+        OpenedItemPanelText = $"{result.BadgeText}: {result.Title}";
+        StatusText = "Local item opened.";
+        return Task.CompletedTask;
+    }
+
     private void RefreshSearchTextState()
     {
         if (Results.Count > 0)
         {
+            ClearOpenedItem();
             ClearResults();
         }
 
@@ -231,6 +292,13 @@ public sealed class FindViewModel : ScreenViewModelBase, INotifyPropertyChanged
         ClearSearchCommand.RaiseCanExecuteChanged();
     }
 
+    private void ClearOpenedItem()
+    {
+        OpenedResult = null;
+        OpenedItemPanelTitle = "No Item Open";
+        OpenedItemPanelText = "Search results can be opened here as local Success Planner items.";
+    }
+
     private bool SetProperty<T>(
         ref T field,
         T value,
@@ -252,10 +320,16 @@ public sealed class FindViewModel : ScreenViewModelBase, INotifyPropertyChanged
     }
 }
 
-public sealed class FindResultViewModel
+public sealed class FindResultViewModel : INotifyPropertyChanged
 {
-    private FindResultViewModel(LocalSearchResult result)
+    private bool _isOpened;
+
+    private FindResultViewModel(
+        LocalSearchResult result,
+        Func<FindResultViewModel, Task> openLocalItemAsync)
     {
+        ArgumentNullException.ThrowIfNull(openLocalItemAsync);
+
         Id = result.ItemId;
         Kind = result.Kind;
         Title = result.Title;
@@ -272,7 +346,14 @@ public sealed class FindResultViewModel
         CardAccentColor = BuildAccentColor(result.Kind);
         CardBorderColor = BuildBorderColor(result.Kind);
         CardToolTip = HasDetail ? $"{Title} - {Detail}" : Title;
+        LocalIdText = LocalItemId.HasValue
+            ? LocalItemId.Value.ToString("D")
+            : Id.ToString("D");
+        CreatedText = CreatedAt.ToLocalTime().ToString("g");
+        OpenCommand = new AsyncRelayCommand(() => openLocalItemAsync(this));
     }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
 
     public Guid Id { get; }
 
@@ -306,10 +387,39 @@ public sealed class FindResultViewModel
 
     public string CardToolTip { get; }
 
-    public static FindResultViewModel FromSearchResult(LocalSearchResult result)
+    public string LocalIdText { get; }
+
+    public string CreatedText { get; }
+
+    public AsyncRelayCommand OpenCommand { get; }
+
+    public bool IsOpened
+    {
+        get => _isOpened;
+        set
+        {
+            if (_isOpened == value)
+            {
+                return;
+            }
+
+            _isOpened = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(CardBackgroundColor));
+            OnPropertyChanged(nameof(OpenButtonText));
+        }
+    }
+
+    public string CardBackgroundColor => IsOpened ? "#FFFFFF" : "#F7FAFF";
+
+    public string OpenButtonText => IsOpened ? "Opened" : "Open";
+
+    public static FindResultViewModel FromSearchResult(
+        LocalSearchResult result,
+        Func<FindResultViewModel, Task> openLocalItemAsync)
     {
         ArgumentNullException.ThrowIfNull(result);
-        return new FindResultViewModel(result);
+        return new FindResultViewModel(result, openLocalItemAsync);
     }
 
     private static string BuildBadgeText(LocalSearchResultKind kind)
@@ -358,5 +468,10 @@ public sealed class FindResultViewModel
             LocalSearchResultKind.SourceLink => "#B8A2F0",
             _ => "#D8E9FF"
         };
+    }
+
+    private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
+    {
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
 }

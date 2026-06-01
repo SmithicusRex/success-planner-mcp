@@ -1033,7 +1033,7 @@ Status:
 
 ~~13.3. Search task titles, notes, projects, and source links.~~
 
-13.4. Open selected local item.
+~~13.4. Open selected local item.~~
 
 13.5. Add an inactive Open Source control that clearly shows when no source item is connected.
 
@@ -1042,6 +1042,7 @@ Benchmark gate:
 - ~~User can search local data.~~
 - ~~Empty results are handled gracefully.~~
 - ~~Search does not require Microsoft sync.~~
+- ~~Selected search result opens as a local item.~~
 - ~~Build and tests pass.~~
 
 ### 14. Sync Queue With Visible Status
