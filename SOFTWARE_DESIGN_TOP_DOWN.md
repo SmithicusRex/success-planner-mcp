@@ -1031,7 +1031,7 @@ Status:
 
 ~~13.2. Create `FindView`.~~
 
-13.3. Search task titles, notes, projects, and source links.
+~~13.3. Search task titles, notes, projects, and source links.~~
 
 13.4. Open selected local item.
 
@@ -1039,10 +1039,10 @@ Status:
 
 Benchmark gate:
 
-- User can search local data.
-- Empty results are handled gracefully.
-- Search does not require Microsoft sync.
-- Build and tests pass.
+- ~~User can search local data.~~
+- ~~Empty results are handled gracefully.~~
+- ~~Search does not require Microsoft sync.~~
+- ~~Build and tests pass.~~
 
 ### 14. Sync Queue With Visible Status
 

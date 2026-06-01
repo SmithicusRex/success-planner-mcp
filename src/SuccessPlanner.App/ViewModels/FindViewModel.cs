@@ -1,12 +1,15 @@
+using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using SuccessPlanner.App.Commands;
 using SuccessPlanner.App.Screens;
+using SuccessPlanner.App.Services;
 
 namespace SuccessPlanner.App.ViewModels;
 
 public sealed class FindViewModel : ScreenViewModelBase, INotifyPropertyChanged
 {
+    private readonly Func<string, CancellationToken, Task<IReadOnlyList<LocalSearchResult>>> _searchAsync;
     private string _searchText = string.Empty;
     private string _statusText = "Ready to find.";
     private string _searchPanelTitle = "Find Local Data";
@@ -16,8 +19,15 @@ public sealed class FindViewModel : ScreenViewModelBase, INotifyPropertyChanged
     private bool _isSearching;
 
     public FindViewModel()
+        : this((_, _) => Task.FromResult<IReadOnlyList<LocalSearchResult>>([]))
+    {
+    }
+
+    public FindViewModel(Func<string, CancellationToken, Task<IReadOnlyList<LocalSearchResult>>> searchAsync)
         : base(ScreenCatalog.Find)
     {
+        ArgumentNullException.ThrowIfNull(searchAsync);
+        _searchAsync = searchAsync;
         SearchCommand = new AsyncRelayCommand(
             () => SearchAsync(CancellationToken.None),
             () => CanSearch);
@@ -39,6 +49,8 @@ public sealed class FindViewModel : ScreenViewModelBase, INotifyPropertyChanged
     public AsyncRelayCommand SearchCommand { get; }
 
     public AsyncRelayCommand ClearSearchCommand { get; }
+
+    public ObservableCollection<FindResultViewModel> Results { get; } = [];
 
     public string SearchText
     {
@@ -97,30 +109,58 @@ public sealed class FindViewModel : ScreenViewModelBase, INotifyPropertyChanged
 
     public bool HasQuery => !string.IsNullOrWhiteSpace(SearchText);
 
-    public bool HasResults => false;
+    public bool HasResults => Results.Count > 0;
 
     public bool CanSearch => HasQuery && !IsSearching;
 
-    public Task SearchAsync(CancellationToken cancellationToken = default)
+    public async Task SearchAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
         if (!HasQuery)
         {
+            ClearResults();
             StatusText = "Type something to search.";
             EmptyStateText = "Type a word or phrase to search local data.";
-            return Task.CompletedTask;
+            return;
         }
 
-        StatusText = "Local search is not connected yet.";
-        EmptyStateText = "Search service connects in the next Find step.";
-        ResultsCountText = "0 results";
-        return Task.CompletedTask;
+        string query = SearchText.Trim();
+        IsSearching = true;
+        StatusText = "Searching local data.";
+        EmptyStateText = "Searching this computer.";
+
+        try
+        {
+            IReadOnlyList<LocalSearchResult> results = await _searchAsync(query, cancellationToken);
+            Results.Clear();
+            foreach (FindResultViewModel result in results.Select(FindResultViewModel.FromSearchResult))
+            {
+                Results.Add(result);
+            }
+
+            RefreshResultsState(query);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            ClearResults();
+            StatusText = "Find could not search.";
+            EmptyStateText = "Try the local search again.";
+        }
+        finally
+        {
+            IsSearching = false;
+        }
     }
 
     public Task ClearSearchAsync()
     {
         SearchText = string.Empty;
+        ClearResults();
         StatusText = "Search cleared.";
         SearchPanelTitle = "Find Local Data";
         SearchPanelText = "Search tasks, projects, notes, and source links from this computer.";
@@ -131,6 +171,11 @@ public sealed class FindViewModel : ScreenViewModelBase, INotifyPropertyChanged
 
     private void RefreshSearchTextState()
     {
+        if (Results.Count > 0)
+        {
+            ClearResults();
+        }
+
         if (HasQuery)
         {
             StatusText = "Ready to search locally.";
@@ -152,6 +197,40 @@ public sealed class FindViewModel : ScreenViewModelBase, INotifyPropertyChanged
         ClearSearchCommand.RaiseCanExecuteChanged();
     }
 
+    private void RefreshResultsState(string query)
+    {
+        ResultsCountText = Results.Count == 1 ? "1 result" : $"{Results.Count} results";
+        if (HasResults)
+        {
+            StatusText = "Search complete.";
+            SearchPanelTitle = "Local Matches";
+            SearchPanelText = $"Found local matches for \"{query}\".";
+            EmptyStateText = "Local matches found.";
+        }
+        else
+        {
+            StatusText = "No local matches.";
+            SearchPanelTitle = "No Matches";
+            SearchPanelText = $"No local matches for \"{query}\" yet.";
+            EmptyStateText = $"No local matches for \"{query}\".";
+        }
+
+        OnPropertyChanged(nameof(HasResults));
+        ClearSearchCommand.RaiseCanExecuteChanged();
+    }
+
+    private void ClearResults()
+    {
+        if (Results.Count > 0)
+        {
+            Results.Clear();
+        }
+
+        ResultsCountText = "0 results";
+        OnPropertyChanged(nameof(HasResults));
+        ClearSearchCommand.RaiseCanExecuteChanged();
+    }
+
     private bool SetProperty<T>(
         ref T field,
         T value,
@@ -170,5 +249,114 @@ public sealed class FindViewModel : ScreenViewModelBase, INotifyPropertyChanged
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
     {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    }
+}
+
+public sealed class FindResultViewModel
+{
+    private FindResultViewModel(LocalSearchResult result)
+    {
+        Id = result.ItemId;
+        Kind = result.Kind;
+        Title = result.Title;
+        Detail = result.Detail;
+        SourceText = result.SourceText;
+        CreatedAt = result.CreatedAt;
+        LocalItemType = result.LocalItemType;
+        LocalItemId = result.LocalItemId;
+        ExternalWebUrl = result.ExternalWebUrl;
+        HasDetail = !string.IsNullOrWhiteSpace(Detail);
+        HasExternalSource = !string.IsNullOrWhiteSpace(ExternalWebUrl);
+        BadgeText = BuildBadgeText(result.Kind);
+        CardIconGlyph = BuildIconGlyph(result.Kind);
+        CardAccentColor = BuildAccentColor(result.Kind);
+        CardBorderColor = BuildBorderColor(result.Kind);
+        CardToolTip = HasDetail ? $"{Title} - {Detail}" : Title;
+    }
+
+    public Guid Id { get; }
+
+    public LocalSearchResultKind Kind { get; }
+
+    public string Title { get; }
+
+    public string Detail { get; }
+
+    public string SourceText { get; }
+
+    public DateTimeOffset CreatedAt { get; }
+
+    public string LocalItemType { get; }
+
+    public Guid? LocalItemId { get; }
+
+    public string ExternalWebUrl { get; }
+
+    public bool HasDetail { get; }
+
+    public bool HasExternalSource { get; }
+
+    public string BadgeText { get; }
+
+    public string CardIconGlyph { get; }
+
+    public string CardAccentColor { get; }
+
+    public string CardBorderColor { get; }
+
+    public string CardToolTip { get; }
+
+    public static FindResultViewModel FromSearchResult(LocalSearchResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        return new FindResultViewModel(result);
+    }
+
+    private static string BuildBadgeText(LocalSearchResultKind kind)
+    {
+        return kind switch
+        {
+            LocalSearchResultKind.Task => "Task",
+            LocalSearchResultKind.Project => "Project",
+            LocalSearchResultKind.Note => "Note",
+            LocalSearchResultKind.SourceLink => "Source Link",
+            _ => "Result"
+        };
+    }
+
+    private static string BuildIconGlyph(LocalSearchResultKind kind)
+    {
+        return kind switch
+        {
+            LocalSearchResultKind.Task => "\uE8FD",
+            LocalSearchResultKind.Project => "\uE8F1",
+            LocalSearchResultKind.Note => "\uE70B",
+            LocalSearchResultKind.SourceLink => "\uE71B",
+            _ => "\uE721"
+        };
+    }
+
+    private static string BuildAccentColor(LocalSearchResultKind kind)
+    {
+        return kind switch
+        {
+            LocalSearchResultKind.Task => "#D6E8FF",
+            LocalSearchResultKind.Project => "#FFF6D6",
+            LocalSearchResultKind.Note => "#ECF8EE",
+            LocalSearchResultKind.SourceLink => "#F0ECFF",
+            _ => "#EAF4FF"
+        };
+    }
+
+    private static string BuildBorderColor(LocalSearchResultKind kind)
+    {
+        return kind switch
+        {
+            LocalSearchResultKind.Task => "#B7D8FF",
+            LocalSearchResultKind.Project => "#E4CD75",
+            LocalSearchResultKind.Note => "#CDEAD5",
+            LocalSearchResultKind.SourceLink => "#B8A2F0",
+            _ => "#D8E9FF"
+        };
     }
 }

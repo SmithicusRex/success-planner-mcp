@@ -2,6 +2,7 @@ using Microsoft.Data.Sqlite;
 using SuccessPlanner.App.Bootstrap;
 using SuccessPlanner.App.Domain;
 using SuccessPlanner.App.Infrastructure;
+using SuccessPlanner.App.Services;
 using SuccessPlanner.App.ViewModels;
 
 TestRunner.RunAll(
@@ -33,6 +34,8 @@ TestRunner.RunAll(
     ("MovementSessionRepository saves and loads movement state", MovementSessionRepositorySavesAndLoadsMovementSessionState),
     ("MoveViewModel saves movement sessions through repository", MoveViewModelSavesMovementSessionsThroughRepository),
     ("MoveViewModel movement save appears in Review", MoveViewModelMovementSaveAppearsInReview),
+    ("SearchService finds tasks notes projects and source links", SearchServiceFindsTasksNotesProjectsAndSourceLinks),
+    ("FindViewModel searches local data through SearchService", FindViewModelSearchesLocalDataThroughSearchService),
     ("SettingsMetadataRepository upserts and deletes metadata", SettingsMetadataRepositoryUpsertsAndDeletesMetadata));
 
 static async Task DatabaseServiceCreatesSqliteDatabase()
@@ -1066,6 +1069,98 @@ static async Task MoveViewModelMovementSaveAppearsInReview()
     Assert.Equal("1 small win this review.", reviewViewModel.WeekSummaryText);
 }
 
+static async Task SearchServiceFindsTasksNotesProjectsAndSourceLinks()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+    await CreateMigratedDatabaseAsync(paths);
+
+    TaskRepository taskRepository = new(paths);
+    NoteRepository noteRepository = new(paths);
+    TaskItem pharmacyTask = CreateRepositoryTask("Call pharmacy about refills");
+    pharmacyTask.UpdateNotes("Ask about the glucose meter prescription.");
+    await taskRepository.AddAsync(pharmacyTask, CancellationToken.None);
+    NoteItem note = NoteItem.Create(NoteOwnerType.Task, pharmacyTask.Id, "Bring therapy notebook to the next visit.");
+    await noteRepository.AddAsync(note, CancellationToken.None);
+    Guid projectId = Guid.NewGuid();
+    await InsertProjectRowAsync(paths, projectId, "Garden project");
+    Guid sourceLinkId = Guid.NewGuid();
+    await InsertSourceLinkRowAsync(
+        paths,
+        sourceLinkId,
+        SourceLinkItemType.Task,
+        pharmacyTask.Id,
+        SourceSystem.MicrosoftPlanner,
+        "planner-card-77",
+        "Planner Card 77");
+
+    SearchService searchService = new(paths);
+
+    IReadOnlyList<LocalSearchResult> taskTitleResults =
+        await searchService.SearchAsync("pharmacy", CancellationToken.None);
+    IReadOnlyList<LocalSearchResult> taskNoteResults =
+        await searchService.SearchAsync("glucose meter", CancellationToken.None);
+    IReadOnlyList<LocalSearchResult> noteResults =
+        await searchService.SearchAsync("therapy notebook", CancellationToken.None);
+    IReadOnlyList<LocalSearchResult> projectResults =
+        await searchService.SearchAsync("garden", CancellationToken.None);
+    IReadOnlyList<LocalSearchResult> sourceLinkResults =
+        await searchService.SearchAsync("planner-card-77", CancellationToken.None);
+
+    Assert.True(
+        taskTitleResults.Any(result => result.Kind == LocalSearchResultKind.Task
+            && result.ItemId == pharmacyTask.Id
+            && result.Title == "Call pharmacy about refills"),
+        "Search should find task titles.");
+    Assert.True(
+        taskNoteResults.Any(result => result.Kind == LocalSearchResultKind.Task
+            && result.ItemId == pharmacyTask.Id
+            && result.Detail.Contains("glucose meter", StringComparison.OrdinalIgnoreCase)),
+        "Search should find task notes.");
+    Assert.True(
+        noteResults.Any(result => result.Kind == LocalSearchResultKind.Note
+            && result.ItemId == note.Id
+            && result.Title.Contains("therapy notebook", StringComparison.OrdinalIgnoreCase)),
+        "Search should find note text.");
+    Assert.True(
+        projectResults.Any(result => result.Kind == LocalSearchResultKind.Project
+            && result.ItemId == projectId
+            && result.Title == "Garden project"),
+        "Search should find projects.");
+    Assert.True(
+        sourceLinkResults.Any(result => result.Kind == LocalSearchResultKind.SourceLink
+            && result.ItemId == sourceLinkId
+            && result.LocalItemId == pharmacyTask.Id
+            && result.Title == "Planner Card 77"),
+        "Search should find source links.");
+}
+
+static async Task FindViewModelSearchesLocalDataThroughSearchService()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+    await CreateMigratedDatabaseAsync(paths);
+
+    TaskRepository taskRepository = new(paths);
+    TaskItem task = CreateRepositoryTask("Local search view model");
+    await taskRepository.AddAsync(task, CancellationToken.None);
+    SearchService searchService = new(paths);
+    FindViewModel viewModel = new(searchService.SearchAsync)
+    {
+        SearchText = "view model"
+    };
+
+    await viewModel.SearchAsync(CancellationToken.None);
+
+    Assert.True(viewModel.HasResults, "Find should load local search results through SearchService.");
+    Assert.Equal(1, viewModel.Results.Count);
+    Assert.Equal(task.Id, viewModel.Results[0].Id);
+    Assert.Equal(LocalSearchResultKind.Task, viewModel.Results[0].Kind);
+    Assert.Equal("Local search view model", viewModel.Results[0].Title);
+    Assert.Equal("Search complete.", viewModel.StatusText);
+    Assert.Equal("1 result", viewModel.ResultsCountText);
+}
+
 static async Task SettingsMetadataRepositoryUpsertsAndDeletesMetadata()
 {
     using TestWorkspace workspace = TestWorkspace.Create();
@@ -1142,6 +1237,64 @@ static async Task InsertProjectRowAsync(AppPaths paths, Guid projectId, string n
     command.Parameters.AddWithValue("$name", name);
     command.Parameters.AddWithValue("$status", ProjectStatus.Active.ToString());
     command.Parameters.AddWithValue("$priority", TaskPriority.Normal.ToString());
+    command.Parameters.AddWithValue("$createdAt", DateTimeOffset.UtcNow.ToString("O"));
+
+    await command.ExecuteNonQueryAsync();
+}
+
+static async Task InsertSourceLinkRowAsync(
+    AppPaths paths,
+    Guid sourceLinkId,
+    SourceLinkItemType localItemType,
+    Guid localItemId,
+    SourceSystem sourceSystem,
+    string externalId,
+    string externalDisplayName)
+{
+    await using SqliteConnection connection = new($"Data Source={paths.DatabasePath};Pooling=False");
+    await connection.OpenAsync();
+
+    await using SqliteCommand command = connection.CreateCommand();
+    command.CommandText =
+        """
+        INSERT INTO source_links (
+            id,
+            local_item_type,
+            local_item_id,
+            source_system,
+            external_id,
+            external_container_id,
+            external_display_name,
+            external_web_url,
+            source_version,
+            sync_state,
+            created_at,
+            retry_count,
+            failure_message,
+            is_read_only)
+        VALUES (
+            $id,
+            $localItemType,
+            $localItemId,
+            $sourceSystem,
+            $externalId,
+            'planner-bucket',
+            $externalDisplayName,
+            '',
+            '',
+            $syncState,
+            $createdAt,
+            0,
+            '',
+            0);
+        """;
+    command.Parameters.AddWithValue("$id", sourceLinkId.ToString("D"));
+    command.Parameters.AddWithValue("$localItemType", localItemType.ToString());
+    command.Parameters.AddWithValue("$localItemId", localItemId.ToString("D"));
+    command.Parameters.AddWithValue("$sourceSystem", sourceSystem.ToString());
+    command.Parameters.AddWithValue("$externalId", externalId);
+    command.Parameters.AddWithValue("$externalDisplayName", externalDisplayName);
+    command.Parameters.AddWithValue("$syncState", SyncState.Synced.ToString());
     command.Parameters.AddWithValue("$createdAt", DateTimeOffset.UtcNow.ToString("O"));
 
     await command.ExecuteNonQueryAsync();

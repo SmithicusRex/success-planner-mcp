@@ -14,6 +14,7 @@ public sealed class AppBootstrapper
     private readonly TaskRepository _taskRepository;
     private readonly NoteRepository _noteRepository;
     private readonly SettingsMetadataRepository _settingsMetadataRepository;
+    private readonly SearchService _searchService;
     private readonly FocusSessionRepository _focusSessionRepository;
     private readonly MovementSessionRepository _movementSessionRepository;
     private readonly BackgroundWorkerHost _backgroundWorkerHost;
@@ -36,6 +37,7 @@ public sealed class AppBootstrapper
         _taskRepository = new TaskRepository(_paths);
         _noteRepository = new NoteRepository(_paths);
         _settingsMetadataRepository = new SettingsMetadataRepository(_paths);
+        _searchService = new SearchService(_paths);
         _focusSessionRepository = new FocusSessionRepository(_paths);
         _movementSessionRepository = new MovementSessionRepository(_paths);
         _backgroundWorkerHost = new BackgroundWorkerHost();
@@ -114,7 +116,7 @@ public sealed class AppBootstrapper
             cancellationToken => _focusSessionRepository.GetRecentAsync(20, cancellationToken),
             cancellationToken => _movementSessionRepository.GetRecentAsync(20, cancellationToken),
             SaveReviewNextFocusAsync));
-        _navigationService.Register(AppScreen.Find, () => new FindViewModel());
+        _navigationService.Register(AppScreen.Find, () => new FindViewModel(_searchService.SearchAsync));
         _navigationService.Register(AppScreen.Settings, CreateSettingsViewModel);
     }
 

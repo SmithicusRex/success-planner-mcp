@@ -1,5 +1,6 @@
 using SuccessPlanner.App.Domain;
 using SuccessPlanner.App.Screens;
+using SuccessPlanner.App.Services;
 using SuccessPlanner.App.ViewModels;
 
 TestRunner.RunAll(
@@ -51,7 +52,9 @@ TestRunner.RunAll(
     ("FindViewModel starts in a simple ready state", FindViewModelStartsReady),
     ("FindViewModel updates query state", FindViewModelUpdatesQueryState),
     ("FindViewModel clears search state", FindViewModelClearsSearchState),
-    ("FindViewModel reports search service placeholder", FindViewModelReportsSearchServicePlaceholder),
+    ("FindViewModel searches local results", FindViewModelSearchesLocalResults),
+    ("FindViewModel handles no results", FindViewModelHandlesNoResults),
+    ("FindViewModel reports search failures", FindViewModelReportsSearchFailures),
     ("StartWorkViewModel starts in a simple ready state", StartWorkViewModelStartsReady),
     ("StartWorkViewModel applies session choices", StartWorkViewModelAppliesSessionChoices),
     ("StartWorkViewModel loads focus task options", StartWorkViewModelLoadsFocusTaskOptions),
@@ -2048,6 +2051,7 @@ static void FindViewModelStartsReady()
     Assert.Contains("tasks, projects, notes", viewModel.SearchPanelText);
     Assert.Equal("Type a word or phrase to search local data.", viewModel.EmptyStateText);
     Assert.Equal("0 results", viewModel.ResultsCountText);
+    Assert.Equal(0, viewModel.Results.Count);
     Assert.False(viewModel.HasQuery, "Find should start without a query.");
     Assert.False(viewModel.HasResults, "Find should start without results.");
     Assert.False(viewModel.CanSearch, "Find should wait for a query before search is enabled.");
@@ -2074,10 +2078,13 @@ static void FindViewModelUpdatesQueryState()
 
 static void FindViewModelClearsSearchState()
 {
-    FindViewModel viewModel = new()
+    FindViewModel viewModel = new((_, _) => Task.FromResult<IReadOnlyList<LocalSearchResult>>(
+        [CreateSearchResult(LocalSearchResultKind.Task, "Call the pharmacy", "Task")]))
     {
         SearchText = "pharmacy"
     };
+    viewModel.SearchAsync(CancellationToken.None).GetAwaiter().GetResult();
+    Assert.True(viewModel.HasResults, "Search should create results before clear.");
 
     viewModel.ClearSearchAsync().GetAwaiter().GetResult();
 
@@ -2090,24 +2097,90 @@ static void FindViewModelClearsSearchState()
     Assert.Equal("Find Local Data", viewModel.SearchPanelTitle);
     Assert.Equal("Type a word or phrase to search local data.", viewModel.EmptyStateText);
     Assert.Equal("0 results", viewModel.ResultsCountText);
+    Assert.Equal(0, viewModel.Results.Count);
 }
 
-static void FindViewModelReportsSearchServicePlaceholder()
+static void FindViewModelSearchesLocalResults()
 {
-    FindViewModel viewModel = new();
+    string? requestedQuery = null;
+    FindViewModel viewModel = new((query, cancellationToken) =>
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        requestedQuery = query;
+        return Task.FromResult<IReadOnlyList<LocalSearchResult>>(
+        [
+            CreateSearchResult(LocalSearchResultKind.Task, "Call the pharmacy", "Task"),
+            CreateSearchResult(LocalSearchResultKind.Note, "Pharmacy note", "Note")
+        ]);
+    })
+    {
+        SearchText = "  pharmacy  "
+    };
 
     viewModel.SearchAsync(CancellationToken.None).GetAwaiter().GetResult();
 
-    Assert.Equal("Type something to search.", viewModel.StatusText);
-    Assert.Equal("Type a word or phrase to search local data.", viewModel.EmptyStateText);
+    Assert.Equal("pharmacy", requestedQuery);
+    Assert.True(viewModel.HasResults, "Search should expose results.");
+    Assert.Equal(2, viewModel.Results.Count);
+    Assert.Equal("2 results", viewModel.ResultsCountText);
+    Assert.Equal("Search complete.", viewModel.StatusText);
+    Assert.Equal("Local Matches", viewModel.SearchPanelTitle);
+    Assert.Equal("Found local matches for \"pharmacy\".", viewModel.SearchPanelText);
+    Assert.Equal("Local matches found.", viewModel.EmptyStateText);
+    Assert.Equal(LocalSearchResultKind.Task, viewModel.Results[0].Kind);
+    Assert.Equal("Call the pharmacy", viewModel.Results[0].Title);
+    Assert.Equal("Task", viewModel.Results[0].BadgeText);
+    Assert.True(viewModel.ClearSearchCommand.CanExecute(null), "Results should keep clear enabled.");
+    Assert.False(viewModel.IsSearching, "Search should clear the loading flag.");
+}
 
-    viewModel.SearchText = "notes";
+static void FindViewModelHandlesNoResults()
+{
+    FindViewModel viewModel = new((_, _) => Task.FromResult<IReadOnlyList<LocalSearchResult>>([]))
+    {
+        SearchText = "missing"
+    };
+
     viewModel.SearchAsync(CancellationToken.None).GetAwaiter().GetResult();
 
-    Assert.Equal("Local search is not connected yet.", viewModel.StatusText);
-    Assert.Equal("Search service connects in the next Find step.", viewModel.EmptyStateText);
+    Assert.False(viewModel.HasResults, "Empty search result should not report matches.");
+    Assert.Equal(0, viewModel.Results.Count);
     Assert.Equal("0 results", viewModel.ResultsCountText);
-    Assert.False(viewModel.HasResults, "Search placeholder should not report real results.");
+    Assert.Equal("No local matches.", viewModel.StatusText);
+    Assert.Equal("No Matches", viewModel.SearchPanelTitle);
+    Assert.Equal("No local matches for \"missing\" yet.", viewModel.SearchPanelText);
+    Assert.Equal("No local matches for \"missing\".", viewModel.EmptyStateText);
+}
+
+static void FindViewModelReportsSearchFailures()
+{
+    FindViewModel viewModel = new((_, _) => throw new InvalidOperationException("Search unavailable."))
+    {
+        SearchText = "notes"
+    };
+
+    viewModel.SearchAsync(CancellationToken.None).GetAwaiter().GetResult();
+
+    Assert.False(viewModel.HasResults, "Failed search should not leave stale results.");
+    Assert.Equal("0 results", viewModel.ResultsCountText);
+    Assert.Equal("Find could not search.", viewModel.StatusText);
+    Assert.Equal("Try the local search again.", viewModel.EmptyStateText);
+}
+
+static LocalSearchResult CreateSearchResult(
+    LocalSearchResultKind kind,
+    string title,
+    string sourceText)
+{
+    return new LocalSearchResult(
+        kind,
+        Guid.NewGuid(),
+        title,
+        $"{sourceText} detail",
+        sourceText,
+        new DateTimeOffset(2026, 6, 1, 10, 0, 0, TimeSpan.Zero),
+        LocalItemType: sourceText,
+        LocalItemId: Guid.NewGuid());
 }
 
 static void MoveViewModelStartsReady()
