@@ -29,7 +29,9 @@ TestRunner.RunAll(
     ("PlanViewModel starts in a simple ready state", PlanViewModelStartsReady),
     ("PlanViewModel loads unplanned inbox", PlanViewModelLoadsUnplannedInbox),
     ("PlanViewModel applies planning controls", PlanViewModelAppliesPlanningControls),
+    ("PlanViewModel splits selected item into tiny steps", PlanViewModelSplitsSelectedItemIntoTinySteps),
     ("PlanViewModel creates inbox card display state", PlanViewModelCreatesInboxCardDisplayState),
+    ("PlanViewModel creates tiny step display state", PlanViewModelCreatesTinyStepDisplayState),
     ("PlanViewModel shows an empty unplanned inbox", PlanViewModelShowsEmptyUnplannedInbox),
     ("PlanViewModel reports load failures", PlanViewModelReportsLoadFailures),
     ("StartWorkViewModel starts in a simple ready state", StartWorkViewModelStartsReady),
@@ -1256,9 +1258,20 @@ static void PlanViewModelStartsReady()
     Assert.False(viewModel.HasProjectName, "Plan should start without a project name.");
     Assert.Equal(string.Empty, viewModel.MinimumWinDraft);
     Assert.False(viewModel.HasMinimumWin, "Plan should start without a minimum win.");
+    Assert.Equal(string.Empty, viewModel.TinyStepDraft);
+    Assert.Equal("No tiny steps created.", viewModel.TinyStepsText);
+    Assert.Equal("Split a selected item into tiny steps.", viewModel.TinyStepStatusText);
+    Assert.Equal("0 tiny steps", viewModel.TinyStepCountText);
+    Assert.False(viewModel.HasTinySteps, "Plan should start without tiny steps.");
+    Assert.False(viewModel.CanSplitIntoTinySteps, "Split should wait for a selected inbox item.");
+    Assert.False(viewModel.CanAddTinyStep, "Add tiny step should wait for text and selection.");
+    Assert.False(viewModel.CanClearTinySteps, "Clear tiny steps should wait for drafted steps.");
     Assert.True(viewModel.RefreshCommand.CanExecute(null), "Refresh should be available when Plan is idle.");
     Assert.False(viewModel.ChooseLowPriorityCommand.CanExecute(null), "Priority controls should wait for selection.");
     Assert.False(viewModel.TodayDateCommand.CanExecute(null), "Date controls should wait for selection.");
+    Assert.False(viewModel.SplitIntoTinyStepsCommand.CanExecute(null), "Split command should wait for selection.");
+    Assert.False(viewModel.AddTinyStepCommand.CanExecute(null), "Add command should wait for text and selection.");
+    Assert.False(viewModel.ClearTinyStepsCommand.CanExecute(null), "Clear command should wait for steps.");
 }
 
 static void PlanViewModelLoadsUnplannedInbox()
@@ -1304,6 +1317,10 @@ static void PlanViewModelLoadsUnplannedInbox()
     Assert.True(viewModel.TodayDateCommand.CanExecute(null), "Date choices should unlock after selection.");
     Assert.False(viewModel.HasPlanningChanges, "Selecting an inbox item alone should not mark planning changed.");
     Assert.False(viewModel.CanSavePlan, "Minimum win should be required before plan draft is save-ready.");
+    Assert.True(viewModel.CanSplitIntoTinySteps, "Split should unlock after selection.");
+    Assert.True(viewModel.SplitIntoTinyStepsCommand.CanExecute(null), "Split command should unlock after selection.");
+    Assert.False(viewModel.CanAddTinyStep, "Add should wait for custom tiny step text.");
+    Assert.False(viewModel.CanClearTinySteps, "Clear should wait for drafted tiny steps.");
 }
 
 static void PlanViewModelAppliesPlanningControls()
@@ -1362,6 +1379,69 @@ static void PlanViewModelAppliesPlanningControls()
     Assert.Equal("Minimum win updated.", viewModel.StatusText);
 }
 
+static void PlanViewModelSplitsSelectedItemIntoTinySteps()
+{
+    TaskItem original = CreateTask("Build the planning screen");
+    PlanViewModel viewModel = new(_ => Task.FromResult<IReadOnlyList<TaskItem>>([original]));
+
+    viewModel.LoadInboxAsync().GetAwaiter().GetResult();
+    viewModel.SelectInboxItem(viewModel.InboxItems[0]);
+
+    viewModel.SplitIntoTinyStepsCommand.Execute(null);
+
+    Assert.True(viewModel.HasTinySteps, "Split should create visible tiny steps.");
+    Assert.Equal(3, viewModel.TinySteps.Count);
+    Assert.Equal("3 tiny steps", viewModel.TinyStepCountText);
+    Assert.Equal("3 tiny steps drafted.", viewModel.TinyStepsText);
+    Assert.Equal("Set up Build the planning screen", viewModel.TinySteps[0].Title);
+    Assert.Equal("Do 10 minutes of Build the planning screen", viewModel.TinySteps[1].Title);
+    Assert.Equal("Write the next note for Build the planning screen", viewModel.TinySteps[2].Title);
+    Assert.True(viewModel.TinySteps.All(step => step.IsTinyStep), "Every split result should be a tiny step draft.");
+    Assert.Equal("Step 1", viewModel.TinySteps[0].BadgeText);
+    Assert.Equal("Tiny steps created.", viewModel.StatusText);
+    Assert.Contains("3 tiny steps", viewModel.PlanningStatusText);
+    Assert.True(viewModel.HasPlanningChanges, "Split should mark the draft changed.");
+    Assert.False(viewModel.CanSavePlan, "Minimum win should still be required before saving.");
+    Assert.Equal(original.Id, viewModel.SelectedInboxItemId.GetValueOrDefault());
+    Assert.True(viewModel.InboxItems.Any(item => item.Id == original.Id), "Original inbox item should remain visible after split.");
+    Assert.True(viewModel.ClearTinyStepsCommand.CanExecute(null), "Clear should unlock once steps exist.");
+
+    viewModel.SplitIntoTinyStepsCommand.Execute(null);
+
+    Assert.Equal(3, viewModel.TinySteps.Count);
+    Assert.Equal("Tiny steps already ready.", viewModel.StatusText);
+
+    viewModel.TinyStepDraft = "  Send one note  ";
+
+    Assert.True(viewModel.CanAddTinyStep, "Custom tiny step text should unlock Add.");
+    Assert.True(viewModel.AddTinyStepCommand.CanExecute(null), "Add command should be available with text.");
+
+    viewModel.AddTinyStepCommand.Execute(null);
+
+    Assert.Equal(4, viewModel.TinySteps.Count);
+    Assert.Equal("Send one note", viewModel.TinySteps[3].Title);
+    Assert.Equal("Step 4", viewModel.TinySteps[3].BadgeText);
+    Assert.Equal(string.Empty, viewModel.TinyStepDraft);
+    Assert.Equal("Tiny step added.", viewModel.StatusText);
+
+    viewModel.TinySteps[1].RemoveCommand.Execute(null);
+
+    Assert.Equal(3, viewModel.TinySteps.Count);
+    Assert.Equal("Step 1", viewModel.TinySteps[0].BadgeText);
+    Assert.Equal("Step 2", viewModel.TinySteps[1].BadgeText);
+    Assert.Equal("Step 3", viewModel.TinySteps[2].BadgeText);
+    Assert.Equal("Tiny step removed.", viewModel.StatusText);
+
+    viewModel.ClearTinyStepsCommand.Execute(null);
+
+    Assert.False(viewModel.HasTinySteps, "Clear should remove tiny step drafts.");
+    Assert.Equal(0, viewModel.TinySteps.Count);
+    Assert.Equal("0 tiny steps", viewModel.TinyStepCountText);
+    Assert.Equal("No tiny steps created.", viewModel.TinyStepsText);
+    Assert.Equal("Tiny steps cleared.", viewModel.StatusText);
+    Assert.True(viewModel.InboxItems.Any(item => item.Id == original.Id), "Clearing split drafts should not remove the original inbox item.");
+}
+
 static void PlanViewModelCreatesInboxCardDisplayState()
 {
     TaskItem task = CreateTask("Sketch the first tiny step", priority: TaskPriority.Critical);
@@ -1378,6 +1458,22 @@ static void PlanViewModelCreatesInboxCardDisplayState()
     Assert.Equal("Unplanned", card.StatusBadgeText);
     Assert.Equal("\uE9D5", card.CardIconGlyph);
     Assert.Contains("Sketch the first tiny step", card.CardToolTip);
+}
+
+static void PlanViewModelCreatesTinyStepDisplayState()
+{
+    PlanTinyStepViewModel step = new(2, "  Write the next note  ");
+
+    Assert.Equal(2, step.SequenceNumber);
+    Assert.Equal("Write the next note", step.Title);
+    Assert.True(step.IsTinyStep, "Tiny step display state should identify tiny steps.");
+    Assert.Equal("Step 2", step.BadgeText);
+    Assert.Equal("\uE73E", step.CardIconGlyph);
+    Assert.Contains("Write the next note", step.CardToolTip);
+
+    step.SetSequenceNumber(3);
+
+    Assert.Equal("Step 3", step.BadgeText);
 }
 
 static void PlanViewModelShowsEmptyUnplannedInbox()

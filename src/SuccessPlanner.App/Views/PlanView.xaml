@@ -680,6 +680,132 @@
                                      MinHeight="74"
                                      VerticalContentAlignment="Top"
                                      ToolTip="Minimum win" />
+
+                            <TextBlock Text="Tiny Steps"
+                                       Style="{StaticResource StateLabelStyle}"
+                                       Margin="0,14,0,6" />
+                            <Button Command="{Binding SplitIntoTinyStepsCommand}"
+                                    Style="{StaticResource PlanActionButtonStyle}"
+                                    MinWidth="0"
+                                    HorizontalAlignment="Stretch"
+                                    ToolTip="Create tiny steps">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE8FD;"
+                                               FontFamily="Segoe MDL2 Assets"
+                                               FontSize="14"
+                                               Margin="0,0,8,0"
+                                               VerticalAlignment="Center" />
+                                    <TextBlock Text="Create Tiny Steps"
+                                               VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
+
+                            <Grid Margin="0,10,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="10" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <TextBox Text="{Binding TinyStepDraft, UpdateSourceTrigger=PropertyChanged}"
+                                         Style="{StaticResource PlanTextBoxStyle}"
+                                         ToolTip="Custom tiny step" />
+                                <Button Grid.Column="2"
+                                        Command="{Binding AddTinyStepCommand}"
+                                        Style="{StaticResource PlanActionButtonStyle}"
+                                        MinWidth="74"
+                                        Content="Add"
+                                        ToolTip="Add tiny step" />
+                            </Grid>
+
+                            <Grid Margin="0,10,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <TextBlock Text="{Binding TinyStepsText}"
+                                           Style="{StaticResource QuietTextStyle}"
+                                           FontSize="13"
+                                           VerticalAlignment="Center" />
+                                <Button Grid.Column="1"
+                                        Command="{Binding ClearTinyStepsCommand}"
+                                        Style="{StaticResource PlanActionButtonStyle}"
+                                        MinWidth="74"
+                                        Height="34"
+                                        Content="Clear"
+                                        ToolTip="Clear tiny steps" />
+                            </Grid>
+                            <TextBlock Text="{Binding TinyStepStatusText}"
+                                       Foreground="{StaticResource PlanInkBrush}"
+                                       FontSize="12"
+                                       FontWeight="SemiBold"
+                                       TextWrapping="Wrap"
+                                       Margin="0,6,0,0" />
+
+                            <ItemsControl ItemsSource="{Binding TinySteps}"
+                                          Margin="0,10,0,0">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Background="#FFFFFF"
+                                                BorderBrush="{Binding CardBorderColor}"
+                                                BorderThickness="1"
+                                                CornerRadius="8"
+                                                Padding="12"
+                                                Margin="0,0,0,8"
+                                                ToolTip="{Binding CardToolTip}">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="10" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="10" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+
+                                                <Border Width="36"
+                                                        Height="36"
+                                                        CornerRadius="8"
+                                                        Background="{Binding CardAccentColor}">
+                                                    <TextBlock Text="{Binding CardIconGlyph}"
+                                                               FontFamily="Segoe MDL2 Assets"
+                                                               FontSize="15"
+                                                               Foreground="{StaticResource InkBrush}"
+                                                               HorizontalAlignment="Center"
+                                                               VerticalAlignment="Center" />
+                                                </Border>
+
+                                                <StackPanel Grid.Column="2"
+                                                            VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding BadgeText}"
+                                                               Foreground="#1E6B3A"
+                                                               FontSize="12"
+                                                               FontWeight="SemiBold" />
+                                                    <TextBlock Text="{Binding Title}"
+                                                               Foreground="{StaticResource InkBrush}"
+                                                               FontSize="14"
+                                                               FontWeight="SemiBold"
+                                                               TextWrapping="Wrap"
+                                                               Margin="0,2,0,0" />
+                                                </StackPanel>
+
+                                                <Button Grid.Column="4"
+                                                        Command="{Binding RemoveCommand}"
+                                                        Style="{StaticResource PlanActionButtonStyle}"
+                                                        MinWidth="42"
+                                                        Width="42"
+                                                        Height="34"
+                                                        Padding="0"
+                                                        ToolTip="Remove tiny step">
+                                                    <TextBlock Text="&#xE74D;"
+                                                               FontFamily="Segoe MDL2 Assets"
+                                                               FontSize="13" />
+                                                </Button>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
                         </StackPanel>
                     </Border>
 

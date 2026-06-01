@@ -30,6 +30,9 @@ public sealed class PlanViewModel : ScreenViewModelBase, INotifyPropertyChanged
     private string _projectName = string.Empty;
     private string _projectText = NoProjectMessage;
     private string _minimumWinDraft = string.Empty;
+    private string _tinyStepDraft = string.Empty;
+    private string _tinyStepsText = "No tiny steps created.";
+    private string _tinyStepStatusText = "Split a selected item into tiny steps.";
     private TaskPriority? _selectedPriority;
     private DateOnly? _selectedDueDate;
     private Guid? _selectedInboxItemId;
@@ -76,6 +79,15 @@ public sealed class PlanViewModel : ScreenViewModelBase, INotifyPropertyChanged
         ThisWeekDateCommand = new AsyncRelayCommand(
             () => ChoosePlanDateAsync(_todayProvider().AddDays(7), "This week"),
             CanUsePlanningControls);
+        SplitIntoTinyStepsCommand = new AsyncRelayCommand(
+            SplitIntoTinyStepsAsync,
+            () => CanSplitIntoTinySteps);
+        AddTinyStepCommand = new AsyncRelayCommand(
+            AddTinyStepAsync,
+            () => CanAddTinyStep);
+        ClearTinyStepsCommand = new AsyncRelayCommand(
+            ClearTinyStepsAsync,
+            () => CanClearTinySteps);
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -91,6 +103,8 @@ public sealed class PlanViewModel : ScreenViewModelBase, INotifyPropertyChanged
     public ObservableCollection<PlanInboxTaskViewModel> InboxItems { get; } = [];
 
     public ObservableCollection<PlanInboxTaskViewModel> Tasks => InboxItems;
+
+    public ObservableCollection<PlanTinyStepViewModel> TinySteps { get; } = [];
 
     public AsyncRelayCommand RefreshCommand { get; }
 
@@ -109,6 +123,12 @@ public sealed class PlanViewModel : ScreenViewModelBase, INotifyPropertyChanged
     public AsyncRelayCommand TomorrowDateCommand { get; }
 
     public AsyncRelayCommand ThisWeekDateCommand { get; }
+
+    public AsyncRelayCommand SplitIntoTinyStepsCommand { get; }
+
+    public AsyncRelayCommand AddTinyStepCommand { get; }
+
+    public AsyncRelayCommand ClearTinyStepsCommand { get; }
 
     public string StatusText
     {
@@ -232,6 +252,41 @@ public sealed class PlanViewModel : ScreenViewModelBase, INotifyPropertyChanged
 
     public bool HasMinimumWin => !string.IsNullOrWhiteSpace(MinimumWinDraft);
 
+    public string TinyStepDraft
+    {
+        get => _tinyStepDraft;
+        set
+        {
+            if (SetProperty(ref _tinyStepDraft, value))
+            {
+                AddTinyStepCommand.RaiseCanExecuteChanged();
+                OnPropertyChanged(nameof(CanAddTinyStep));
+            }
+        }
+    }
+
+    public string TinyStepsText
+    {
+        get => _tinyStepsText;
+        private set => SetProperty(ref _tinyStepsText, value);
+    }
+
+    public string TinyStepStatusText
+    {
+        get => _tinyStepStatusText;
+        private set => SetProperty(ref _tinyStepStatusText, value);
+    }
+
+    public bool HasTinySteps => TinySteps.Count > 0;
+
+    public string TinyStepCountText => TinySteps.Count == 1 ? "1 tiny step" : $"{TinySteps.Count} tiny steps";
+
+    public bool CanSplitIntoTinySteps => HasSelectedInboxItem && !IsLoading;
+
+    public bool CanAddTinyStep => CanSplitIntoTinySteps && !string.IsNullOrWhiteSpace(TinyStepDraft);
+
+    public bool CanClearTinySteps => CanSplitIntoTinySteps && HasTinySteps;
+
     public Guid? SelectedInboxItemId
     {
         get => _selectedInboxItemId;
@@ -354,6 +409,7 @@ public sealed class PlanViewModel : ScreenViewModelBase, INotifyPropertyChanged
         DateHintText = NoPlanDateMessage;
         SetProjectName(string.Empty, updatePlanningState: false);
         SetMinimumWinDraft(string.Empty, updatePlanningState: false);
+        ClearTinyStepDrafts(updatePlanningState: false);
         SetPlanningChanges(false);
         PlanningStatusText = $"Ready to plan {inboxItem.Title}.";
         MinimumWinText = $"Minimum win pending for {inboxItem.Title}.";
@@ -404,6 +460,62 @@ public sealed class PlanViewModel : ScreenViewModelBase, INotifyPropertyChanged
         return Task.CompletedTask;
     }
 
+    private Task SplitIntoTinyStepsAsync()
+    {
+        if (!HasSelectedInboxItem)
+        {
+            return Task.CompletedTask;
+        }
+
+        if (HasTinySteps)
+        {
+            TinyStepStatusText = "Tiny steps already ready.";
+            StatusText = "Tiny steps already ready.";
+            return Task.CompletedTask;
+        }
+
+        string title = _selectedInboxItemTitle;
+        AddTinyStepDraft($"Set up {title}", updatePlanningState: false);
+        AddTinyStepDraft($"Do 10 minutes of {title}", updatePlanningState: false);
+        AddTinyStepDraft($"Write the next note for {title}", updatePlanningState: false);
+        UpdateTinyStepSummary("Tiny steps ready.");
+        MarkPlanningChanged("Tiny steps created.");
+        return Task.CompletedTask;
+    }
+
+    private Task AddTinyStepAsync()
+    {
+        if (!CanAddTinyStep)
+        {
+            return Task.CompletedTask;
+        }
+
+        string title = TinyStepDraft.Trim();
+        if (TinySteps.Any(step => string.Equals(step.Title, title, StringComparison.OrdinalIgnoreCase)))
+        {
+            TinyStepStatusText = "Tiny step already exists.";
+            StatusText = "Tiny step already exists.";
+            return Task.CompletedTask;
+        }
+
+        AddTinyStepDraft(title, updatePlanningState: false);
+        TinyStepDraft = string.Empty;
+        UpdateTinyStepSummary("Custom tiny step added.");
+        MarkPlanningChanged("Tiny step added.");
+        return Task.CompletedTask;
+    }
+
+    private Task ClearTinyStepsAsync()
+    {
+        if (!CanClearTinySteps)
+        {
+            return Task.CompletedTask;
+        }
+
+        ClearTinyStepDrafts(updatePlanningState: true);
+        return Task.CompletedTask;
+    }
+
     private bool CanUsePlanningControls()
     {
         return HasSelectedInboxItem && !IsLoading;
@@ -418,6 +530,7 @@ public sealed class PlanViewModel : ScreenViewModelBase, INotifyPropertyChanged
         DateHintText = NoPlanDateMessage;
         SetProjectName(string.Empty, updatePlanningState: false);
         SetMinimumWinDraft(string.Empty, updatePlanningState: false);
+        ClearTinyStepDrafts(updatePlanningState: false);
         SetPlanningChanges(false);
         SelectedInboxItemText = "No inbox item selected.";
         ApplyUnselectedPlanningState();
@@ -492,6 +605,74 @@ public sealed class PlanViewModel : ScreenViewModelBase, INotifyPropertyChanged
             : $"Minimum win: {MinimumWinDraft.Trim()}";
     }
 
+    private void AddTinyStepDraft(string title, bool updatePlanningState)
+    {
+        PlanTinyStepViewModel step = new(
+            TinySteps.Count + 1,
+            title,
+            RemoveTinyStepAsync);
+        TinySteps.Add(step);
+        UpdateTinyStepSummary("Tiny step ready.");
+
+        if (updatePlanningState)
+        {
+            MarkPlanningChanged("Tiny step added.");
+        }
+    }
+
+    private Task RemoveTinyStepAsync(PlanTinyStepViewModel tinyStep)
+    {
+        ArgumentNullException.ThrowIfNull(tinyStep);
+
+        for (int index = 0; index < TinySteps.Count; index++)
+        {
+            if (TinySteps[index].Id == tinyStep.Id)
+            {
+                TinySteps.RemoveAt(index);
+                break;
+            }
+        }
+
+        ReindexTinySteps();
+        UpdateTinyStepSummary(HasTinySteps ? "Tiny step removed." : "No tiny steps created.");
+        MarkPlanningChanged("Tiny step removed.");
+        return Task.CompletedTask;
+    }
+
+    private void ClearTinyStepDrafts(bool updatePlanningState)
+    {
+        TinySteps.Clear();
+        TinyStepDraft = string.Empty;
+        UpdateTinyStepSummary("No tiny steps created.");
+
+        if (updatePlanningState)
+        {
+            MarkPlanningChanged("Tiny steps cleared.");
+        }
+    }
+
+    private void ReindexTinySteps()
+    {
+        for (int index = 0; index < TinySteps.Count; index++)
+        {
+            TinySteps[index].SetSequenceNumber(index + 1);
+        }
+    }
+
+    private void UpdateTinyStepSummary(string statusText)
+    {
+        TinyStepsText = HasTinySteps
+            ? $"{TinyStepCountText} drafted."
+            : "No tiny steps created.";
+        TinyStepStatusText = statusText;
+        OnPropertyChanged(nameof(HasTinySteps));
+        OnPropertyChanged(nameof(TinyStepCountText));
+        OnPropertyChanged(nameof(CanClearTinySteps));
+        OnPropertyChanged(nameof(CanSplitIntoTinySteps));
+        ClearTinyStepsCommand.RaiseCanExecuteChanged();
+        SplitIntoTinyStepsCommand.RaiseCanExecuteChanged();
+    }
+
     private void MarkPlanningChanged(string statusText)
     {
         SetPlanningChanges(true);
@@ -507,7 +688,7 @@ public sealed class PlanViewModel : ScreenViewModelBase, INotifyPropertyChanged
             return "No planning changes yet.";
         }
 
-        return $"{_selectedInboxItemTitle}: {PriorityText}; {DateHintText}; {ProjectText}.";
+        return $"{_selectedInboxItemTitle}: {PriorityText}; {DateHintText}; {ProjectText}; {TinyStepCountText}.";
     }
 
     private void UpdateSaveStatus()
@@ -548,6 +729,12 @@ public sealed class PlanViewModel : ScreenViewModelBase, INotifyPropertyChanged
         TodayDateCommand.RaiseCanExecuteChanged();
         TomorrowDateCommand.RaiseCanExecuteChanged();
         ThisWeekDateCommand.RaiseCanExecuteChanged();
+        SplitIntoTinyStepsCommand.RaiseCanExecuteChanged();
+        AddTinyStepCommand.RaiseCanExecuteChanged();
+        ClearTinyStepsCommand.RaiseCanExecuteChanged();
+        OnPropertyChanged(nameof(CanSplitIntoTinySteps));
+        OnPropertyChanged(nameof(CanAddTinyStep));
+        OnPropertyChanged(nameof(CanClearTinySteps));
     }
 
     private static int PrioritySortValue(TaskPriority priority)
@@ -587,6 +774,84 @@ public sealed class PlanViewModel : ScreenViewModelBase, INotifyPropertyChanged
         field = value;
         OnPropertyChanged(propertyName);
         return true;
+    }
+
+    private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
+    {
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    }
+}
+
+public sealed class PlanTinyStepViewModel : INotifyPropertyChanged
+{
+    private readonly Func<PlanTinyStepViewModel, Task> _removeAsync;
+    private int _sequenceNumber;
+
+    public PlanTinyStepViewModel(
+        int sequenceNumber,
+        string title,
+        Func<PlanTinyStepViewModel, Task>? removeAsync = null)
+    {
+        _sequenceNumber = sequenceNumber;
+        Title = NormalizeTitle(title);
+        _removeAsync = removeAsync ?? (_ => Task.CompletedTask);
+        RemoveCommand = new AsyncRelayCommand(RemoveAsync);
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    public Guid Id { get; } = Guid.NewGuid();
+
+    public int SequenceNumber
+    {
+        get => _sequenceNumber;
+        private set
+        {
+            if (_sequenceNumber == value)
+            {
+                return;
+            }
+
+            _sequenceNumber = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(BadgeText));
+        }
+    }
+
+    public string Title { get; }
+
+    public bool IsTinyStep => true;
+
+    public string BadgeText => $"Step {SequenceNumber}";
+
+    public string CardAccentColor => "#A8E6B1";
+
+    public string CardBorderColor => "#CDEAD5";
+
+    public string CardIconGlyph => "\uE73E";
+
+    public string CardToolTip => $"{BadgeText}: {Title}";
+
+    public AsyncRelayCommand RemoveCommand { get; }
+
+    public void SetSequenceNumber(int sequenceNumber)
+    {
+        SequenceNumber = sequenceNumber;
+    }
+
+    private Task RemoveAsync()
+    {
+        return _removeAsync(this);
+    }
+
+    private static string NormalizeTitle(string title)
+    {
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            throw new ArgumentException("Tiny step title cannot be blank.", nameof(title));
+        }
+
+        return title.Trim();
     }
 
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null)

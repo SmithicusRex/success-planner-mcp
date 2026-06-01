@@ -991,7 +991,7 @@ Benchmark gate:
 
 ~~11.4. Add priority, date, project, and minimum win controls.~~
 
-11.5. Add split-into-tiny-steps behavior.
+~~11.5. Add split-into-tiny-steps behavior.~~
 
 11.6. Save planning changes locally.
 
