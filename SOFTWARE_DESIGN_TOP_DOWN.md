@@ -1010,7 +1010,7 @@ Benchmark gate:
 
 ~~12.3. Show small wins.~~
 
-12.4. Show stuck items.
+~~12.4. Show stuck items.~~
 
 12.5. Show needs-decision items.
 

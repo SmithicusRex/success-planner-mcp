@@ -95,6 +95,15 @@
                 </DataTrigger>
             </Style.Triggers>
         </Style>
+
+        <Style x:Key="StuckListVisibilityStyle" TargetType="ItemsControl">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding HasStuckItems}" Value="True">
+                    <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
     </UserControl.Resources>
 
     <Grid>
@@ -357,6 +366,74 @@
                                            Style="{StaticResource StateLabelStyle}" />
                                 <TextBlock Text="{Binding StuckItemsText}"
                                            Style="{StaticResource StateValueStyle}" />
+                                <ItemsControl ItemsSource="{Binding StuckItems}"
+                                              Margin="0,14,0,0"
+                                              Style="{StaticResource StuckListVisibilityStyle}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Margin="0,0,0,12"
+                                                  ToolTip="{Binding CardToolTip}">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="10" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+
+                                                <Border Width="34"
+                                                        Height="34"
+                                                        CornerRadius="8"
+                                                        Background="{Binding CardAccentColor}">
+                                                    <TextBlock Text="{Binding CardIconGlyph}"
+                                                               FontFamily="Segoe MDL2 Assets"
+                                                               FontSize="14"
+                                                               Foreground="{StaticResource InkBrush}"
+                                                               HorizontalAlignment="Center"
+                                                               VerticalAlignment="Center" />
+                                                </Border>
+
+                                                <StackPanel Grid.Column="2">
+                                                    <TextBlock Text="{Binding Title}"
+                                                               Foreground="{StaticResource InkBrush}"
+                                                               FontSize="14"
+                                                               FontWeight="SemiBold"
+                                                               TextWrapping="Wrap" />
+                                                    <TextBlock Text="{Binding NotesPreview}"
+                                                               Foreground="{StaticResource MutedBrush}"
+                                                               FontSize="12"
+                                                               TextWrapping="Wrap"
+                                                               Margin="0,4,0,0">
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock">
+                                                                <Setter Property="Visibility" Value="Visible" />
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding HasNotes}" Value="False">
+                                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
+                                                    <WrapPanel Margin="0,5,0,0">
+                                                        <TextBlock Text="{Binding BadgeText}"
+                                                                   Foreground="#8A3434"
+                                                                   FontSize="12"
+                                                                   FontWeight="SemiBold"
+                                                                   Margin="0,0,10,0" />
+                                                        <TextBlock Text="{Binding PriorityText}"
+                                                                   Foreground="{StaticResource MutedBrush}"
+                                                                   FontSize="12"
+                                                                   FontWeight="SemiBold"
+                                                                   Margin="0,0,10,0" />
+                                                        <TextBlock Text="{Binding DateText}"
+                                                                   Foreground="{StaticResource MutedBrush}"
+                                                                   FontSize="12"
+                                                                   FontWeight="SemiBold" />
+                                                    </WrapPanel>
+                                                </StackPanel>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
                             </StackPanel>
                         </Border>
 

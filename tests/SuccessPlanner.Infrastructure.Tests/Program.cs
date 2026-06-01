@@ -24,6 +24,7 @@ TestRunner.RunAll(
     ("CaptureViewModel saves captured tasks through TaskRepository", CaptureViewModelSavesCapturedTasksThroughTaskRepository),
     ("PlanViewModel saves planning changes through TaskRepository", PlanViewModelSavesPlanningChangesThroughTaskRepository),
     ("ReviewViewModel loads small wins through NoteRepository", ReviewViewModelLoadsSmallWinsThroughNoteRepository),
+    ("ReviewViewModel loads stuck items through TaskRepository", ReviewViewModelLoadsStuckItemsThroughTaskRepository),
     ("FocusSessionRepository saves and loads focus session state", FocusSessionRepositorySavesAndLoadsFocusSessionState),
     ("StartWorkViewModel records focus sessions through repositories", StartWorkViewModelRecordsFocusSessionsThroughRepositories),
     ("MovementSessionRepository saves and loads movement state", MovementSessionRepositorySavesAndLoadsMovementSessionState),
@@ -650,6 +651,45 @@ static async Task ReviewViewModelLoadsSmallWinsThroughNoteRepository()
     Assert.Equal("1 small win this review.", viewModel.WeekSummaryText);
     Assert.Equal("1 small win ready.", viewModel.SmallWinsText);
     Assert.Equal("Small wins ready.", viewModel.StatusText);
+}
+
+static async Task ReviewViewModelLoadsStuckItemsThroughTaskRepository()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+    await CreateMigratedDatabaseAsync(paths);
+
+    DateOnly today = new(2026, 5, 30);
+    TaskRepository taskRepository = new(paths);
+    TaskItem blockedTask = CreateRepositoryTask("Call the supplier", dueDate: today.AddDays(-1), priority: TaskPriority.High);
+    blockedTask.UpdateNotes("Waiting on a return call.");
+    blockedTask.MarkBlocked();
+    TaskItem repeatedSnooze = CreateRepositoryTask("Review insurance paperwork", dueDate: today.AddDays(2));
+    repeatedSnooze.AddTag("Repeated Snooze");
+    TaskItem ordinaryTask = CreateRepositoryTask("Pay the bill", dueDate: today);
+
+    foreach (TaskItem task in new[] { ordinaryTask, repeatedSnooze, blockedTask })
+    {
+        await taskRepository.AddAsync(task, CancellationToken.None);
+    }
+
+    ReviewViewModel viewModel = new(
+        _ => Task.FromResult<IReadOnlyList<NoteItem>>([]),
+        taskRepository.GetAllAsync);
+
+    await viewModel.LoadReviewAsync(CancellationToken.None);
+
+    Assert.True(viewModel.HasStuckItems, "Review should load blocked or repeated-snooze tasks as stuck items.");
+    Assert.True(viewModel.HasReviewData, "Review should expose stuck items as review data.");
+    Assert.Equal(2, viewModel.StuckItems.Count);
+    Assert.Equal(blockedTask.Id, viewModel.StuckItems[0].Id);
+    Assert.Equal("Blocked", viewModel.StuckItems[0].StatusText);
+    Assert.Equal(repeatedSnooze.Id, viewModel.StuckItems[1].Id);
+    Assert.Equal("Repeated Snooze", viewModel.StuckItems[1].StatusText);
+    Assert.Equal("2 review items", viewModel.ReviewCountText);
+    Assert.Equal("2 stuck items this review.", viewModel.WeekSummaryText);
+    Assert.Equal("2 stuck items ready.", viewModel.StuckItemsText);
+    Assert.Equal("Stuck items ready.", viewModel.StatusText);
 }
 
 static async Task FocusSessionRepositorySavesAndLoadsFocusSessionState()

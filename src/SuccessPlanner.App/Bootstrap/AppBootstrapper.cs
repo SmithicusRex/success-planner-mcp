@@ -106,7 +106,9 @@ public sealed class AppBootstrapper
             _taskRepository.SaveAsync,
             _noteRepository.AddTaskSmallWinAsync));
         _navigationService.Register(AppScreen.Move, () => new MoveViewModel(_movementSessionRepository.SaveAsync));
-        _navigationService.Register(AppScreen.Review, () => new ReviewViewModel(_noteRepository.GetReviewHighlightsAsync));
+        _navigationService.Register(AppScreen.Review, () => new ReviewViewModel(
+            _noteRepository.GetReviewHighlightsAsync,
+            _taskRepository.GetAllAsync));
         _navigationService.Register(AppScreen.Find, () => new InitialScreenViewModel(ScreenCatalog.Find));
         _navigationService.Register(AppScreen.Settings, CreateSettingsViewModel);
     }
