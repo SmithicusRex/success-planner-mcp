@@ -22,6 +22,7 @@ TestRunner.RunAll(
     ("DoneViewModel completes selected task through TaskRepository", DoneViewModelCompletesSelectedTaskThroughTaskRepository),
     ("TaskRepository deletes tasks", TaskRepositoryDeletesTasks),
     ("CaptureViewModel saves captured tasks through TaskRepository", CaptureViewModelSavesCapturedTasksThroughTaskRepository),
+    ("PlanViewModel saves planning changes through TaskRepository", PlanViewModelSavesPlanningChangesThroughTaskRepository),
     ("FocusSessionRepository saves and loads focus session state", FocusSessionRepositorySavesAndLoadsFocusSessionState),
     ("StartWorkViewModel records focus sessions through repositories", StartWorkViewModelRecordsFocusSessionsThroughRepositories),
     ("MovementSessionRepository saves and loads movement state", MovementSessionRepositorySavesAndLoadsMovementSessionState),
@@ -561,6 +562,62 @@ static async Task CaptureViewModelSavesCapturedTasksThroughTaskRepository()
     Assert.Equal(DateOnly.FromDateTime(DateTime.Today).AddDays(1), savedTask.DueDate);
     Assert.Equal(TaskItemStatus.Planned, savedTask.Status);
     Assert.Equal(CaptureDestinationPreference.MicrosoftToDo, viewModel.SelectedDestination);
+}
+
+static async Task PlanViewModelSavesPlanningChangesThroughTaskRepository()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+    await CreateMigratedDatabaseAsync(paths);
+
+    DateOnly today = new(2026, 5, 30);
+    TaskRepository repository = new(paths);
+    TaskItem original = CreateRepositoryTask("Plan the local workflow");
+    original.UpdateNotes("Keep the planning step small.");
+    await repository.AddAsync(original, CancellationToken.None);
+
+    PlanViewModel viewModel = new(
+        repository.GetUnplannedAsync,
+        repository.SaveAsync,
+        () => today);
+
+    await viewModel.LoadInboxAsync(CancellationToken.None);
+    viewModel.SelectInboxItem(viewModel.InboxItems[0]);
+    viewModel.ChooseHighPriorityCommand.Execute(null);
+    viewModel.TodayDateCommand.Execute(null);
+    viewModel.ProjectName = "Success Planner MCP";
+    viewModel.MinimumWinDraft = "Save one local plan";
+    viewModel.SplitIntoTinyStepsCommand.Execute(null);
+
+    await viewModel.SavePlanAsync(CancellationToken.None);
+
+    Assert.True(viewModel.HasSavedPlan, "Plan should expose the saved task id after repository write.");
+    Assert.Equal(original.Id, viewModel.LastSavedTaskId.GetValueOrDefault());
+    Assert.Equal(3, viewModel.SavedTinyStepIds.Count);
+
+    TaskItem? savedOriginal = await repository.GetByIdAsync(original.Id, CancellationToken.None);
+    Assert.NotNull(savedOriginal, "Original task should still exist after planning.");
+    Assert.Equal(TaskItemStatus.Planned, savedOriginal!.Status);
+    Assert.Equal(TaskPriority.High, savedOriginal.Priority);
+    Assert.Equal(today, savedOriginal.DueDate);
+    Assert.Equal(today, savedOriginal.StartDate);
+    Assert.Contains("Keep the planning step small.", savedOriginal.Notes);
+    Assert.Contains("Minimum Win: Save one local plan", savedOriginal.Notes);
+    Assert.Contains("Project: Success Planner MCP", savedOriginal.Notes);
+    Assert.Contains("Tiny Steps:", savedOriginal.Notes);
+
+    IReadOnlyList<TaskItem> unplannedTasks = await repository.GetUnplannedAsync(CancellationToken.None);
+    Assert.False(unplannedTasks.Any(task => task.Id == original.Id), "Saved planned task should leave the unplanned query.");
+
+    IReadOnlyList<TaskItem> allTasks = await repository.GetAllAsync(CancellationToken.None);
+    IReadOnlyList<TaskItem> savedTinySteps = allTasks
+        .Where(task => viewModel.SavedTinyStepIds.Contains(task.Id))
+        .OrderBy(task => task.Title, StringComparer.OrdinalIgnoreCase)
+        .ToList();
+    Assert.Equal(3, savedTinySteps.Count);
+    Assert.True(savedTinySteps.All(task => task.IsTinyStep), "Tiny steps should be stored as task records.");
+    Assert.True(savedTinySteps.All(task => task.Status == TaskItemStatus.Planned), "Tiny steps should persist planned state.");
+    Assert.True(savedTinySteps.All(task => task.Notes.Contains("Split from: Plan the local workflow", StringComparison.Ordinal)), "Tiny steps should keep the source context.");
 }
 
 static async Task FocusSessionRepositorySavesAndLoadsFocusSessionState()

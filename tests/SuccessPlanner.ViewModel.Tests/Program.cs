@@ -30,6 +30,8 @@ TestRunner.RunAll(
     ("PlanViewModel loads unplanned inbox", PlanViewModelLoadsUnplannedInbox),
     ("PlanViewModel applies planning controls", PlanViewModelAppliesPlanningControls),
     ("PlanViewModel splits selected item into tiny steps", PlanViewModelSplitsSelectedItemIntoTinySteps),
+    ("PlanViewModel saves planning changes locally", PlanViewModelSavesPlanningChangesLocally),
+    ("PlanViewModel reports save failures", PlanViewModelReportsSaveFailures),
     ("PlanViewModel creates inbox card display state", PlanViewModelCreatesInboxCardDisplayState),
     ("PlanViewModel creates tiny step display state", PlanViewModelCreatesTinyStepDisplayState),
     ("PlanViewModel shows an empty unplanned inbox", PlanViewModelShowsEmptyUnplannedInbox),
@@ -1245,6 +1247,11 @@ static void PlanViewModelStartsReady()
     Assert.False(viewModel.HasPlanningControls, "Plan controls should wait for a selected inbox item.");
     Assert.False(viewModel.HasPlanningChanges, "Plan should start without planning changes.");
     Assert.False(viewModel.CanSavePlan, "Plan should not save before planning changes.");
+    Assert.False(viewModel.IsSavingPlan, "Plan should start without an active save.");
+    Assert.Null(viewModel.LastSavedTaskId, "Plan should start without a saved task id.");
+    Assert.False(viewModel.HasSavedPlan, "Plan should start without saved planning changes.");
+    Assert.Equal(0, viewModel.SavedTinyStepIds.Count);
+    Assert.Equal("0 tiny steps saved", viewModel.SavedTinyStepCountText);
     Assert.Null(viewModel.SelectedPriority, "Plan should start without a selected priority.");
     Assert.Equal("No priority selected.", viewModel.PriorityText);
     Assert.False(viewModel.IsLowPrioritySelected, "Low priority should start unselected.");
@@ -1272,6 +1279,7 @@ static void PlanViewModelStartsReady()
     Assert.False(viewModel.SplitIntoTinyStepsCommand.CanExecute(null), "Split command should wait for selection.");
     Assert.False(viewModel.AddTinyStepCommand.CanExecute(null), "Add command should wait for text and selection.");
     Assert.False(viewModel.ClearTinyStepsCommand.CanExecute(null), "Clear command should wait for steps.");
+    Assert.False(viewModel.SavePlanCommand.CanExecute(null), "Save should wait for a ready plan draft.");
 }
 
 static void PlanViewModelLoadsUnplannedInbox()
@@ -1375,6 +1383,7 @@ static void PlanViewModelAppliesPlanningControls()
     Assert.True(viewModel.HasMinimumWin, "Minimum win text should mark a minimum win present.");
     Assert.Equal("Minimum win: Pick one realistic next action", viewModel.MinimumWinText);
     Assert.True(viewModel.CanSavePlan, "Priority, project, and minimum win draft should be save-ready.");
+    Assert.True(viewModel.SavePlanCommand.CanExecute(null), "Save command should unlock when draft is ready.");
     Assert.Equal("Draft ready for local save.", viewModel.SaveStatusText);
     Assert.Equal("Minimum win updated.", viewModel.StatusText);
 }
@@ -1440,6 +1449,88 @@ static void PlanViewModelSplitsSelectedItemIntoTinySteps()
     Assert.Equal("No tiny steps created.", viewModel.TinyStepsText);
     Assert.Equal("Tiny steps cleared.", viewModel.StatusText);
     Assert.True(viewModel.InboxItems.Any(item => item.Id == original.Id), "Clearing split drafts should not remove the original inbox item.");
+}
+
+static void PlanViewModelSavesPlanningChangesLocally()
+{
+    DateOnly today = new(2026, 5, 30);
+    TaskItem original = CreateTask("Build plan save");
+    List<TaskItem> savedTasks = [];
+    PlanViewModel viewModel = new(
+        _ => Task.FromResult<IReadOnlyList<TaskItem>>([original]),
+        (task, _) =>
+        {
+            savedTasks.Add(task);
+            return Task.CompletedTask;
+        },
+        () => today);
+
+    viewModel.LoadInboxAsync().GetAwaiter().GetResult();
+    viewModel.SelectInboxItem(viewModel.InboxItems[0]);
+    viewModel.ChooseHighPriorityCommand.Execute(null);
+    viewModel.TodayDateCommand.Execute(null);
+    viewModel.ProjectName = "Success Planner";
+    viewModel.MinimumWinDraft = "Save one planned action";
+    viewModel.SplitIntoTinyStepsCommand.Execute(null);
+
+    Assert.True(viewModel.CanSavePlan, "Plan draft should be save-ready.");
+    Assert.True(viewModel.SavePlanCommand.CanExecute(null), "Save command should be available.");
+
+    viewModel.SavePlanAsync(CancellationToken.None).GetAwaiter().GetResult();
+
+    Assert.Equal(4, savedTasks.Count);
+    TaskItem plannedTask = savedTasks[0];
+    Assert.Equal(original.Id, plannedTask.Id);
+    Assert.Equal(TaskItemStatus.Planned, plannedTask.Status);
+    Assert.Equal(TaskPriority.High, plannedTask.Priority);
+    Assert.Equal(today, plannedTask.DueDate);
+    Assert.Equal(today, plannedTask.StartDate);
+    Assert.Contains("Minimum Win: Save one planned action", plannedTask.Notes);
+    Assert.Contains("Project: Success Planner", plannedTask.Notes);
+    Assert.Contains("Tiny Steps:", plannedTask.Notes);
+    Assert.Contains("Plan", plannedTask.Tags);
+    Assert.Contains("Minimum Win", plannedTask.Tags);
+
+    IReadOnlyList<TaskItem> tinySteps = savedTasks.Skip(1).ToList();
+    Assert.Equal(3, tinySteps.Count);
+    Assert.True(tinySteps.All(task => task.IsTinyStep), "Saved tiny steps should be real task records.");
+    Assert.True(tinySteps.All(task => task.Status == TaskItemStatus.Planned), "Saved tiny steps should be planned.");
+    Assert.True(tinySteps.All(task => task.DueDate == today), "Saved tiny steps should inherit the plan date.");
+    Assert.True(tinySteps.All(task => task.Priority == TaskPriority.High), "Saved tiny steps should inherit priority.");
+    Assert.True(tinySteps.All(task => task.Notes.Contains("Split from: Build plan save", StringComparison.Ordinal)), "Saved tiny steps should link back to the original task.");
+    Assert.True(tinySteps.Select(task => task.Id).Distinct().Count() == 3, "Each tiny step should have its own id.");
+
+    Assert.True(viewModel.HasSavedPlan, "Plan should expose a saved state.");
+    Assert.Equal(original.Id, viewModel.LastSavedTaskId.GetValueOrDefault());
+    Assert.Equal(3, viewModel.SavedTinyStepIds.Count);
+    Assert.Equal("3 tiny steps saved", viewModel.SavedTinyStepCountText);
+    Assert.False(viewModel.InboxItems.Any(item => item.Id == original.Id), "Saved planned task should leave the unplanned inbox.");
+    Assert.Equal("0 unplanned", viewModel.InboxCountText);
+    Assert.Equal("Plan saved locally.", viewModel.StatusText);
+    Assert.Contains("Saved locally: Build plan save plus 3 tiny steps.", viewModel.SaveStatusText);
+    Assert.Contains("Minimum win saved", viewModel.MinimumWinText);
+    Assert.False(viewModel.CanSavePlan, "Saved plan should not remain save-ready.");
+    Assert.False(viewModel.SavePlanCommand.CanExecute(null), "Save command should disable after save.");
+}
+
+static void PlanViewModelReportsSaveFailures()
+{
+    TaskItem original = CreateTask("Save should fail");
+    PlanViewModel viewModel = new(
+        _ => Task.FromResult<IReadOnlyList<TaskItem>>([original]),
+        (_, _) => throw new InvalidOperationException("Local database unavailable."));
+
+    viewModel.LoadInboxAsync().GetAwaiter().GetResult();
+    viewModel.SelectInboxItem(viewModel.InboxItems[0]);
+    viewModel.MinimumWinDraft = "Know that failed saves are visible";
+
+    viewModel.SavePlanAsync(CancellationToken.None).GetAwaiter().GetResult();
+
+    Assert.Equal("Plan save failed.", viewModel.StatusText);
+    Assert.Equal("Planning changes were not saved locally.", viewModel.SaveStatusText);
+    Assert.False(viewModel.HasSavedPlan, "Failed save should not expose a saved task id.");
+    Assert.True(viewModel.InboxItems.Any(item => item.Id == original.Id), "Failed save should leave the inbox item visible.");
+    Assert.True(viewModel.CanSavePlan, "Failed save should leave the corrected draft ready to retry.");
 }
 
 static void PlanViewModelCreatesInboxCardDisplayState()

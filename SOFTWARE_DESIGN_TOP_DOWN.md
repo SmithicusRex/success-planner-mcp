@@ -981,7 +981,7 @@ Benchmark gate:
 - Movement works without Microsoft sync.
 - Build and tests pass.
 
-### 11. Plan Workflow
+### ~~11. Plan Workflow~~
 
 ~~11.1. Create `PlanViewModel`.~~
 
@@ -993,14 +993,14 @@ Benchmark gate:
 
 ~~11.5. Add split-into-tiny-steps behavior.~~
 
-11.6. Save planning changes locally.
+~~11.6. Save planning changes locally.~~
 
-Benchmark gate:
+~~Benchmark gate:~~
 
-- User can turn an inbox item into a planned small action.
-- Minimum win is visible and saved.
-- Tiny steps are created without losing the original task.
-- Build and tests pass.
+- ~~User can turn an inbox item into a planned small action.~~
+- ~~Minimum win is visible and saved.~~
+- ~~Tiny steps are created without losing the original task.~~
+- ~~Build and tests pass.~~
 
 ### 12. Review Workflow
 

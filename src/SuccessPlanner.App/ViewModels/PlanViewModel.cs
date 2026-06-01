@@ -13,8 +13,10 @@ public sealed class PlanViewModel : ScreenViewModelBase, INotifyPropertyChanged
     private const string NoPlanDateMessage = "No plan date selected.";
     private const string NoProjectMessage = "No project selected.";
     private readonly Func<CancellationToken, Task<IReadOnlyList<TaskItem>>> _loadInboxTasksAsync;
+    private readonly Func<TaskItem, CancellationToken, Task> _saveTaskAsync;
     private readonly Func<DateOnly> _todayProvider;
     private readonly Dictionary<Guid, TaskItem> _loadedTasksById = [];
+    private IReadOnlyList<Guid> _savedTinyStepIds = [];
     private string _statusText = ReadyStatus;
     private string _planPanelTitle = "Plan Small";
     private string _planPanelText = "Turn a loose capture into one realistic next action.";
@@ -36,7 +38,9 @@ public sealed class PlanViewModel : ScreenViewModelBase, INotifyPropertyChanged
     private TaskPriority? _selectedPriority;
     private DateOnly? _selectedDueDate;
     private Guid? _selectedInboxItemId;
+    private Guid? _lastSavedTaskId;
     private bool _isLoading;
+    private bool _isSavingPlan;
     private bool _hasPlanningChanges;
 
     public PlanViewModel()
@@ -47,10 +51,20 @@ public sealed class PlanViewModel : ScreenViewModelBase, INotifyPropertyChanged
     public PlanViewModel(
         Func<CancellationToken, Task<IReadOnlyList<TaskItem>>> loadInboxTasksAsync,
         Func<DateOnly>? todayProvider = null)
+        : this(loadInboxTasksAsync, MissingTaskRepositorySaveAsync, todayProvider)
+    {
+    }
+
+    public PlanViewModel(
+        Func<CancellationToken, Task<IReadOnlyList<TaskItem>>> loadInboxTasksAsync,
+        Func<TaskItem, CancellationToken, Task> saveTaskAsync,
+        Func<DateOnly>? todayProvider = null)
         : base(ScreenCatalog.Plan)
     {
         ArgumentNullException.ThrowIfNull(loadInboxTasksAsync);
+        ArgumentNullException.ThrowIfNull(saveTaskAsync);
         _loadInboxTasksAsync = loadInboxTasksAsync;
+        _saveTaskAsync = saveTaskAsync;
         _todayProvider = todayProvider ?? (() => DateOnly.FromDateTime(DateTime.Today));
         RefreshCommand = new AsyncRelayCommand(
             () => LoadInboxAsync(CancellationToken.None),
@@ -88,6 +102,9 @@ public sealed class PlanViewModel : ScreenViewModelBase, INotifyPropertyChanged
         ClearTinyStepsCommand = new AsyncRelayCommand(
             ClearTinyStepsAsync,
             () => CanClearTinySteps);
+        SavePlanCommand = new AsyncRelayCommand(
+            () => SavePlanAsync(CancellationToken.None),
+            () => CanSavePlan);
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -129,6 +146,8 @@ public sealed class PlanViewModel : ScreenViewModelBase, INotifyPropertyChanged
     public AsyncRelayCommand AddTinyStepCommand { get; }
 
     public AsyncRelayCommand ClearTinyStepsCommand { get; }
+
+    public AsyncRelayCommand SavePlanCommand { get; }
 
     public string StatusText
     {
@@ -287,6 +306,40 @@ public sealed class PlanViewModel : ScreenViewModelBase, INotifyPropertyChanged
 
     public bool CanClearTinySteps => CanSplitIntoTinySteps && HasTinySteps;
 
+    public Guid? LastSavedTaskId
+    {
+        get => _lastSavedTaskId;
+        private set
+        {
+            if (SetProperty(ref _lastSavedTaskId, value))
+            {
+                OnPropertyChanged(nameof(HasSavedPlan));
+            }
+        }
+    }
+
+    public IReadOnlyList<Guid> SavedTinyStepIds
+    {
+        get => _savedTinyStepIds;
+        private set
+        {
+            if (ReferenceEquals(_savedTinyStepIds, value))
+            {
+                return;
+            }
+
+            _savedTinyStepIds = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(SavedTinyStepCountText));
+        }
+    }
+
+    public bool HasSavedPlan => LastSavedTaskId.HasValue;
+
+    public string SavedTinyStepCountText => SavedTinyStepIds.Count == 1
+        ? "1 tiny step saved"
+        : $"{SavedTinyStepIds.Count} tiny steps saved";
+
     public Guid? SelectedInboxItemId
     {
         get => _selectedInboxItemId;
@@ -311,6 +364,21 @@ public sealed class PlanViewModel : ScreenViewModelBase, INotifyPropertyChanged
             {
                 RefreshCommand.RaiseCanExecuteChanged();
                 RaisePlanningCommandStatesChanged();
+                SavePlanCommand.RaiseCanExecuteChanged();
+                OnPropertyChanged(nameof(CanSavePlan));
+            }
+        }
+    }
+
+    public bool IsSavingPlan
+    {
+        get => _isSavingPlan;
+        private set
+        {
+            if (SetProperty(ref _isSavingPlan, value))
+            {
+                SavePlanCommand.RaiseCanExecuteChanged();
+                OnPropertyChanged(nameof(CanSavePlan));
             }
         }
     }
@@ -323,7 +391,11 @@ public sealed class PlanViewModel : ScreenViewModelBase, INotifyPropertyChanged
 
     public bool HasPlanningChanges => _hasPlanningChanges;
 
-    public bool CanSavePlan => HasSelectedInboxItem && HasPlanningChanges && HasMinimumWin;
+    public bool CanSavePlan => HasSelectedInboxItem
+        && HasPlanningChanges
+        && HasMinimumWin
+        && !IsLoading
+        && !IsSavingPlan;
 
     public override Task OnNavigatedToAsync(CancellationToken cancellationToken)
     {
@@ -394,6 +466,84 @@ public sealed class PlanViewModel : ScreenViewModelBase, INotifyPropertyChanged
         finally
         {
             IsLoading = false;
+        }
+    }
+
+    public async Task SavePlanAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (!CanSavePlan)
+        {
+            UpdateSaveStatus();
+            StatusText = HasMinimumWin ? "Plan draft is not ready." : "Add a minimum win before saving.";
+            return;
+        }
+
+        if (!SelectedInboxItemId.HasValue)
+        {
+            StatusText = "Plan item not found.";
+            SaveStatusText = "Refresh Plan and choose the item again.";
+            return;
+        }
+
+        if (!_loadedTasksById.TryGetValue(SelectedInboxItemId.Value, out TaskItem? selectedTask))
+        {
+            StatusText = "Plan item not found.";
+            SaveStatusText = "Refresh Plan and choose the item again.";
+            return;
+        }
+
+        IsSavingPlan = true;
+        StatusText = "Saving plan locally.";
+        SaveStatusText = "Saving plan locally.";
+
+        try
+        {
+            string selectedTitle = selectedTask.Title;
+            string minimumWin = MinimumWinDraft.Trim();
+            string projectName = ProjectName.Trim();
+            TaskPriority priority = SelectedPriority ?? selectedTask.Priority;
+            DateOnly? planDate = SelectedDueDate;
+            IReadOnlyList<string> tinyStepTitles = TinySteps
+                .Select(step => step.Title)
+                .ToList();
+            TaskItem plannedTask = CloneTask(selectedTask);
+
+            ApplyPlanningToTask(plannedTask, priority, planDate, minimumWin, projectName, tinyStepTitles);
+            await _saveTaskAsync(plannedTask, cancellationToken);
+
+            List<Guid> savedTinyStepIds = [];
+            foreach (string tinyStepTitle in tinyStepTitles)
+            {
+                TaskItem tinyStepTask = CreatePlannedTinyStep(
+                    tinyStepTitle,
+                    selectedTitle,
+                    priority,
+                    planDate,
+                    minimumWin,
+                    projectName);
+                await _saveTaskAsync(tinyStepTask, cancellationToken);
+                savedTinyStepIds.Add(tinyStepTask.Id);
+            }
+
+            LastSavedTaskId = plannedTask.Id;
+            SavedTinyStepIds = savedTinyStepIds;
+            RemoveInboxItem(plannedTask.Id);
+            ApplySavedPlanningState(selectedTitle, minimumWin, savedTinyStepIds.Count);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            StatusText = "Plan save failed.";
+            SaveStatusText = "Planning changes were not saved locally.";
+        }
+        finally
+        {
+            IsSavingPlan = false;
         }
     }
 
@@ -536,6 +686,40 @@ public sealed class PlanViewModel : ScreenViewModelBase, INotifyPropertyChanged
         ApplyUnselectedPlanningState();
     }
 
+    private void ApplySavedPlanningState(string selectedTitle, string minimumWin, int savedTinyStepCount)
+    {
+        _selectedInboxItemTitle = string.Empty;
+        SelectedInboxItemId = null;
+        SetPlanningChanges(false);
+        SelectedInboxItemText = $"Saved: {selectedTitle}";
+        PlanningStatusText = $"{selectedTitle} is now a planned small action.";
+        MinimumWinText = $"Minimum win saved: {minimumWin}";
+        SaveStatusText = $"Saved locally: {selectedTitle}{BuildSavedTinyStepPhrase(savedTinyStepCount)}.";
+        TinyStepDraft = string.Empty;
+        TinyStepStatusText = savedTinyStepCount == 1
+            ? "1 tiny step saved locally."
+            : $"{savedTinyStepCount} tiny steps saved locally.";
+        EmptyStateText = HasInboxItems
+            ? "Choose one loose capture to plan."
+            : "Plan inbox is clear for now.";
+        StatusText = "Plan saved locally.";
+    }
+
+    private void RemoveInboxItem(Guid taskId)
+    {
+        _loadedTasksById.Remove(taskId);
+        for (int index = 0; index < InboxItems.Count; index++)
+        {
+            if (InboxItems[index].Id == taskId)
+            {
+                InboxItems.RemoveAt(index);
+                break;
+            }
+        }
+
+        UpdateInboxSummary();
+    }
+
     private void ApplyUnselectedPlanningState()
     {
         PlanningStatusText = HasInboxItems
@@ -555,6 +739,133 @@ public sealed class PlanViewModel : ScreenViewModelBase, INotifyPropertyChanged
                 ? $"{InboxItems.Count} unplanned items ready."
                 : "No unplanned inbox items.";
         OnPropertyChanged(nameof(HasInboxItems));
+    }
+
+    private static void ApplyPlanningToTask(
+        TaskItem task,
+        TaskPriority priority,
+        DateOnly? planDate,
+        string minimumWin,
+        string projectName,
+        IReadOnlyList<string> tinyStepTitles)
+    {
+        task.SetPriority(priority);
+        task.Schedule(planDate, planDate);
+        task.UpdateNotes(BuildPlannedTaskNotes(task.Notes, minimumWin, projectName, tinyStepTitles));
+        task.AddTag("Plan");
+        task.AddTag("Minimum Win");
+
+        if (!string.IsNullOrWhiteSpace(projectName))
+        {
+            task.AddTag("Project");
+        }
+
+        if (tinyStepTitles.Count > 0)
+        {
+            task.AddTag("Tiny Steps");
+        }
+    }
+
+    private static TaskItem CreatePlannedTinyStep(
+        string title,
+        string sourceTitle,
+        TaskPriority priority,
+        DateOnly? planDate,
+        string minimumWin,
+        string projectName)
+    {
+        TaskItem task = TaskItem.Capture(title);
+        task.SetPriority(priority);
+        task.Schedule(planDate, planDate);
+        task.MarkTinyStep();
+        task.UpdateNotes(BuildTinyStepNotes(sourceTitle, minimumWin, projectName));
+        task.AddTag("Plan");
+        task.AddTag("Tiny Step");
+        task.AddTag("Minimum Win");
+
+        if (!string.IsNullOrWhiteSpace(projectName))
+        {
+            task.AddTag("Project");
+        }
+
+        return task;
+    }
+
+    private static string BuildPlannedTaskNotes(
+        string existingNotes,
+        string minimumWin,
+        string projectName,
+        IReadOnlyList<string> tinyStepTitles)
+    {
+        List<string> lines = [];
+        if (!string.IsNullOrWhiteSpace(existingNotes))
+        {
+            lines.Add(existingNotes.Trim());
+            lines.Add(string.Empty);
+        }
+
+        lines.Add($"Minimum Win: {minimumWin}");
+        if (!string.IsNullOrWhiteSpace(projectName))
+        {
+            lines.Add($"Project: {projectName}");
+        }
+
+        if (tinyStepTitles.Count > 0)
+        {
+            lines.Add("Tiny Steps:");
+            for (int index = 0; index < tinyStepTitles.Count; index++)
+            {
+                lines.Add($"{index + 1}. {tinyStepTitles[index]}");
+            }
+        }
+
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    private static string BuildTinyStepNotes(string sourceTitle, string minimumWin, string projectName)
+    {
+        List<string> lines =
+        [
+            $"Split from: {sourceTitle}",
+            $"Minimum Win: {minimumWin}"
+        ];
+
+        if (!string.IsNullOrWhiteSpace(projectName))
+        {
+            lines.Add($"Project: {projectName}");
+        }
+
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    private static TaskItem CloneTask(TaskItem task)
+    {
+        return TaskItem.Rehydrate(
+            task.Id,
+            task.Title,
+            task.CreatedAt,
+            task.Status,
+            task.Priority,
+            notes: task.Notes,
+            dueDate: task.DueDate,
+            startDate: task.StartDate,
+            completedAt: task.CompletedAt,
+            projectId: task.ProjectId,
+            estimatedMinutes: task.EstimatedMinutes,
+            energyLevel: task.EnergyLevel,
+            isTinyStep: task.IsTinyStep,
+            isPhysicalActivity: task.IsPhysicalActivity,
+            tags: task.Tags);
+    }
+
+    private static string BuildSavedTinyStepPhrase(int savedTinyStepCount)
+    {
+        return savedTinyStepCount switch
+        {
+            0 => string.Empty,
+            1 => " plus 1 tiny step",
+            _ => $" plus {savedTinyStepCount} tiny steps"
+        };
     }
 
     private void SetProjectName(string value, bool updatePlanningState)
@@ -584,6 +895,7 @@ public sealed class PlanViewModel : ScreenViewModelBase, INotifyPropertyChanged
 
         OnPropertyChanged(nameof(HasMinimumWin));
         OnPropertyChanged(nameof(CanSavePlan));
+        SavePlanCommand.RaiseCanExecuteChanged();
         UpdateMinimumWinText();
 
         if (updatePlanningState && HasSelectedInboxItem)
@@ -711,12 +1023,14 @@ public sealed class PlanViewModel : ScreenViewModelBase, INotifyPropertyChanged
         if (_hasPlanningChanges == value)
         {
             OnPropertyChanged(nameof(CanSavePlan));
+            SavePlanCommand.RaiseCanExecuteChanged();
             return;
         }
 
         _hasPlanningChanges = value;
         OnPropertyChanged(nameof(HasPlanningChanges));
         OnPropertyChanged(nameof(CanSavePlan));
+        SavePlanCommand.RaiseCanExecuteChanged();
     }
 
     private void RaisePlanningCommandStatesChanged()
@@ -732,6 +1046,7 @@ public sealed class PlanViewModel : ScreenViewModelBase, INotifyPropertyChanged
         SplitIntoTinyStepsCommand.RaiseCanExecuteChanged();
         AddTinyStepCommand.RaiseCanExecuteChanged();
         ClearTinyStepsCommand.RaiseCanExecuteChanged();
+        SavePlanCommand.RaiseCanExecuteChanged();
         OnPropertyChanged(nameof(CanSplitIntoTinySteps));
         OnPropertyChanged(nameof(CanAddTinyStep));
         OnPropertyChanged(nameof(CanClearTinySteps));
@@ -759,6 +1074,11 @@ public sealed class PlanViewModel : ScreenViewModelBase, INotifyPropertyChanged
             TaskPriority.Low => "Low",
             _ => priority.ToString()
         };
+    }
+
+    private static Task MissingTaskRepositorySaveAsync(TaskItem task, CancellationToken cancellationToken)
+    {
+        throw new InvalidOperationException("Task repository save is not configured.");
     }
 
     private bool SetProperty<T>(
