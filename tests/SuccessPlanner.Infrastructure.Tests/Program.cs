@@ -23,6 +23,7 @@ TestRunner.RunAll(
     ("TaskRepository deletes tasks", TaskRepositoryDeletesTasks),
     ("CaptureViewModel saves captured tasks through TaskRepository", CaptureViewModelSavesCapturedTasksThroughTaskRepository),
     ("PlanViewModel saves planning changes through TaskRepository", PlanViewModelSavesPlanningChangesThroughTaskRepository),
+    ("ReviewViewModel loads small wins through NoteRepository", ReviewViewModelLoadsSmallWinsThroughNoteRepository),
     ("FocusSessionRepository saves and loads focus session state", FocusSessionRepositorySavesAndLoadsFocusSessionState),
     ("StartWorkViewModel records focus sessions through repositories", StartWorkViewModelRecordsFocusSessionsThroughRepositories),
     ("MovementSessionRepository saves and loads movement state", MovementSessionRepositorySavesAndLoadsMovementSessionState),
@@ -618,6 +619,37 @@ static async Task PlanViewModelSavesPlanningChangesThroughTaskRepository()
     Assert.True(savedTinySteps.All(task => task.IsTinyStep), "Tiny steps should be stored as task records.");
     Assert.True(savedTinySteps.All(task => task.Status == TaskItemStatus.Planned), "Tiny steps should persist planned state.");
     Assert.True(savedTinySteps.All(task => task.Notes.Contains("Split from: Plan the local workflow", StringComparison.Ordinal)), "Tiny steps should keep the source context.");
+}
+
+static async Task ReviewViewModelLoadsSmallWinsThroughNoteRepository()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+    await CreateMigratedDatabaseAsync(paths);
+
+    TaskRepository taskRepository = new(paths);
+    NoteRepository noteRepository = new(paths);
+    TaskItem completedTask = CreateRepositoryTask("Finish active task", inProgress: true);
+    completedTask.Complete(new DateTimeOffset(2026, 5, 30, 14, 0, 0, TimeSpan.Zero));
+    await taskRepository.AddAsync(completedTask, CancellationToken.None);
+    NoteItem smallWin = await noteRepository.AddTaskSmallWinAsync(completedTask, CancellationToken.None);
+    NoteItem regularNote = NoteItem.Create(NoteOwnerType.Task, completedTask.Id, "Private task note.");
+    await noteRepository.AddAsync(regularNote, CancellationToken.None);
+
+    ReviewViewModel viewModel = new(noteRepository.GetReviewHighlightsAsync);
+
+    await viewModel.LoadReviewAsync(CancellationToken.None);
+
+    Assert.True(viewModel.HasSmallWins, "Review should load small wins from note review highlights.");
+    Assert.True(viewModel.HasReviewData, "Review should expose loaded review data.");
+    Assert.Equal(1, viewModel.SmallWins.Count);
+    Assert.Equal(smallWin.Id, viewModel.SmallWins[0].Id);
+    Assert.Equal("Small win: Finish active task", viewModel.SmallWins[0].Text);
+    Assert.Equal("Task win", viewModel.SmallWins[0].SourceText);
+    Assert.Equal("1 review item", viewModel.ReviewCountText);
+    Assert.Equal("1 small win this review.", viewModel.WeekSummaryText);
+    Assert.Equal("1 small win ready.", viewModel.SmallWinsText);
+    Assert.Equal("Small wins ready.", viewModel.StatusText);
 }
 
 static async Task FocusSessionRepositorySavesAndLoadsFocusSessionState()

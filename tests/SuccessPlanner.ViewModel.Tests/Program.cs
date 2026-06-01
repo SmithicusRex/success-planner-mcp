@@ -37,6 +37,10 @@ TestRunner.RunAll(
     ("PlanViewModel shows an empty unplanned inbox", PlanViewModelShowsEmptyUnplannedInbox),
     ("PlanViewModel reports load failures", PlanViewModelReportsLoadFailures),
     ("ReviewViewModel starts in a simple ready state", ReviewViewModelStartsReady),
+    ("ReviewViewModel loads small wins", ReviewViewModelLoadsSmallWins),
+    ("ReviewViewModel shows empty small wins state", ReviewViewModelShowsEmptySmallWinsState),
+    ("ReviewViewModel reports load failures", ReviewViewModelReportsLoadFailures),
+    ("ReviewViewModel creates small win display state", ReviewViewModelCreatesSmallWinDisplayState),
     ("StartWorkViewModel starts in a simple ready state", StartWorkViewModelStartsReady),
     ("StartWorkViewModel applies session choices", StartWorkViewModelAppliesSessionChoices),
     ("StartWorkViewModel loads focus task options", StartWorkViewModelLoadsFocusTaskOptions),
@@ -1624,12 +1628,99 @@ static void ReviewViewModelStartsReady()
     Assert.Equal("Review will show progress after local activity is loaded.", viewModel.EmptyStateText);
     Assert.Equal("0 review items", viewModel.ReviewCountText);
     Assert.False(viewModel.IsLoadingReview, "Review should start idle.");
+    Assert.Equal(0, viewModel.SmallWins.Count);
     Assert.False(viewModel.HasReviewData, "Review should wait for loaded summary data.");
     Assert.False(viewModel.HasSmallWins, "Small wins should wait for Review loading.");
     Assert.False(viewModel.HasStuckItems, "Stuck items should wait for Review loading.");
     Assert.False(viewModel.HasNeedsDecisionItems, "Needs-decision items should wait for Review loading.");
     Assert.False(viewModel.HasNextFocus, "Next focus should wait for user selection.");
     Assert.False(viewModel.CanSaveReview, "Review should not save before a next focus is selected.");
+    Assert.True(viewModel.RefreshCommand.CanExecute(null), "Refresh should be available when Review is idle.");
+}
+
+static void ReviewViewModelLoadsSmallWins()
+{
+    DateTimeOffset oldTime = new(2026, 5, 29, 10, 0, 0, TimeSpan.Zero);
+    DateTimeOffset recentTime = new(2026, 5, 30, 14, 0, 0, TimeSpan.Zero);
+    NoteItem oldWin = CreateReviewHighlight("Small win: Sketch the idea", oldTime);
+    NoteItem recentWin = CreateReviewHighlight("Small win: Finish active task", recentTime);
+    NoteItem ignoredNote = NoteItem.Rehydrate(
+        Guid.NewGuid(),
+        NoteOwnerType.Task,
+        Guid.NewGuid(),
+        "Not marked for review",
+        recentTime.AddMinutes(1),
+        recentTime.AddMinutes(1));
+    ReviewViewModel viewModel = new(_ => Task.FromResult<IReadOnlyList<NoteItem>>([oldWin, ignoredNote, recentWin]));
+
+    viewModel.LoadReviewAsync().GetAwaiter().GetResult();
+
+    Assert.True(viewModel.HasReviewData, "Review should show data after loading small wins.");
+    Assert.True(viewModel.HasSmallWins, "Review should expose loaded small wins.");
+    Assert.Equal(2, viewModel.SmallWins.Count);
+    Assert.Equal(recentWin.Id, viewModel.SmallWins[0].Id);
+    Assert.Equal("Small win: Finish active task", viewModel.SmallWins[0].Text);
+    Assert.Equal(oldWin.Id, viewModel.SmallWins[1].Id);
+    Assert.Equal("2 review items", viewModel.ReviewCountText);
+    Assert.Equal("2 small wins this review.", viewModel.WeekSummaryText);
+    Assert.Equal("2 small wins ready.", viewModel.SmallWinsText);
+    Assert.Equal("Small wins ready.", viewModel.StatusText);
+    Assert.Contains("local completions", viewModel.EmptyStateText);
+    Assert.False(viewModel.IsLoadingReview, "Loading flag should clear after small wins load.");
+    Assert.True(viewModel.RefreshCommand.CanExecute(null), "Refresh should return after loading.");
+}
+
+static void ReviewViewModelShowsEmptySmallWinsState()
+{
+    ReviewViewModel viewModel = new(_ => Task.FromResult<IReadOnlyList<NoteItem>>([]));
+
+    viewModel.LoadReviewAsync().GetAwaiter().GetResult();
+
+    Assert.False(viewModel.HasReviewData, "Empty load should not report review data.");
+    Assert.False(viewModel.HasSmallWins, "Empty load should not report small wins.");
+    Assert.Equal(0, viewModel.SmallWins.Count);
+    Assert.Equal("0 review items", viewModel.ReviewCountText);
+    Assert.Equal("No local wins loaded yet.", viewModel.WeekSummaryText);
+    Assert.Equal("No small wins yet.", viewModel.SmallWinsText);
+    Assert.Equal("No small wins yet.", viewModel.StatusText);
+    Assert.Contains("Complete one small task", viewModel.EmptyStateText);
+}
+
+static void ReviewViewModelReportsLoadFailures()
+{
+    ReviewViewModel viewModel = new(_ => throw new InvalidOperationException("Review storage unavailable."));
+
+    viewModel.LoadReviewAsync().GetAwaiter().GetResult();
+
+    Assert.False(viewModel.HasReviewData, "Failed load should not leave review data visible.");
+    Assert.False(viewModel.HasSmallWins, "Failed load should clear small wins.");
+    Assert.Equal(0, viewModel.SmallWins.Count);
+    Assert.Equal("0 review items", viewModel.ReviewCountText);
+    Assert.Equal("Review could not load.", viewModel.StatusText);
+    Assert.Equal("Review highlights could not load.", viewModel.WeekSummaryText);
+    Assert.Equal("Small wins could not load.", viewModel.SmallWinsText);
+    Assert.Contains("Try Review again", viewModel.EmptyStateText);
+    Assert.False(viewModel.IsLoadingReview, "Loading flag should clear after failure.");
+    Assert.True(viewModel.RefreshCommand.CanExecute(null), "Refresh should be available after failure.");
+}
+
+static void ReviewViewModelCreatesSmallWinDisplayState()
+{
+    DateTimeOffset createdAt = new(2026, 5, 30, 14, 0, 0, TimeSpan.Zero);
+    NoteItem note = CreateReviewHighlight("Small win: Finish active task", createdAt);
+
+    ReviewSmallWinViewModel card = ReviewSmallWinViewModel.FromNote(note);
+
+    Assert.Equal(note.Id, card.Id);
+    Assert.Equal(NoteOwnerType.Task, card.OwnerType);
+    Assert.Equal(note.OwnerId.GetValueOrDefault(), card.OwnerId.GetValueOrDefault());
+    Assert.Equal("Small win: Finish active task", card.Text);
+    Assert.Equal(createdAt, card.CreatedAt);
+    Assert.Equal("Task win", card.SourceText);
+    Assert.True(card.HasSource, "Small win card should expose its source.");
+    Assert.Equal("Small Win", card.BadgeText);
+    Assert.Equal("\uE73E", card.CardIconGlyph);
+    Assert.Contains("Finish active task", card.CardToolTip);
 }
 
 static void MoveViewModelStartsReady()
@@ -2105,6 +2196,19 @@ static TaskItem CreateTask(
     }
 
     return task;
+}
+
+static NoteItem CreateReviewHighlight(string text, DateTimeOffset createdAt)
+{
+    return NoteItem.Rehydrate(
+        Guid.NewGuid(),
+        NoteOwnerType.Task,
+        Guid.NewGuid(),
+        text,
+        createdAt,
+        createdAt,
+        isReviewHighlight: true,
+        tags: ["Review", "Win", "Small Win"]);
 }
 
 internal static class TestRunner

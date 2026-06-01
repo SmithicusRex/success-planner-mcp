@@ -86,6 +86,15 @@
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <Style x:Key="SmallWinListVisibilityStyle" TargetType="ItemsControl">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding HasSmallWins}" Value="True">
+                    <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
     </UserControl.Resources>
 
     <Grid>
@@ -275,6 +284,53 @@
                                            Style="{StaticResource StateLabelStyle}" />
                                 <TextBlock Text="{Binding SmallWinsText}"
                                            Style="{StaticResource StateValueStyle}" />
+                                <ItemsControl ItemsSource="{Binding SmallWins}"
+                                              Margin="0,14,0,0"
+                                              Style="{StaticResource SmallWinListVisibilityStyle}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Margin="0,0,0,12"
+                                                  ToolTip="{Binding CardToolTip}">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="10" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+
+                                                <Border Width="34"
+                                                        Height="34"
+                                                        CornerRadius="8"
+                                                        Background="{Binding CardAccentColor}">
+                                                    <TextBlock Text="{Binding CardIconGlyph}"
+                                                               FontFamily="Segoe MDL2 Assets"
+                                                               FontSize="14"
+                                                               Foreground="{StaticResource InkBrush}"
+                                                               HorizontalAlignment="Center"
+                                                               VerticalAlignment="Center" />
+                                                </Border>
+
+                                                <StackPanel Grid.Column="2">
+                                                    <TextBlock Text="{Binding Text}"
+                                                               Foreground="{StaticResource InkBrush}"
+                                                               FontSize="14"
+                                                               FontWeight="SemiBold"
+                                                               TextWrapping="Wrap" />
+                                                    <WrapPanel Margin="0,5,0,0">
+                                                        <TextBlock Text="{Binding SourceText}"
+                                                                   Foreground="#1E6B3A"
+                                                                   FontSize="12"
+                                                                   FontWeight="SemiBold"
+                                                                   Margin="0,0,10,0" />
+                                                        <TextBlock Text="{Binding CreatedText}"
+                                                                   Foreground="{StaticResource MutedBrush}"
+                                                                   FontSize="12"
+                                                                   FontWeight="SemiBold" />
+                                                    </WrapPanel>
+                                                </StackPanel>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
                             </StackPanel>
                         </Border>
 
