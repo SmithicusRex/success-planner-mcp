@@ -985,7 +985,7 @@ Benchmark gate:
 
 ~~11.1. Create `PlanViewModel`.~~
 
-11.2. Create `PlanView`.
+~~11.2. Create `PlanView`.~~
 
 11.3. Show unplanned inbox.
 
