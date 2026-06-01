@@ -28,6 +28,7 @@ TestRunner.RunAll(
     ("DoneViewModel reports load failures", DoneViewModelReportsLoadFailures),
     ("PlanViewModel starts in a simple ready state", PlanViewModelStartsReady),
     ("PlanViewModel loads unplanned inbox", PlanViewModelLoadsUnplannedInbox),
+    ("PlanViewModel applies planning controls", PlanViewModelAppliesPlanningControls),
     ("PlanViewModel creates inbox card display state", PlanViewModelCreatesInboxCardDisplayState),
     ("PlanViewModel shows an empty unplanned inbox", PlanViewModelShowsEmptyUnplannedInbox),
     ("PlanViewModel reports load failures", PlanViewModelReportsLoadFailures),
@@ -1239,9 +1240,25 @@ static void PlanViewModelStartsReady()
     Assert.False(viewModel.IsLoading, "Plan should start idle.");
     Assert.False(viewModel.HasInboxItems, "Plan should wait for inbox loading.");
     Assert.False(viewModel.HasSelectedInboxItem, "Plan should start without a selected inbox item.");
+    Assert.False(viewModel.HasPlanningControls, "Plan controls should wait for a selected inbox item.");
     Assert.False(viewModel.HasPlanningChanges, "Plan should start without planning changes.");
     Assert.False(viewModel.CanSavePlan, "Plan should not save before planning changes.");
+    Assert.Null(viewModel.SelectedPriority, "Plan should start without a selected priority.");
+    Assert.Equal("No priority selected.", viewModel.PriorityText);
+    Assert.False(viewModel.IsLowPrioritySelected, "Low priority should start unselected.");
+    Assert.False(viewModel.IsNormalPrioritySelected, "Normal priority should start unselected.");
+    Assert.False(viewModel.IsHighPrioritySelected, "High priority should start unselected.");
+    Assert.False(viewModel.IsCriticalPrioritySelected, "Critical priority should start unselected.");
+    Assert.Null(viewModel.SelectedDueDate, "Plan should start without a selected date.");
+    Assert.Equal("No plan date selected.", viewModel.DateHintText);
+    Assert.Equal(string.Empty, viewModel.ProjectName);
+    Assert.Equal("No project selected.", viewModel.ProjectText);
+    Assert.False(viewModel.HasProjectName, "Plan should start without a project name.");
+    Assert.Equal(string.Empty, viewModel.MinimumWinDraft);
+    Assert.False(viewModel.HasMinimumWin, "Plan should start without a minimum win.");
     Assert.True(viewModel.RefreshCommand.CanExecute(null), "Refresh should be available when Plan is idle.");
+    Assert.False(viewModel.ChooseLowPriorityCommand.CanExecute(null), "Priority controls should wait for selection.");
+    Assert.False(viewModel.TodayDateCommand.CanExecute(null), "Date controls should wait for selection.");
 }
 
 static void PlanViewModelLoadsUnplannedInbox()
@@ -1279,6 +1296,70 @@ static void PlanViewModelLoadsUnplannedInbox()
     Assert.Equal("Minimum win pending for Loose capture.", viewModel.MinimumWinText);
     Assert.Equal("Planning changes not saved yet.", viewModel.SaveStatusText);
     Assert.Equal("Inbox item selected.", viewModel.StatusText);
+    Assert.Equal(TaskPriority.Normal, viewModel.SelectedPriority.GetValueOrDefault());
+    Assert.Equal("Normal priority", viewModel.PriorityText);
+    Assert.True(viewModel.IsNormalPrioritySelected, "Selected inbox item should apply its current priority.");
+    Assert.True(viewModel.HasPlanningControls, "Selecting an inbox item should unlock Plan controls.");
+    Assert.True(viewModel.ChooseHighPriorityCommand.CanExecute(null), "Priority choices should unlock after selection.");
+    Assert.True(viewModel.TodayDateCommand.CanExecute(null), "Date choices should unlock after selection.");
+    Assert.False(viewModel.HasPlanningChanges, "Selecting an inbox item alone should not mark planning changed.");
+    Assert.False(viewModel.CanSavePlan, "Minimum win should be required before plan draft is save-ready.");
+}
+
+static void PlanViewModelAppliesPlanningControls()
+{
+    DateOnly today = new(2026, 5, 30);
+    TaskItem task = CreateTask("Build plan controls");
+    PlanViewModel viewModel = new(
+        _ => Task.FromResult<IReadOnlyList<TaskItem>>([task]),
+        () => today);
+
+    viewModel.LoadInboxAsync().GetAwaiter().GetResult();
+    viewModel.SelectInboxItem(viewModel.InboxItems[0]);
+
+    viewModel.ChooseHighPriorityCommand.Execute(null);
+
+    Assert.Equal(TaskPriority.High, viewModel.SelectedPriority.GetValueOrDefault());
+    Assert.Equal("High priority", viewModel.PriorityText);
+    Assert.True(viewModel.IsHighPrioritySelected, "High priority button should become selected.");
+    Assert.True(viewModel.HasPlanningChanges, "Priority choice should mark the draft changed.");
+    Assert.False(viewModel.CanSavePlan, "Minimum win should still be required.");
+    Assert.Equal("Add a minimum win before saving.", viewModel.SaveStatusText);
+
+    viewModel.TodayDateCommand.Execute(null);
+
+    Assert.Equal(today, viewModel.SelectedDueDate.GetValueOrDefault());
+    Assert.Equal("Today: May 30", viewModel.DateHintText);
+    Assert.Contains("Today: May 30", viewModel.PlanningStatusText);
+
+    viewModel.TomorrowDateCommand.Execute(null);
+
+    Assert.Equal(today.AddDays(1), viewModel.SelectedDueDate.GetValueOrDefault());
+    Assert.Equal("Tomorrow: May 31", viewModel.DateHintText);
+
+    viewModel.ThisWeekDateCommand.Execute(null);
+
+    Assert.Equal(today.AddDays(7), viewModel.SelectedDueDate.GetValueOrDefault());
+    Assert.Equal("This week: Jun 6", viewModel.DateHintText);
+
+    viewModel.ClearDateCommand.Execute(null);
+
+    Assert.Null(viewModel.SelectedDueDate, "No Date should clear the selected plan date.");
+    Assert.Equal("No plan date selected.", viewModel.DateHintText);
+
+    viewModel.ProjectName = "  Success Planner  ";
+
+    Assert.True(viewModel.HasProjectName, "Project text should mark a project name present.");
+    Assert.Equal("Project: Success Planner", viewModel.ProjectText);
+    Assert.Contains("Project: Success Planner", viewModel.PlanningStatusText);
+
+    viewModel.MinimumWinDraft = "Pick one realistic next action";
+
+    Assert.True(viewModel.HasMinimumWin, "Minimum win text should mark a minimum win present.");
+    Assert.Equal("Minimum win: Pick one realistic next action", viewModel.MinimumWinText);
+    Assert.True(viewModel.CanSavePlan, "Priority, project, and minimum win draft should be save-ready.");
+    Assert.Equal("Draft ready for local save.", viewModel.SaveStatusText);
+    Assert.Equal("Minimum win updated.", viewModel.StatusText);
 }
 
 static void PlanViewModelCreatesInboxCardDisplayState()

@@ -125,6 +125,18 @@
             </Setter>
         </Style>
 
+        <Style x:Key="PlanTextBoxStyle" TargetType="TextBox">
+            <Setter Property="MinHeight" Value="42" />
+            <Setter Property="Padding" Value="10,7" />
+            <Setter Property="Background" Value="#FFFFFF" />
+            <Setter Property="BorderBrush" Value="#D7DADF" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+
         <Style x:Key="InboxListVisibilityStyle" TargetType="ScrollViewer">
             <Setter Property="Visibility" Value="Visible" />
             <Style.Triggers>
@@ -538,101 +550,229 @@
                 </Grid>
             </Border>
 
-            <Grid Grid.Column="2">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="18" />
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="18" />
-                    <RowDefinition Height="*" />
-                </Grid.RowDefinitions>
+            <ScrollViewer Grid.Column="2"
+                          VerticalScrollBarVisibility="Auto">
+                <StackPanel>
+                    <Border Background="{StaticResource PanelBrush}"
+                            BorderBrush="#E5E1D8"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Padding="22"
+                            IsEnabled="{Binding HasSelectedInboxItem}">
+                        <StackPanel>
+                            <TextBlock Text="Plan Controls"
+                                       Style="{StaticResource SectionTitleStyle}" />
+                            <Border Height="10"
+                                    CornerRadius="5"
+                                    Background="{StaticResource PlanBrush}"
+                                    Margin="0,4,0,16" />
 
-                <Border Background="{StaticResource PanelBrush}"
-                        BorderBrush="#E5E1D8"
-                        BorderThickness="1"
-                        CornerRadius="8"
-                        Padding="22">
-                    <StackPanel>
-                        <TextBlock Text="Planning Status"
-                                   Style="{StaticResource SectionTitleStyle}" />
-                        <Border Height="10"
-                                CornerRadius="5"
-                                Background="{StaticResource PlanBrush}"
-                                Margin="0,4,0,16" />
-                        <TextBlock Text="{Binding PlanningStatusText}"
-                                   Style="{StaticResource QuietTextStyle}" />
-                    </StackPanel>
-                </Border>
+                            <TextBlock Text="Priority"
+                                       Style="{StaticResource StateLabelStyle}" />
+                            <UniformGrid Columns="2"
+                                         Margin="0,0,0,12">
+                                <Button Command="{Binding ChooseLowPriorityCommand}"
+                                        Content="Low"
+                                        Margin="0,0,8,8"
+                                        ToolTip="Low priority">
+                                    <Button.Style>
+                                        <Style TargetType="Button" BasedOn="{StaticResource PlanActionButtonStyle}">
+                                            <Setter Property="MinWidth" Value="0" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsLowPrioritySelected}" Value="True">
+                                                    <Setter Property="Background" Value="{StaticResource BlueSoftBrush}" />
+                                                    <Setter Property="BorderBrush" Value="#9DCCFF" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                </Button>
+                                <Button Command="{Binding ChooseNormalPriorityCommand}"
+                                        Content="Normal"
+                                        Margin="0,0,0,8"
+                                        ToolTip="Normal priority">
+                                    <Button.Style>
+                                        <Style TargetType="Button" BasedOn="{StaticResource PlanActionButtonStyle}">
+                                            <Setter Property="MinWidth" Value="0" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsNormalPrioritySelected}" Value="True">
+                                                    <Setter Property="Background" Value="#F5F3EE" />
+                                                    <Setter Property="BorderBrush" Value="#B8C0CC" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                </Button>
+                                <Button Command="{Binding ChooseHighPriorityCommand}"
+                                        Content="High"
+                                        Margin="0,0,8,0"
+                                        ToolTip="High priority">
+                                    <Button.Style>
+                                        <Style TargetType="Button" BasedOn="{StaticResource PlanActionButtonStyle}">
+                                            <Setter Property="MinWidth" Value="0" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsHighPrioritySelected}" Value="True">
+                                                    <Setter Property="Background" Value="{StaticResource PlanBrush}" />
+                                                    <Setter Property="BorderBrush" Value="#E4CD75" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                </Button>
+                                <Button Command="{Binding ChooseCriticalPriorityCommand}"
+                                        Content="Critical"
+                                        ToolTip="Critical priority">
+                                    <Button.Style>
+                                        <Style TargetType="Button" BasedOn="{StaticResource PlanActionButtonStyle}">
+                                            <Setter Property="MinWidth" Value="0" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsCriticalPrioritySelected}" Value="True">
+                                                    <Setter Property="Background" Value="#F8A8A8" />
+                                                    <Setter Property="BorderBrush" Value="#EAB1B1" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                </Button>
+                            </UniformGrid>
 
-                <Border Grid.Row="2"
-                        Background="{StaticResource PanelBrush}"
-                        BorderBrush="#E5E1D8"
-                        BorderThickness="1"
-                        CornerRadius="8"
-                        Padding="22">
-                    <StackPanel>
-                        <TextBlock Text="Local Status"
-                                   Style="{StaticResource SectionTitleStyle}" />
-                        <Border Height="10"
-                                CornerRadius="5"
-                                Background="#A8E6B1"
-                                Margin="0,4,0,16" />
-                        <TextBlock Text="{Binding SaveStatusText}"
-                                   Style="{StaticResource QuietTextStyle}" />
-                    </StackPanel>
-                </Border>
+                            <TextBlock Text="Date"
+                                       Style="{StaticResource StateLabelStyle}" />
+                            <UniformGrid Columns="2"
+                                         Margin="0,0,0,12">
+                                <Button Command="{Binding ClearDateCommand}"
+                                        Content="No Date"
+                                        Style="{StaticResource PlanActionButtonStyle}"
+                                        MinWidth="0"
+                                        Margin="0,0,8,8"
+                                        ToolTip="No plan date" />
+                                <Button Command="{Binding TodayDateCommand}"
+                                        Content="Today"
+                                        Style="{StaticResource PlanActionButtonStyle}"
+                                        MinWidth="0"
+                                        Margin="0,0,0,8"
+                                        ToolTip="Plan for today" />
+                                <Button Command="{Binding TomorrowDateCommand}"
+                                        Content="Tomorrow"
+                                        Style="{StaticResource PlanActionButtonStyle}"
+                                        MinWidth="0"
+                                        Margin="0,0,8,0"
+                                        ToolTip="Plan for tomorrow" />
+                                <Button Command="{Binding ThisWeekDateCommand}"
+                                        Content="This Week"
+                                        Style="{StaticResource PlanActionButtonStyle}"
+                                        MinWidth="0"
+                                        ToolTip="Plan for this week" />
+                            </UniformGrid>
 
-                <Border Grid.Row="4"
-                        Background="{StaticResource PanelBrush}"
-                        BorderBrush="#E5E1D8"
-                        BorderThickness="1"
-                        CornerRadius="8"
-                        Padding="22">
-                    <StackPanel>
-                        <TextBlock Text="Plan Draft"
-                                   Style="{StaticResource SectionTitleStyle}" />
-                        <Border Height="10"
-                                CornerRadius="5"
-                                Background="#9DCCFF"
-                                Margin="0,4,0,16" />
-                        <Border Background="{StaticResource RoseSoftBrush}"
-                                BorderBrush="#F3CACA"
-                                BorderThickness="1"
-                                CornerRadius="8"
-                                Padding="14">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="10" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
+                            <TextBlock Text="Project"
+                                       Style="{StaticResource StateLabelStyle}" />
+                            <TextBox Text="{Binding ProjectName, UpdateSourceTrigger=PropertyChanged}"
+                                     Style="{StaticResource PlanTextBoxStyle}"
+                                     Margin="0,0,0,12"
+                                     ToolTip="Project name" />
 
-                                <Border Width="38"
-                                        Height="38"
-                                        CornerRadius="8"
-                                        Background="#FFFFFF"
-                                        BorderBrush="#F3CACA"
-                                        BorderThickness="1">
-                                    <TextBlock Text="&#xE783;"
-                                               FontFamily="Segoe MDL2 Assets"
-                                               FontSize="16"
-                                               Foreground="#8A3434"
-                                               HorizontalAlignment="Center"
-                                               VerticalAlignment="Center" />
-                                </Border>
+                            <TextBlock Text="Minimum Win"
+                                       Style="{StaticResource StateLabelStyle}" />
+                            <TextBox Text="{Binding MinimumWinDraft, UpdateSourceTrigger=PropertyChanged}"
+                                     Style="{StaticResource PlanTextBoxStyle}"
+                                     AcceptsReturn="True"
+                                     MinHeight="74"
+                                     VerticalContentAlignment="Top"
+                                     ToolTip="Minimum win" />
+                        </StackPanel>
+                    </Border>
 
-                                <TextBlock Grid.Column="2"
-                                           Text="{Binding EmptyStateText}"
-                                           Foreground="#8A3434"
-                                           FontSize="15"
+                    <Border Background="{StaticResource PanelBrush}"
+                            BorderBrush="#E5E1D8"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Padding="22"
+                            Margin="0,18,0,0">
+                        <StackPanel>
+                            <TextBlock Text="Planning Status"
+                                       Style="{StaticResource SectionTitleStyle}" />
+                            <Border Height="10"
+                                    CornerRadius="5"
+                                    Background="{StaticResource PlanBrush}"
+                                    Margin="0,4,0,16" />
+                            <TextBlock Text="{Binding PlanningStatusText}"
+                                       Style="{StaticResource QuietTextStyle}" />
+                            <StackPanel Margin="0,14,0,0">
+                                <TextBlock Text="{Binding PriorityText}"
+                                           Foreground="{StaticResource InkBrush}"
+                                           FontSize="14"
                                            FontWeight="SemiBold"
+                                           TextWrapping="Wrap" />
+                                <TextBlock Text="{Binding DateHintText}"
+                                           Foreground="{StaticResource MutedBrush}"
+                                           FontSize="13"
                                            TextWrapping="Wrap"
-                                           VerticalAlignment="Center" />
-                            </Grid>
-                        </Border>
-                    </StackPanel>
-                </Border>
-            </Grid>
+                                           Margin="0,5,0,0" />
+                                <TextBlock Text="{Binding ProjectText}"
+                                           Foreground="{StaticResource MutedBrush}"
+                                           FontSize="13"
+                                           TextWrapping="Wrap"
+                                           Margin="0,5,0,0" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Background="{StaticResource PanelBrush}"
+                            BorderBrush="#E5E1D8"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Padding="22"
+                            Margin="0,18,0,0">
+                        <StackPanel>
+                            <TextBlock Text="Plan Draft"
+                                       Style="{StaticResource SectionTitleStyle}" />
+                            <Border Height="10"
+                                    CornerRadius="5"
+                                    Background="#9DCCFF"
+                                    Margin="0,4,0,16" />
+                            <TextBlock Text="{Binding SaveStatusText}"
+                                       Style="{StaticResource QuietTextStyle}" />
+                            <Border Background="{StaticResource RoseSoftBrush}"
+                                    BorderBrush="#F3CACA"
+                                    BorderThickness="1"
+                                    CornerRadius="8"
+                                    Padding="14"
+                                    Margin="0,14,0,0">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="10" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <Border Width="38"
+                                            Height="38"
+                                            CornerRadius="8"
+                                            Background="#FFFFFF"
+                                            BorderBrush="#F3CACA"
+                                            BorderThickness="1">
+                                        <TextBlock Text="&#xE73E;"
+                                                   FontFamily="Segoe MDL2 Assets"
+                                                   FontSize="16"
+                                                   Foreground="#8A3434"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center" />
+                                    </Border>
+
+                                    <TextBlock Grid.Column="2"
+                                               Text="{Binding MinimumWinText}"
+                                               Foreground="#8A3434"
+                                               FontSize="15"
+                                               FontWeight="SemiBold"
+                                               TextWrapping="Wrap"
+                                               VerticalAlignment="Center" />
+                                </Grid>
+                            </Border>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
         </Grid>
     </Grid>
 </UserControl>

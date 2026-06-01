@@ -10,7 +10,10 @@ namespace SuccessPlanner.App.ViewModels;
 public sealed class PlanViewModel : ScreenViewModelBase, INotifyPropertyChanged
 {
     private const string ReadyStatus = "Ready to plan.";
+    private const string NoPlanDateMessage = "No plan date selected.";
+    private const string NoProjectMessage = "No project selected.";
     private readonly Func<CancellationToken, Task<IReadOnlyList<TaskItem>>> _loadInboxTasksAsync;
+    private readonly Func<DateOnly> _todayProvider;
     private readonly Dictionary<Guid, TaskItem> _loadedTasksById = [];
     private string _statusText = ReadyStatus;
     private string _planPanelTitle = "Plan Small";
@@ -22,22 +25,57 @@ public sealed class PlanViewModel : ScreenViewModelBase, INotifyPropertyChanged
     private string _saveStatusText = "Plan is local-first and not saved yet.";
     private string _emptyStateText = "Load unplanned inbox next.";
     private string _inboxCountText = "0 unplanned";
+    private string _selectedInboxItemTitle = string.Empty;
+    private string _dateHintText = NoPlanDateMessage;
+    private string _projectName = string.Empty;
+    private string _projectText = NoProjectMessage;
+    private string _minimumWinDraft = string.Empty;
+    private TaskPriority? _selectedPriority;
+    private DateOnly? _selectedDueDate;
     private Guid? _selectedInboxItemId;
     private bool _isLoading;
+    private bool _hasPlanningChanges;
 
     public PlanViewModel()
         : this(_ => Task.FromResult<IReadOnlyList<TaskItem>>([]))
     {
     }
 
-    public PlanViewModel(Func<CancellationToken, Task<IReadOnlyList<TaskItem>>> loadInboxTasksAsync)
+    public PlanViewModel(
+        Func<CancellationToken, Task<IReadOnlyList<TaskItem>>> loadInboxTasksAsync,
+        Func<DateOnly>? todayProvider = null)
         : base(ScreenCatalog.Plan)
     {
         ArgumentNullException.ThrowIfNull(loadInboxTasksAsync);
         _loadInboxTasksAsync = loadInboxTasksAsync;
+        _todayProvider = todayProvider ?? (() => DateOnly.FromDateTime(DateTime.Today));
         RefreshCommand = new AsyncRelayCommand(
             () => LoadInboxAsync(CancellationToken.None),
             () => !IsLoading);
+        ChooseLowPriorityCommand = new AsyncRelayCommand(
+            () => ChoosePriorityAsync(TaskPriority.Low),
+            CanUsePlanningControls);
+        ChooseNormalPriorityCommand = new AsyncRelayCommand(
+            () => ChoosePriorityAsync(TaskPriority.Normal),
+            CanUsePlanningControls);
+        ChooseHighPriorityCommand = new AsyncRelayCommand(
+            () => ChoosePriorityAsync(TaskPriority.High),
+            CanUsePlanningControls);
+        ChooseCriticalPriorityCommand = new AsyncRelayCommand(
+            () => ChoosePriorityAsync(TaskPriority.Critical),
+            CanUsePlanningControls);
+        ClearDateCommand = new AsyncRelayCommand(
+            () => ChoosePlanDateAsync(null, string.Empty),
+            CanUsePlanningControls);
+        TodayDateCommand = new AsyncRelayCommand(
+            () => ChoosePlanDateAsync(_todayProvider(), "Today"),
+            CanUsePlanningControls);
+        TomorrowDateCommand = new AsyncRelayCommand(
+            () => ChoosePlanDateAsync(_todayProvider().AddDays(1), "Tomorrow"),
+            CanUsePlanningControls);
+        ThisWeekDateCommand = new AsyncRelayCommand(
+            () => ChoosePlanDateAsync(_todayProvider().AddDays(7), "This week"),
+            CanUsePlanningControls);
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -55,6 +93,22 @@ public sealed class PlanViewModel : ScreenViewModelBase, INotifyPropertyChanged
     public ObservableCollection<PlanInboxTaskViewModel> Tasks => InboxItems;
 
     public AsyncRelayCommand RefreshCommand { get; }
+
+    public AsyncRelayCommand ChooseLowPriorityCommand { get; }
+
+    public AsyncRelayCommand ChooseNormalPriorityCommand { get; }
+
+    public AsyncRelayCommand ChooseHighPriorityCommand { get; }
+
+    public AsyncRelayCommand ChooseCriticalPriorityCommand { get; }
+
+    public AsyncRelayCommand ClearDateCommand { get; }
+
+    public AsyncRelayCommand TodayDateCommand { get; }
+
+    public AsyncRelayCommand TomorrowDateCommand { get; }
+
+    public AsyncRelayCommand ThisWeekDateCommand { get; }
 
     public string StatusText
     {
@@ -116,6 +170,68 @@ public sealed class PlanViewModel : ScreenViewModelBase, INotifyPropertyChanged
         private set => SetProperty(ref _inboxCountText, value);
     }
 
+    public TaskPriority? SelectedPriority
+    {
+        get => _selectedPriority;
+        private set
+        {
+            if (SetProperty(ref _selectedPriority, value))
+            {
+                OnPropertyChanged(nameof(PriorityText));
+                OnPropertyChanged(nameof(IsLowPrioritySelected));
+                OnPropertyChanged(nameof(IsNormalPrioritySelected));
+                OnPropertyChanged(nameof(IsHighPrioritySelected));
+                OnPropertyChanged(nameof(IsCriticalPrioritySelected));
+            }
+        }
+    }
+
+    public string PriorityText => SelectedPriority.HasValue
+        ? $"{BuildPriorityText(SelectedPriority.Value)} priority"
+        : "No priority selected.";
+
+    public bool IsLowPrioritySelected => SelectedPriority == TaskPriority.Low;
+
+    public bool IsNormalPrioritySelected => SelectedPriority == TaskPriority.Normal;
+
+    public bool IsHighPrioritySelected => SelectedPriority == TaskPriority.High;
+
+    public bool IsCriticalPrioritySelected => SelectedPriority == TaskPriority.Critical;
+
+    public DateOnly? SelectedDueDate
+    {
+        get => _selectedDueDate;
+        private set => SetProperty(ref _selectedDueDate, value);
+    }
+
+    public string DateHintText
+    {
+        get => _dateHintText;
+        private set => SetProperty(ref _dateHintText, value);
+    }
+
+    public string ProjectName
+    {
+        get => _projectName;
+        set => SetProjectName(value, updatePlanningState: true);
+    }
+
+    public string ProjectText
+    {
+        get => _projectText;
+        private set => SetProperty(ref _projectText, value);
+    }
+
+    public bool HasProjectName => !string.IsNullOrWhiteSpace(ProjectName);
+
+    public string MinimumWinDraft
+    {
+        get => _minimumWinDraft;
+        set => SetMinimumWinDraft(value, updatePlanningState: true);
+    }
+
+    public bool HasMinimumWin => !string.IsNullOrWhiteSpace(MinimumWinDraft);
+
     public Guid? SelectedInboxItemId
     {
         get => _selectedInboxItemId;
@@ -124,6 +240,9 @@ public sealed class PlanViewModel : ScreenViewModelBase, INotifyPropertyChanged
             if (SetProperty(ref _selectedInboxItemId, value))
             {
                 OnPropertyChanged(nameof(HasSelectedInboxItem));
+                OnPropertyChanged(nameof(HasPlanningControls));
+                OnPropertyChanged(nameof(CanSavePlan));
+                RaisePlanningCommandStatesChanged();
             }
         }
     }
@@ -136,6 +255,7 @@ public sealed class PlanViewModel : ScreenViewModelBase, INotifyPropertyChanged
             if (SetProperty(ref _isLoading, value))
             {
                 RefreshCommand.RaiseCanExecuteChanged();
+                RaisePlanningCommandStatesChanged();
             }
         }
     }
@@ -144,9 +264,11 @@ public sealed class PlanViewModel : ScreenViewModelBase, INotifyPropertyChanged
 
     public bool HasSelectedInboxItem => SelectedInboxItemId.HasValue;
 
-    public bool HasPlanningChanges => false;
+    public bool HasPlanningControls => HasSelectedInboxItem;
 
-    public bool CanSavePlan => false;
+    public bool HasPlanningChanges => _hasPlanningChanges;
+
+    public bool CanSavePlan => HasSelectedInboxItem && HasPlanningChanges && HasMinimumWin;
 
     public override Task OnNavigatedToAsync(CancellationToken cancellationToken)
     {
@@ -224,8 +346,15 @@ public sealed class PlanViewModel : ScreenViewModelBase, INotifyPropertyChanged
     {
         ArgumentNullException.ThrowIfNull(inboxItem);
 
+        _selectedInboxItemTitle = inboxItem.Title;
         SelectedInboxItemId = inboxItem.Id;
         SelectedInboxItemText = $"Selected: {inboxItem.Title}";
+        SelectedPriority = inboxItem.Priority;
+        SelectedDueDate = null;
+        DateHintText = NoPlanDateMessage;
+        SetProjectName(string.Empty, updatePlanningState: false);
+        SetMinimumWinDraft(string.Empty, updatePlanningState: false);
+        SetPlanningChanges(false);
         PlanningStatusText = $"Ready to plan {inboxItem.Title}.";
         MinimumWinText = $"Minimum win pending for {inboxItem.Title}.";
         SaveStatusText = "Planning changes not saved yet.";
@@ -248,9 +377,48 @@ public sealed class PlanViewModel : ScreenViewModelBase, INotifyPropertyChanged
         return Task.CompletedTask;
     }
 
+    private Task ChoosePriorityAsync(TaskPriority priority)
+    {
+        if (!HasSelectedInboxItem)
+        {
+            return Task.CompletedTask;
+        }
+
+        SelectedPriority = priority;
+        MarkPlanningChanged($"{BuildPriorityText(priority)} priority selected.");
+        return Task.CompletedTask;
+    }
+
+    private Task ChoosePlanDateAsync(DateOnly? dueDate, string label)
+    {
+        if (!HasSelectedInboxItem)
+        {
+            return Task.CompletedTask;
+        }
+
+        SelectedDueDate = dueDate;
+        DateHintText = dueDate.HasValue
+            ? $"{label}: {dueDate.Value:MMM d}"
+            : NoPlanDateMessage;
+        MarkPlanningChanged(dueDate.HasValue ? $"Plan date set for {label.ToLowerInvariant()}." : "Plan date cleared.");
+        return Task.CompletedTask;
+    }
+
+    private bool CanUsePlanningControls()
+    {
+        return HasSelectedInboxItem && !IsLoading;
+    }
+
     private void ClearSelection()
     {
+        _selectedInboxItemTitle = string.Empty;
         SelectedInboxItemId = null;
+        SelectedPriority = null;
+        SelectedDueDate = null;
+        DateHintText = NoPlanDateMessage;
+        SetProjectName(string.Empty, updatePlanningState: false);
+        SetMinimumWinDraft(string.Empty, updatePlanningState: false);
+        SetPlanningChanges(false);
         SelectedInboxItemText = "No inbox item selected.";
         ApplyUnselectedPlanningState();
     }
@@ -262,6 +430,7 @@ public sealed class PlanViewModel : ScreenViewModelBase, INotifyPropertyChanged
             : "No unplanned items to plan.";
         MinimumWinText = "No minimum win selected.";
         SaveStatusText = "Plan is local-first and not saved yet.";
+        ProjectText = NoProjectMessage;
     }
 
     private void UpdateInboxSummary()
@@ -275,6 +444,112 @@ public sealed class PlanViewModel : ScreenViewModelBase, INotifyPropertyChanged
         OnPropertyChanged(nameof(HasInboxItems));
     }
 
+    private void SetProjectName(string value, bool updatePlanningState)
+    {
+        if (!SetProperty(ref _projectName, value))
+        {
+            return;
+        }
+
+        OnPropertyChanged(nameof(HasProjectName));
+        ProjectText = string.IsNullOrWhiteSpace(ProjectName)
+            ? NoProjectMessage
+            : $"Project: {ProjectName.Trim()}";
+
+        if (updatePlanningState && HasSelectedInboxItem)
+        {
+            MarkPlanningChanged("Project updated.");
+        }
+    }
+
+    private void SetMinimumWinDraft(string value, bool updatePlanningState)
+    {
+        if (!SetProperty(ref _minimumWinDraft, value))
+        {
+            return;
+        }
+
+        OnPropertyChanged(nameof(HasMinimumWin));
+        OnPropertyChanged(nameof(CanSavePlan));
+        UpdateMinimumWinText();
+
+        if (updatePlanningState && HasSelectedInboxItem)
+        {
+            MarkPlanningChanged("Minimum win updated.");
+        }
+    }
+
+    private void UpdateMinimumWinText()
+    {
+        if (!HasSelectedInboxItem)
+        {
+            MinimumWinText = "No minimum win selected.";
+            return;
+        }
+
+        MinimumWinText = string.IsNullOrWhiteSpace(MinimumWinDraft)
+            ? $"Minimum win pending for {_selectedInboxItemTitle}."
+            : $"Minimum win: {MinimumWinDraft.Trim()}";
+    }
+
+    private void MarkPlanningChanged(string statusText)
+    {
+        SetPlanningChanges(true);
+        PlanningStatusText = BuildPlanningStatusText();
+        UpdateSaveStatus();
+        StatusText = statusText;
+    }
+
+    private string BuildPlanningStatusText()
+    {
+        if (!HasSelectedInboxItem)
+        {
+            return "No planning changes yet.";
+        }
+
+        return $"{_selectedInboxItemTitle}: {PriorityText}; {DateHintText}; {ProjectText}.";
+    }
+
+    private void UpdateSaveStatus()
+    {
+        if (!HasSelectedInboxItem)
+        {
+            SaveStatusText = "Plan is local-first and not saved yet.";
+            return;
+        }
+
+        SaveStatusText = HasPlanningChanges
+            ? HasMinimumWin
+                ? "Draft ready for local save."
+                : "Add a minimum win before saving."
+            : "Planning changes not saved yet.";
+    }
+
+    private void SetPlanningChanges(bool value)
+    {
+        if (_hasPlanningChanges == value)
+        {
+            OnPropertyChanged(nameof(CanSavePlan));
+            return;
+        }
+
+        _hasPlanningChanges = value;
+        OnPropertyChanged(nameof(HasPlanningChanges));
+        OnPropertyChanged(nameof(CanSavePlan));
+    }
+
+    private void RaisePlanningCommandStatesChanged()
+    {
+        ChooseLowPriorityCommand.RaiseCanExecuteChanged();
+        ChooseNormalPriorityCommand.RaiseCanExecuteChanged();
+        ChooseHighPriorityCommand.RaiseCanExecuteChanged();
+        ChooseCriticalPriorityCommand.RaiseCanExecuteChanged();
+        ClearDateCommand.RaiseCanExecuteChanged();
+        TodayDateCommand.RaiseCanExecuteChanged();
+        TomorrowDateCommand.RaiseCanExecuteChanged();
+        ThisWeekDateCommand.RaiseCanExecuteChanged();
+    }
+
     private static int PrioritySortValue(TaskPriority priority)
     {
         return priority switch
@@ -284,6 +559,18 @@ public sealed class PlanViewModel : ScreenViewModelBase, INotifyPropertyChanged
             TaskPriority.Normal => 2,
             TaskPriority.Low => 3,
             _ => 4
+        };
+    }
+
+    private static string BuildPriorityText(TaskPriority priority)
+    {
+        return priority switch
+        {
+            TaskPriority.Critical => "Critical",
+            TaskPriority.High => "High",
+            TaskPriority.Normal => "Normal",
+            TaskPriority.Low => "Low",
+            _ => priority.ToString()
         };
     }
 
