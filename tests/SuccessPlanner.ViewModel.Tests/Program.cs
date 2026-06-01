@@ -38,6 +38,7 @@ TestRunner.RunAll(
     ("PlanViewModel reports load failures", PlanViewModelReportsLoadFailures),
     ("ReviewViewModel starts in a simple ready state", ReviewViewModelStartsReady),
     ("ReviewViewModel loads small wins", ReviewViewModelLoadsSmallWins),
+    ("ReviewViewModel loads focus and movement success items", ReviewViewModelLoadsFocusAndMovementSuccessItems),
     ("ReviewViewModel loads stuck items", ReviewViewModelLoadsStuckItems),
     ("ReviewViewModel loads needs-decision items", ReviewViewModelLoadsNeedsDecisionItems),
     ("ReviewViewModel lets user choose next focus", ReviewViewModelLetsUserChooseNextFocus),
@@ -1684,6 +1685,107 @@ static void ReviewViewModelLoadsSmallWins()
     Assert.Contains("local completions", viewModel.EmptyStateText);
     Assert.False(viewModel.IsLoadingReview, "Loading flag should clear after small wins load.");
     Assert.True(viewModel.RefreshCommand.CanExecute(null), "Refresh should return after loading.");
+}
+
+static void ReviewViewModelLoadsFocusAndMovementSuccessItems()
+{
+    DateTimeOffset startedAt = new(2026, 5, 30, 14, 0, 0, TimeSpan.Zero);
+    FocusSession completedFocus = FocusSession.Rehydrate(
+        Guid.NewGuid(),
+        Guid.NewGuid(),
+        "Draft the Review feed",
+        20,
+        FocusSessionStatus.Completed,
+        startedAt,
+        completedAt: startedAt.AddMinutes(20),
+        endedAt: startedAt.AddMinutes(20),
+        actualFocusMinutes: 20,
+        winNote: "Completed 20 minute focus: Draft the Review feed",
+        tags: ["Win"]);
+    FocusSession blockedFocus = FocusSession.Rehydrate(
+        Guid.NewGuid(),
+        Guid.NewGuid(),
+        "Blocked focus",
+        20,
+        FocusSessionStatus.Blocked,
+        startedAt.AddHours(1),
+        endedAt: startedAt.AddHours(1).AddMinutes(4),
+        actualFocusMinutes: 4,
+        blockedReason: "Need a decision.",
+        tags: ["Blocked"]);
+    MovementSession plannedMovement = MovementSession.Rehydrate(
+        Guid.NewGuid(),
+        MovementActivityType.Walk,
+        "Walk",
+        20,
+        MovementSessionStatus.Planned,
+        startedAt.AddHours(2),
+        scheduledFor: startedAt.AddHours(3));
+    MovementSession activeMovement = MovementSession.Rehydrate(
+        Guid.NewGuid(),
+        MovementActivityType.Workout,
+        "Workout",
+        20,
+        MovementSessionStatus.Active,
+        startedAt.AddHours(4),
+        startedAt: startedAt.AddHours(4).AddMinutes(5));
+    MovementSession completedMovement = MovementSession.Rehydrate(
+        Guid.NewGuid(),
+        MovementActivityType.Stretch,
+        "Stretch",
+        20,
+        MovementSessionStatus.Completed,
+        startedAt.AddHours(5),
+        actualMinutes: 18,
+        startedAt: startedAt.AddHours(5).AddMinutes(5),
+        completedAt: startedAt.AddHours(5).AddMinutes(23),
+        endedAt: startedAt.AddHours(5).AddMinutes(23),
+        winNote: "Movement completed: stretch break",
+        tags: ["Win"]);
+    MovementSession skippedMovement = MovementSession.Rehydrate(
+        Guid.NewGuid(),
+        MovementActivityType.Walk,
+        "Skipped walk",
+        20,
+        MovementSessionStatus.Skipped,
+        startedAt.AddHours(6),
+        endedAt: startedAt.AddHours(6).AddMinutes(2));
+    ReviewViewModel viewModel = new(
+        _ => Task.FromResult<IReadOnlyList<NoteItem>>([]),
+        _ => Task.FromResult<IReadOnlyList<TaskItem>>([]),
+        _ => Task.FromResult<IReadOnlyList<FocusSession>>([blockedFocus, completedFocus]),
+        _ => Task.FromResult<IReadOnlyList<MovementSession>>([skippedMovement, plannedMovement, activeMovement, completedMovement]),
+        (_, _) => Task.CompletedTask);
+
+    viewModel.LoadReviewAsync().GetAwaiter().GetResult();
+
+    Assert.True(viewModel.HasReviewData, "Review should show data after loading focus and movement wins.");
+    Assert.True(viewModel.HasSmallWins, "Focus and movement successes should appear in the small wins lane.");
+    Assert.Equal(4, viewModel.SmallWins.Count);
+    Assert.True(
+        viewModel.SmallWins.Any(card => card.OwnerType == NoteOwnerType.FocusSession
+            && card.SourceText == "Focus win"
+            && card.Text == "Completed 20 minute focus: Draft the Review feed"),
+        "Completed focus session should appear as a focus win.");
+    Assert.True(
+        viewModel.SmallWins.Any(card => card.OwnerType == NoteOwnerType.MovementSession
+            && card.Text == "Movement planned: Walk"),
+        "Planned movement should appear as a movement success.");
+    Assert.True(
+        viewModel.SmallWins.Any(card => card.OwnerType == NoteOwnerType.MovementSession
+            && card.Text == "Movement started: Workout"),
+        "Started movement should appear as a movement success.");
+    Assert.True(
+        viewModel.SmallWins.Any(card => card.OwnerType == NoteOwnerType.MovementSession
+            && card.Text == "Movement completed: stretch break"),
+        "Completed movement should appear as a movement success.");
+    Assert.False(
+        viewModel.SmallWins.Any(card => card.Id == blockedFocus.Id || card.Id == skippedMovement.Id),
+        "Blocked focus and skipped movement should not appear as successes.");
+    Assert.Equal("4 review items", viewModel.ReviewCountText);
+    Assert.Equal("4 small wins this review.", viewModel.WeekSummaryText);
+    Assert.Equal("4 small wins ready.", viewModel.SmallWinsText);
+    Assert.Equal("Small wins ready.", viewModel.StatusText);
 }
 
 static void ReviewViewModelLoadsStuckItems()

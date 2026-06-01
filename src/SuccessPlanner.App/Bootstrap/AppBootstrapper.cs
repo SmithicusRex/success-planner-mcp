@@ -111,6 +111,8 @@ public sealed class AppBootstrapper
         _navigationService.Register(AppScreen.Review, () => new ReviewViewModel(
             _noteRepository.GetReviewHighlightsAsync,
             _taskRepository.GetAllAsync,
+            cancellationToken => _focusSessionRepository.GetRecentAsync(20, cancellationToken),
+            cancellationToken => _movementSessionRepository.GetRecentAsync(20, cancellationToken),
             SaveReviewNextFocusAsync));
         _navigationService.Register(AppScreen.Find, () => new InitialScreenViewModel(ScreenCatalog.Find));
         _navigationService.Register(AppScreen.Settings, CreateSettingsViewModel);

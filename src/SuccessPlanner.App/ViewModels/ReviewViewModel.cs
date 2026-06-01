@@ -11,6 +11,8 @@ public sealed class ReviewViewModel : ScreenViewModelBase, INotifyPropertyChange
 {
     private readonly Func<CancellationToken, Task<IReadOnlyList<NoteItem>>> _loadSmallWinsAsync;
     private readonly Func<CancellationToken, Task<IReadOnlyList<TaskItem>>> _loadReviewTasksAsync;
+    private readonly Func<CancellationToken, Task<IReadOnlyList<FocusSession>>> _loadFocusWinsAsync;
+    private readonly Func<CancellationToken, Task<IReadOnlyList<MovementSession>>> _loadMovementWinsAsync;
     private readonly Func<ReviewNextFocusSelection, CancellationToken, Task> _saveNextFocusAsync;
     private string _statusText = "Ready to review.";
     private string _reviewPanelTitle = "Review Gently";
@@ -52,13 +54,32 @@ public sealed class ReviewViewModel : ScreenViewModelBase, INotifyPropertyChange
         Func<CancellationToken, Task<IReadOnlyList<NoteItem>>> loadSmallWinsAsync,
         Func<CancellationToken, Task<IReadOnlyList<TaskItem>>> loadReviewTasksAsync,
         Func<ReviewNextFocusSelection, CancellationToken, Task> saveNextFocusAsync)
+        : this(
+            loadSmallWinsAsync,
+            loadReviewTasksAsync,
+            _ => Task.FromResult<IReadOnlyList<FocusSession>>([]),
+            _ => Task.FromResult<IReadOnlyList<MovementSession>>([]),
+            saveNextFocusAsync)
+    {
+    }
+
+    public ReviewViewModel(
+        Func<CancellationToken, Task<IReadOnlyList<NoteItem>>> loadSmallWinsAsync,
+        Func<CancellationToken, Task<IReadOnlyList<TaskItem>>> loadReviewTasksAsync,
+        Func<CancellationToken, Task<IReadOnlyList<FocusSession>>> loadFocusWinsAsync,
+        Func<CancellationToken, Task<IReadOnlyList<MovementSession>>> loadMovementWinsAsync,
+        Func<ReviewNextFocusSelection, CancellationToken, Task> saveNextFocusAsync)
         : base(ScreenCatalog.Review)
     {
         ArgumentNullException.ThrowIfNull(loadSmallWinsAsync);
         ArgumentNullException.ThrowIfNull(loadReviewTasksAsync);
+        ArgumentNullException.ThrowIfNull(loadFocusWinsAsync);
+        ArgumentNullException.ThrowIfNull(loadMovementWinsAsync);
         ArgumentNullException.ThrowIfNull(saveNextFocusAsync);
         _loadSmallWinsAsync = loadSmallWinsAsync;
         _loadReviewTasksAsync = loadReviewTasksAsync;
+        _loadFocusWinsAsync = loadFocusWinsAsync;
+        _loadMovementWinsAsync = loadMovementWinsAsync;
         _saveNextFocusAsync = saveNextFocusAsync;
         RefreshCommand = new AsyncRelayCommand(
             () => LoadReviewAsync(CancellationToken.None),
@@ -233,11 +254,19 @@ public sealed class ReviewViewModel : ScreenViewModelBase, INotifyPropertyChange
         {
             IReadOnlyList<NoteItem> loadedSmallWins = await _loadSmallWinsAsync(cancellationToken);
             IReadOnlyList<TaskItem> loadedReviewTasks = await _loadReviewTasksAsync(cancellationToken);
+            IReadOnlyList<FocusSession> loadedFocusWins = await _loadFocusWinsAsync(cancellationToken);
+            IReadOnlyList<MovementSession> loadedMovementWins = await _loadMovementWinsAsync(cancellationToken);
             IReadOnlyList<ReviewSmallWinViewModel> smallWinCards = loadedSmallWins
                 .Where(note => note.IsReviewHighlight)
-                .OrderByDescending(note => note.CreatedAt)
-                .ThenBy(note => note.Text, StringComparer.OrdinalIgnoreCase)
                 .Select(note => ReviewSmallWinViewModel.FromNote(note, ChooseNextFocus))
+                .Concat(loadedFocusWins
+                    .Where(ShouldShowFocusWin)
+                    .Select(session => ReviewSmallWinViewModel.FromFocusSession(session, ChooseNextFocus)))
+                .Concat(loadedMovementWins
+                    .Where(ShouldShowMovementSuccess)
+                    .Select(session => ReviewSmallWinViewModel.FromMovementSession(session, ChooseNextFocus)))
+                .OrderByDescending(card => card.CreatedAt)
+                .ThenBy(card => card.Text, StringComparer.OrdinalIgnoreCase)
                 .ToList();
             IReadOnlyList<ReviewStuckItemViewModel> stuckCards = loadedReviewTasks
                 .Where(ShouldShowStuckItem)
@@ -403,6 +432,22 @@ public sealed class ReviewViewModel : ScreenViewModelBase, INotifyPropertyChange
                 || HasTag(task, "Decision Needed")
                 || HasTag(task, "Decision")
                 || HasTag(task, "NeedsDecision"));
+    }
+
+    public static bool ShouldShowFocusWin(FocusSession session)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+
+        return session.Status == FocusSessionStatus.Completed;
+    }
+
+    public static bool ShouldShowMovementSuccess(MovementSession session)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+
+        return session.Status is MovementSessionStatus.Planned
+            or MovementSessionStatus.Active
+            or MovementSessionStatus.Completed;
     }
 
     private string BuildLoadedStatusText()
@@ -598,16 +643,21 @@ public static class ReviewNextFocusMetadataKeys
 public sealed class ReviewSmallWinViewModel
 {
     private ReviewSmallWinViewModel(
-        NoteItem note,
+        Guid id,
+        NoteOwnerType ownerType,
+        Guid? ownerId,
+        string text,
+        DateTimeOffset createdAt,
+        string sourceText,
         Action<ReviewNextFocusSelection>? chooseNextFocus)
     {
-        Id = note.Id;
-        OwnerType = note.OwnerType;
-        OwnerId = note.OwnerId;
-        Text = note.Text;
-        CreatedAt = note.CreatedAt;
-        CreatedText = $"Recorded {note.CreatedAt.LocalDateTime:MMM d, h:mm tt}";
-        SourceText = BuildSourceText(note);
+        Id = id;
+        OwnerType = ownerType;
+        OwnerId = ownerId;
+        Text = text;
+        CreatedAt = createdAt;
+        CreatedText = $"Recorded {createdAt.LocalDateTime:MMM d, h:mm tt}";
+        SourceText = sourceText;
         BadgeText = "Small Win";
         CardIconGlyph = "\uE73E";
         CardAccentColor = "#A8E6B1";
@@ -654,7 +704,7 @@ public sealed class ReviewSmallWinViewModel
     public static ReviewSmallWinViewModel FromNote(NoteItem note)
     {
         ArgumentNullException.ThrowIfNull(note);
-        return new ReviewSmallWinViewModel(note, null);
+        return CreateFromNote(note, null);
     }
 
     public static ReviewSmallWinViewModel FromNote(
@@ -663,7 +713,37 @@ public sealed class ReviewSmallWinViewModel
     {
         ArgumentNullException.ThrowIfNull(note);
         ArgumentNullException.ThrowIfNull(chooseNextFocus);
-        return new ReviewSmallWinViewModel(note, chooseNextFocus);
+        return CreateFromNote(note, chooseNextFocus);
+    }
+
+    public static ReviewSmallWinViewModel FromFocusSession(FocusSession session)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        return CreateFromFocusSession(session, null);
+    }
+
+    public static ReviewSmallWinViewModel FromFocusSession(
+        FocusSession session,
+        Action<ReviewNextFocusSelection> chooseNextFocus)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(chooseNextFocus);
+        return CreateFromFocusSession(session, chooseNextFocus);
+    }
+
+    public static ReviewSmallWinViewModel FromMovementSession(MovementSession session)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        return CreateFromMovementSession(session, null);
+    }
+
+    public static ReviewSmallWinViewModel FromMovementSession(
+        MovementSession session,
+        Action<ReviewNextFocusSelection> chooseNextFocus)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(chooseNextFocus);
+        return CreateFromMovementSession(session, chooseNextFocus);
     }
 
     public ReviewNextFocusSelection ToNextFocusSelection()
@@ -676,6 +756,48 @@ public sealed class ReviewSmallWinViewModel
             DateTimeOffset.UtcNow);
     }
 
+    private static ReviewSmallWinViewModel CreateFromNote(
+        NoteItem note,
+        Action<ReviewNextFocusSelection>? chooseNextFocus)
+    {
+        return new ReviewSmallWinViewModel(
+            note.Id,
+            note.OwnerType,
+            note.OwnerId,
+            note.Text,
+            note.CreatedAt,
+            BuildSourceText(note),
+            chooseNextFocus);
+    }
+
+    private static ReviewSmallWinViewModel CreateFromFocusSession(
+        FocusSession session,
+        Action<ReviewNextFocusSelection>? chooseNextFocus)
+    {
+        return new ReviewSmallWinViewModel(
+            session.Id,
+            NoteOwnerType.FocusSession,
+            session.TaskId,
+            BuildFocusWinText(session),
+            session.CompletedAt ?? session.EndedAt ?? session.StartedAt,
+            "Focus win",
+            chooseNextFocus);
+    }
+
+    private static ReviewSmallWinViewModel CreateFromMovementSession(
+        MovementSession session,
+        Action<ReviewNextFocusSelection>? chooseNextFocus)
+    {
+        return new ReviewSmallWinViewModel(
+            session.Id,
+            NoteOwnerType.MovementSession,
+            session.TaskId,
+            BuildMovementSuccessText(session),
+            session.CompletedAt ?? session.StartedAt ?? session.ScheduledFor ?? session.CreatedAt,
+            "Movement win",
+            chooseNextFocus);
+    }
+
     private static string BuildSourceText(NoteItem note)
     {
         return note.OwnerType switch
@@ -685,6 +807,29 @@ public sealed class ReviewSmallWinViewModel
             NoteOwnerType.MovementSession => "Movement win",
             NoteOwnerType.Review => "Review win",
             _ => "Local win"
+        };
+    }
+
+    private static string BuildFocusWinText(FocusSession session)
+    {
+        return string.IsNullOrWhiteSpace(session.WinNote)
+            ? $"Completed {session.PlannedMinutes} minute focus: {session.Intention}"
+            : session.WinNote;
+    }
+
+    private static string BuildMovementSuccessText(MovementSession session)
+    {
+        if (!string.IsNullOrWhiteSpace(session.WinNote))
+        {
+            return session.WinNote;
+        }
+
+        return session.Status switch
+        {
+            MovementSessionStatus.Completed => $"Movement completed: {session.ActivityName}",
+            MovementSessionStatus.Active => $"Movement started: {session.ActivityName}",
+            MovementSessionStatus.Planned => $"Movement planned: {session.ActivityName}",
+            _ => $"Movement saved: {session.ActivityName}"
         };
     }
 }

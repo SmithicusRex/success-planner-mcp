@@ -27,10 +27,12 @@ TestRunner.RunAll(
     ("ReviewViewModel loads stuck items through TaskRepository", ReviewViewModelLoadsStuckItemsThroughTaskRepository),
     ("ReviewViewModel loads needs-decision items through TaskRepository", ReviewViewModelLoadsNeedsDecisionItemsThroughTaskRepository),
     ("ReviewViewModel saves next focus through SettingsMetadataRepository", ReviewViewModelSavesNextFocusThroughSettingsMetadataRepository),
+    ("ReviewViewModel loads focus and movement successes through repositories", ReviewViewModelLoadsFocusAndMovementSuccessesThroughRepositories),
     ("FocusSessionRepository saves and loads focus session state", FocusSessionRepositorySavesAndLoadsFocusSessionState),
     ("StartWorkViewModel records focus sessions through repositories", StartWorkViewModelRecordsFocusSessionsThroughRepositories),
     ("MovementSessionRepository saves and loads movement state", MovementSessionRepositorySavesAndLoadsMovementSessionState),
     ("MoveViewModel saves movement sessions through repository", MoveViewModelSavesMovementSessionsThroughRepository),
+    ("MoveViewModel movement save appears in Review", MoveViewModelMovementSaveAppearsInReview),
     ("SettingsMetadataRepository upserts and deletes metadata", SettingsMetadataRepositoryUpsertsAndDeletesMetadata));
 
 static async Task DatabaseServiceCreatesSqliteDatabase()
@@ -802,6 +804,68 @@ static async Task ReviewViewModelSavesNextFocusThroughSettingsMetadataRepository
     Assert.Equal(decisionTask.Id, viewModel.LastSavedNextFocusId.GetValueOrDefault());
 }
 
+static async Task ReviewViewModelLoadsFocusAndMovementSuccessesThroughRepositories()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+    await CreateMigratedDatabaseAsync(paths);
+
+    FocusSessionRepository focusSessionRepository = new(paths);
+    MovementSessionRepository movementSessionRepository = new(paths);
+    DateTimeOffset startedAt = new(2026, 5, 30, 14, 0, 0, TimeSpan.Zero);
+    FocusSession focusWin = FocusSession.Rehydrate(
+        Guid.NewGuid(),
+        null,
+        "Write the Review bridge",
+        15,
+        FocusSessionStatus.Completed,
+        startedAt,
+        completedAt: startedAt.AddMinutes(15),
+        endedAt: startedAt.AddMinutes(15),
+        actualFocusMinutes: 15,
+        winNote: "Completed 15 minute focus: Write the Review bridge",
+        tags: ["Win"]);
+    MovementSession movementWin = MovementSession.Rehydrate(
+        Guid.NewGuid(),
+        MovementActivityType.Walk,
+        "Walk",
+        20,
+        MovementSessionStatus.Completed,
+        startedAt.AddHours(1),
+        actualMinutes: 20,
+        startedAt: startedAt.AddHours(1).AddMinutes(5),
+        completedAt: startedAt.AddHours(1).AddMinutes(25),
+        endedAt: startedAt.AddHours(1).AddMinutes(25),
+        winNote: "Movement completed: Walk",
+        tags: ["Win"]);
+
+    await focusSessionRepository.SaveAsync(focusWin, CancellationToken.None);
+    await movementSessionRepository.SaveAsync(movementWin, CancellationToken.None);
+
+    ReviewViewModel viewModel = new(
+        _ => Task.FromResult<IReadOnlyList<NoteItem>>([]),
+        _ => Task.FromResult<IReadOnlyList<TaskItem>>([]),
+        cancellationToken => focusSessionRepository.GetRecentAsync(20, cancellationToken),
+        cancellationToken => movementSessionRepository.GetRecentAsync(20, cancellationToken),
+        (_, _) => Task.CompletedTask);
+
+    await viewModel.LoadReviewAsync(CancellationToken.None);
+
+    Assert.True(viewModel.HasSmallWins, "Review should load focus and movement wins as small wins.");
+    Assert.Equal(2, viewModel.SmallWins.Count);
+    Assert.True(
+        viewModel.SmallWins.Any(card => card.Id == focusWin.Id
+            && card.OwnerType == NoteOwnerType.FocusSession
+            && card.SourceText == "Focus win"),
+        "Completed focus session should load through the Review repository path.");
+    Assert.True(
+        viewModel.SmallWins.Any(card => card.Id == movementWin.Id
+            && card.OwnerType == NoteOwnerType.MovementSession
+            && card.SourceText == "Movement win"),
+        "Completed movement session should load through the Review repository path.");
+    Assert.Equal("2 small wins this review.", viewModel.WeekSummaryText);
+}
+
 static async Task FocusSessionRepositorySavesAndLoadsFocusSessionState()
 {
     using TestWorkspace workspace = TestWorkspace.Create();
@@ -965,6 +1029,41 @@ static async Task MoveViewModelSavesMovementSessionsThroughRepository()
     Assert.Equal("Mind: Audiobook; Support: Solo.", savedSession.Notes);
     Assert.Equal("Saved locally: planned movement session.", viewModel.SaveStatusText);
     Assert.Equal("Movement scheduled and saved locally.", viewModel.StatusText);
+}
+
+static async Task MoveViewModelMovementSaveAppearsInReview()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+    await CreateMigratedDatabaseAsync(paths);
+
+    DateTimeOffset now = new(2026, 5, 31, 14, 15, 0, TimeSpan.FromHours(-5));
+    MovementSessionRepository movementSessionRepository = new(paths);
+    MoveViewModel moveViewModel = new(movementSessionRepository.SaveAsync, () => now);
+
+    moveViewModel.ChooseWorkoutCommand.Execute(null);
+    moveViewModel.ChooseNowCommand.Execute(null);
+    moveViewModel.ChoosePodcastCommand.Execute(null);
+    moveViewModel.ChooseWithSpouseCommand.Execute(null);
+    await moveViewModel.SaveMovementAsync(CancellationToken.None);
+
+    ReviewViewModel reviewViewModel = new(
+        _ => Task.FromResult<IReadOnlyList<NoteItem>>([]),
+        _ => Task.FromResult<IReadOnlyList<TaskItem>>([]),
+        _ => Task.FromResult<IReadOnlyList<FocusSession>>([]),
+        cancellationToken => movementSessionRepository.GetRecentAsync(20, cancellationToken),
+        (_, _) => Task.CompletedTask);
+
+    await reviewViewModel.LoadReviewAsync(CancellationToken.None);
+
+    Assert.True(moveViewModel.LastSavedMovementSessionId.HasValue, "Move should save a movement session locally.");
+    Assert.True(reviewViewModel.HasSmallWins, "Review should expose saved movement as a success item.");
+    Assert.Equal(1, reviewViewModel.SmallWins.Count);
+    Assert.Equal(moveViewModel.LastSavedMovementSessionId.GetValueOrDefault(), reviewViewModel.SmallWins[0].Id);
+    Assert.Equal(NoteOwnerType.MovementSession, reviewViewModel.SmallWins[0].OwnerType);
+    Assert.Equal("Movement win", reviewViewModel.SmallWins[0].SourceText);
+    Assert.Equal("Movement started: Workout", reviewViewModel.SmallWins[0].Text);
+    Assert.Equal("1 small win this review.", reviewViewModel.WeekSummaryText);
 }
 
 static async Task SettingsMetadataRepositoryUpsertsAndDeletesMetadata()

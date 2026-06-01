@@ -958,7 +958,7 @@ Status:
 - ~~Blocked session does not mark task complete.~~
 - ~~Build and tests pass.~~
 
-### 10. Move Workflow
+### ~~10. Move Workflow~~
 
 ~~10.1. Create `MoveViewModel`.~~
 
@@ -974,12 +974,12 @@ Status:
 
 ~~10.7. Save movement activity locally.~~
 
-Benchmark gate:
+~~Benchmark gate:~~
 
-- User can schedule or start a movement activity.
-- Movement activity appears as a success item in Review.
-- Movement works without Microsoft sync.
-- Build and tests pass.
+- ~~User can schedule or start a movement activity.~~
+- ~~Movement activity appears as a success item in Review.~~
+- ~~Movement works without Microsoft sync.~~
+- ~~Build and tests pass.~~
 
 ### ~~11. Plan Workflow~~
 
@@ -1002,7 +1002,7 @@ Benchmark gate:
 - ~~Tiny steps are created without losing the original task.~~
 - ~~Build and tests pass.~~
 
-### 12. Review Workflow
+### ~~12. Review Workflow~~
 
 ~~12.1. Create `ReviewViewModel`.~~
 
@@ -1016,11 +1016,11 @@ Benchmark gate:
 
 ~~12.6. Let user choose next focus.~~
 
-12.7. Add focus-session and movement-session success items to Review.
+~~12.7. Add focus-session and movement-session success items to Review.~~
 
-Benchmark gate:
+~~Benchmark gate:~~
 
-- Review screen summarizes completed tasks, focus sessions, and movement.
+- ~~Review screen summarizes completed tasks, focus sessions, and movement.~~
 - ~~Stuck items are visible.~~
 - ~~User can save next focus.~~
 - ~~Build and tests pass.~~
