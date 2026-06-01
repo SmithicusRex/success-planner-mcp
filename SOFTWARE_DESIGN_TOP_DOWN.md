@@ -1076,7 +1076,7 @@ Benchmark gate:
 
 ~~15.2. Add the first usable authentication or connection-test path.~~
 
-15.3. Pull To Do lists and tasks where available.
+~~15.3. Pull To Do lists and tasks where available.~~
 
 15.4. Push captured tasks to To Do where configured.
 
@@ -1088,7 +1088,7 @@ Benchmark gate:
 - ~~App can test whether To Do integration is available.~~
 - Successful sync updates source links.
 - Failed sync remains visible and recoverable.
-- Build and tests pass.
+- ~~Build and tests pass.~~
 
 ### 16. Microsoft Project Desktop Detection And Import
 

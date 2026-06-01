@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http;
+using System.Text;
 using Microsoft.Data.Sqlite;
 using SuccessPlanner.App.Bootstrap;
 using SuccessPlanner.App.Domain;
@@ -28,6 +29,9 @@ TestRunner.RunAll(
     ("MicrosoftToDoConnectionTestService uses configured probe", MicrosoftToDoConnectionTestServiceUsesConfiguredProbe),
     ("MicrosoftToDoConnectionTestService maps probe failures", MicrosoftToDoConnectionTestServiceMapsProbeFailures),
     ("MicrosoftToDoGraphConnectionProbe maps token and Graph responses", MicrosoftToDoGraphConnectionProbeMapsTokenAndGraphResponses),
+    ("MicrosoftToDoGraphTaskAdapter needs sign-in without token", MicrosoftToDoGraphTaskAdapterNeedsSignInWithoutToken),
+    ("MicrosoftToDoGraphTaskAdapter pulls lists and tasks", MicrosoftToDoGraphTaskAdapterPullsListsAndTasks),
+    ("MicrosoftToDoGraphTaskAdapter maps pull failures", MicrosoftToDoGraphTaskAdapterMapsPullFailures),
     ("DatabaseService reports a healthy database", DatabaseServiceReportsHealthyDatabase),
     ("DatabaseService reports missing migration health failures", DatabaseServiceReportsMissingMigrationHealthFailures),
     ("DatabaseStartupMigrationService migrates a new database at startup", DatabaseStartupMigrationServiceMigratesNewDatabaseAtStartup),
@@ -812,6 +816,166 @@ static async Task MicrosoftToDoGraphConnectionProbeMapsTokenAndGraphResponses()
 
     Assert.Equal(MicrosoftToDoConnectionState.Unavailable, unavailable.State);
     Assert.Contains("503", unavailable.DetailText);
+}
+
+static async Task MicrosoftToDoGraphTaskAdapterNeedsSignInWithoutToken()
+{
+    DateTimeOffset now = new(2026, 6, 1, 20, 0, 0, TimeSpan.Zero);
+    TestHttpMessageHandler handler = new(_ =>
+        throw new InvalidOperationException("No-token adapter should not call Graph."));
+    MicrosoftToDoGraphTaskAdapter adapter = new(
+        new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://graph.test/v1.0/")
+        },
+        new TestMicrosoftToDoAccessTokenProvider(null),
+        () => now);
+
+    MicrosoftToDoPullResult result = await adapter.PullListsAndTasksAsync(CancellationToken.None);
+
+    Assert.Equal(MicrosoftToDoConnectionState.NeedsSignIn, result.ConnectionStatus.State);
+    Assert.Equal(now, result.ConnectionStatus.LastCheckedAt);
+    Assert.Equal(0, handler.CallCount);
+    Assert.False(result.HasData, "No-token pull should not return data.");
+    Assert.False(result.CanUseData, "No-token pull data should not be usable.");
+}
+
+static async Task MicrosoftToDoGraphTaskAdapterPullsListsAndTasks()
+{
+    DateTimeOffset now = new(2026, 6, 1, 20, 30, 0, TimeSpan.Zero);
+    List<string> requestedUris = [];
+    TestHttpMessageHandler handler = new(request =>
+    {
+        requestedUris.Add(request.RequestUri?.ToString() ?? string.Empty);
+        Assert.Equal("Bearer", request.Headers.Authorization?.Scheme);
+        Assert.Equal("token-123", request.Headers.Authorization?.Parameter);
+
+        string requestUri = request.RequestUri?.ToString() ?? string.Empty;
+        if (requestUri.Contains("me/todo/lists?", StringComparison.Ordinal))
+        {
+            return JsonResponse(
+                """
+                {
+                  "value": [
+                    {
+                      "id": "list-1",
+                      "displayName": "Tasks",
+                      "wellknownListName": "defaultList"
+                    }
+                  ]
+                }
+                """);
+        }
+
+        if (requestUri.Contains("me/todo/lists/list-1/tasks?", StringComparison.Ordinal))
+        {
+            return JsonResponse(
+                """
+                {
+                  "value": [
+                    {
+                      "id": "task-1",
+                      "title": "Call the pharmacy",
+                      "status": "notStarted",
+                      "importance": "high",
+                      "body": {
+                        "content": "Pick up refill",
+                        "contentType": "text"
+                      },
+                      "dueDateTime": {
+                        "dateTime": "2026-06-02T09:00:00Z",
+                        "timeZone": "UTC"
+                      },
+                      "lastModifiedDateTime": "2026-06-01T19:45:00Z",
+                      "webLink": "https://to-do.office.com/tasks/task-1"
+                    },
+                    {
+                      "id": "task-2",
+                      "title": "Already done",
+                      "status": "completed",
+                      "importance": "normal",
+                      "completedDateTime": {
+                        "dateTime": "2026-06-01T20:15:00Z",
+                        "timeZone": "UTC"
+                      }
+                    }
+                  ]
+                }
+                """);
+        }
+
+        return new HttpResponseMessage(HttpStatusCode.NotFound);
+    });
+    MicrosoftToDoGraphTaskAdapter adapter = new(
+        new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://graph.test/v1.0/")
+        },
+        new TestMicrosoftToDoAccessTokenProvider(" token-123 "),
+        () => now);
+
+    MicrosoftToDoPullResult result = await adapter.PullListsAndTasksAsync(CancellationToken.None);
+
+    Assert.Equal(MicrosoftToDoConnectionState.Connected, result.ConnectionStatus.State);
+    Assert.Equal(now, result.ConnectionStatus.LastCheckedAt);
+    Assert.Contains("Pulled 1 list and 2 tasks", result.ConnectionStatus.DetailText);
+    Assert.True(result.HasData, "Successful pull should return data.");
+    Assert.True(result.CanUseData, "Successful pull data should be usable.");
+    Assert.Equal(1, result.TaskLists.Count);
+    Assert.Equal("list-1", result.TaskLists[0].Id);
+    Assert.Equal("Tasks", result.TaskLists[0].DisplayName);
+    Assert.Equal("defaultList", result.TaskLists[0].WellKnownListName);
+    Assert.Equal(2, result.Tasks.Count);
+    Assert.Equal("task-1", result.Tasks[0].Id);
+    Assert.Equal("list-1", result.Tasks[0].ListId);
+    Assert.Equal("Call the pharmacy", result.Tasks[0].Title);
+    Assert.Equal("notStarted", result.Tasks[0].Status);
+    Assert.Equal("high", result.Tasks[0].Importance);
+    Assert.Equal("Pick up refill", result.Tasks[0].BodyContent);
+    Assert.Equal(new DateTimeOffset(2026, 6, 2, 9, 0, 0, TimeSpan.Zero), result.Tasks[0].DueAt);
+    Assert.Equal(new DateTimeOffset(2026, 6, 1, 19, 45, 0, TimeSpan.Zero), result.Tasks[0].LastModifiedAt);
+    Assert.Equal("https://to-do.office.com/tasks/task-1", result.Tasks[0].WebLink);
+    Assert.False(result.Tasks[0].IsCompleted, "First pulled To Do task should not be complete.");
+    Assert.Equal("task-2", result.Tasks[1].Id);
+    Assert.True(result.Tasks[1].IsCompleted, "Second pulled To Do task should be complete.");
+    Assert.Equal(new DateTimeOffset(2026, 6, 1, 20, 15, 0, TimeSpan.Zero), result.Tasks[1].CompletedAt);
+    Assert.Equal(2, requestedUris.Count);
+}
+
+static async Task MicrosoftToDoGraphTaskAdapterMapsPullFailures()
+{
+    DateTimeOffset now = new(2026, 6, 1, 21, 0, 0, TimeSpan.Zero);
+    TestHttpMessageHandler unauthorizedHandler = new(_ =>
+        new HttpResponseMessage(HttpStatusCode.Unauthorized));
+    MicrosoftToDoGraphTaskAdapter unauthorizedAdapter = new(
+        new HttpClient(unauthorizedHandler)
+        {
+            BaseAddress = new Uri("https://graph.test/v1.0/")
+        },
+        new TestMicrosoftToDoAccessTokenProvider("expired-token"),
+        () => now);
+    TestHttpMessageHandler unavailableHandler = new(_ =>
+        new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
+    MicrosoftToDoGraphTaskAdapter unavailableAdapter = new(
+        new HttpClient(unavailableHandler)
+        {
+            BaseAddress = new Uri("https://graph.test/v1.0/")
+        },
+        new TestMicrosoftToDoAccessTokenProvider("token-123"),
+        () => now);
+
+    MicrosoftToDoPullResult unauthorized =
+        await unauthorizedAdapter.PullListsAndTasksAsync(CancellationToken.None);
+    MicrosoftToDoPullResult unavailable =
+        await unavailableAdapter.PullListsAndTasksAsync(CancellationToken.None);
+
+    Assert.Equal(MicrosoftToDoConnectionState.NeedsSignIn, unauthorized.ConnectionStatus.State);
+    Assert.True(unauthorized.ConnectionStatus.CanStartSignIn, "Unauthorized pull should allow sign-in.");
+    Assert.False(unauthorized.HasData, "Unauthorized pull should not return data.");
+
+    Assert.Equal(MicrosoftToDoConnectionState.Unavailable, unavailable.ConnectionStatus.State);
+    Assert.Contains("503", unavailable.ConnectionStatus.DetailText);
+    Assert.False(unavailable.HasData, "Unavailable pull should not return data.");
 }
 
 static async Task DatabaseServiceReportsHealthyDatabase()
@@ -2057,6 +2221,14 @@ static bool IsSqliteDatabase(string path)
     byte[] header = File.ReadAllBytes(path).Take(16).ToArray();
     string headerText = System.Text.Encoding.ASCII.GetString(header);
     return headerText.StartsWith("SQLite format 3", StringComparison.Ordinal);
+}
+
+static HttpResponseMessage JsonResponse(string json)
+{
+    return new HttpResponseMessage(HttpStatusCode.OK)
+    {
+        Content = new StringContent(json, Encoding.UTF8, "application/json")
+    };
 }
 
 internal sealed class TestWorkspace : IDisposable
