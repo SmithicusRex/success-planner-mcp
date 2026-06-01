@@ -972,7 +972,7 @@ Status:
 
 ~~10.6. Add spouse option.~~
 
-10.7. Save movement activity locally.
+~~10.7. Save movement activity locally.~~
 
 Benchmark gate:
 

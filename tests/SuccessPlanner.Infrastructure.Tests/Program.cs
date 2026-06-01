@@ -23,6 +23,8 @@ TestRunner.RunAll(
     ("CaptureViewModel saves captured tasks through TaskRepository", CaptureViewModelSavesCapturedTasksThroughTaskRepository),
     ("FocusSessionRepository saves and loads focus session state", FocusSessionRepositorySavesAndLoadsFocusSessionState),
     ("StartWorkViewModel records focus sessions through repositories", StartWorkViewModelRecordsFocusSessionsThroughRepositories),
+    ("MovementSessionRepository saves and loads movement state", MovementSessionRepositorySavesAndLoadsMovementSessionState),
+    ("MoveViewModel saves movement sessions through repository", MoveViewModelSavesMovementSessionsThroughRepository),
     ("SettingsMetadataRepository upserts and deletes metadata", SettingsMetadataRepositoryUpsertsAndDeletesMetadata));
 
 static async Task DatabaseServiceCreatesSqliteDatabase()
@@ -613,6 +615,81 @@ static async Task StartWorkViewModelRecordsFocusSessionsThroughRepositories()
     Assert.Equal("Focus session completed and saved locally.", viewModel.StatusText);
     Assert.NotNull(savedTask, "Starting focus should save the task status locally.");
     Assert.Equal(TaskItemStatus.InProgress, savedTask!.Status);
+}
+
+static async Task MovementSessionRepositorySavesAndLoadsMovementSessionState()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+    await CreateMigratedDatabaseAsync(paths);
+
+    DateTimeOffset scheduledFor = new(2026, 5, 31, 15, 15, 0, TimeSpan.FromHours(-5));
+    MovementSessionRepository repository = new(paths);
+    MovementSession session = MovementSession.Schedule(
+        MovementActivityType.Walk,
+        scheduledFor,
+        activityName: "Walk");
+    session.SetMindOccupier("Podcast");
+    session.MarkWithSpouse();
+    session.UpdateNotes("Mind: Podcast; Support: With spouse.");
+
+    await repository.SaveAsync(session, CancellationToken.None);
+
+    MovementSession? planned = await repository.GetByIdAsync(session.Id, CancellationToken.None);
+    Assert.NotNull(planned, "Saved movement session should load by id.");
+    Assert.Equal(MovementActivityType.Walk, planned!.ActivityType);
+    Assert.Equal("Walk", planned.ActivityName);
+    Assert.Equal(MovementSessionStatus.Planned, planned.Status);
+    Assert.Equal(MovementSession.DefaultPlannedMinutes, planned.PlannedMinutes);
+    Assert.Equal(scheduledFor.ToUniversalTime(), planned.ScheduledFor!.Value.ToUniversalTime());
+    Assert.Equal("Podcast", planned.MindOccupier);
+    Assert.True(planned.IsWithSpouse, "With spouse flag should persist.");
+    Assert.Equal("Mind: Podcast; Support: With spouse.", planned.Notes);
+    Assert.Contains("With spouse", planned.Tags);
+
+    session.Start();
+    await repository.SaveAsync(session, CancellationToken.None);
+
+    MovementSession? active = await repository.GetByIdAsync(session.Id, CancellationToken.None);
+    IReadOnlyList<MovementSession> recentSessions = await repository.GetRecentAsync(5, CancellationToken.None);
+
+    Assert.NotNull(active, "Updated movement session should load by id.");
+    Assert.Equal(MovementSessionStatus.Active, active!.Status);
+    Assert.True(active.StartedAt.HasValue, "Started time should persist.");
+    Assert.Equal(1, recentSessions.Count);
+    Assert.Equal(session.Id, recentSessions[0].Id);
+}
+
+static async Task MoveViewModelSavesMovementSessionsThroughRepository()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+    await CreateMigratedDatabaseAsync(paths);
+
+    DateTimeOffset now = new(2026, 5, 31, 14, 15, 0, TimeSpan.FromHours(-5));
+    MovementSessionRepository repository = new(paths);
+    MoveViewModel viewModel = new(repository.SaveAsync, () => now);
+
+    viewModel.ChooseWorkoutCommand.Execute(null);
+    viewModel.ChooseScheduleCommand.Execute(null);
+    viewModel.ChooseAudiobookCommand.Execute(null);
+    viewModel.ChooseSoloCommand.Execute(null);
+    await viewModel.SaveMovementAsync(CancellationToken.None);
+
+    Assert.True(viewModel.LastSavedMovementSessionId.HasValue, "Move should expose the saved movement session id.");
+    MovementSession? savedSession = await repository.GetByIdAsync(
+        viewModel.LastSavedMovementSessionId.GetValueOrDefault(),
+        CancellationToken.None);
+
+    Assert.NotNull(savedSession, "Saved movement session should persist in SQLite.");
+    Assert.Equal(MovementActivityType.Workout, savedSession!.ActivityType);
+    Assert.Equal(MovementSessionStatus.Planned, savedSession.Status);
+    Assert.Equal(now.AddHours(1).ToUniversalTime(), savedSession.ScheduledFor!.Value.ToUniversalTime());
+    Assert.Equal("Audiobook", savedSession.MindOccupier);
+    Assert.False(savedSession.IsWithSpouse, "Solo movement should persist without spouse flag.");
+    Assert.Equal("Mind: Audiobook; Support: Solo.", savedSession.Notes);
+    Assert.Equal("Saved locally: planned movement session.", viewModel.SaveStatusText);
+    Assert.Equal("Movement scheduled and saved locally.", viewModel.StatusText);
 }
 
 static async Task SettingsMetadataRepositoryUpsertsAndDeletesMetadata()

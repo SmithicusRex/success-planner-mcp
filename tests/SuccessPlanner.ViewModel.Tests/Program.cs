@@ -45,7 +45,8 @@ TestRunner.RunAll(
     ("MoveViewModel applies movement activity choices", MoveViewModelAppliesMovementActivityChoices),
     ("MoveViewModel applies now and schedule choices", MoveViewModelAppliesNowAndScheduleChoices),
     ("MoveViewModel applies mind occupier choices", MoveViewModelAppliesMindOccupierChoices),
-    ("MoveViewModel applies spouse option choices", MoveViewModelAppliesSpouseOptionChoices));
+    ("MoveViewModel applies spouse option choices", MoveViewModelAppliesSpouseOptionChoices),
+    ("MoveViewModel saves movement activity locally", MoveViewModelSavesMovementActivityLocally));
 
 static void CaptureViewModelStartsReady()
 {
@@ -1237,12 +1238,16 @@ static void MoveViewModelStartsReady()
     Assert.Null(viewModel.SelectedScheduledFor, "Move should start without a scheduled movement time.");
     Assert.Null(viewModel.SelectedMindOccupierChoice, "Move should wait for a mind occupier choice.");
     Assert.Null(viewModel.SelectedSpouseChoice, "Move should wait for a spouse option choice.");
+    Assert.Null(viewModel.LastSavedMovementSessionId, "Move should start without a saved movement session.");
     Assert.False(viewModel.HasSelectedTiming, "Move should start without selected timing.");
     Assert.False(viewModel.HasSelectedMindOccupier, "Move should start without a mind occupier.");
     Assert.False(viewModel.HasSelectedSpouseOption, "Move should start without a spouse option.");
+    Assert.False(viewModel.HasSavedMovementSession, "Move should start without saved movement state.");
+    Assert.False(viewModel.IsSavingMovement, "Move should not start in a saving state.");
     Assert.False(viewModel.CanChooseTiming, "Timing choices should wait for a movement activity.");
     Assert.False(viewModel.CanChooseMindOccupier, "Mind occupier choices should wait for timing.");
     Assert.False(viewModel.CanChooseSpouseOption, "Spouse option should wait for mind occupier.");
+    Assert.False(viewModel.CanSaveMovement, "Save should wait for every movement choice.");
     Assert.False(viewModel.IsWalkSelected, "Walk should start unselected.");
     Assert.False(viewModel.IsWorkoutSelected, "Workout should start unselected.");
     Assert.False(viewModel.IsStretchSelected, "Stretch should start unselected.");
@@ -1273,6 +1278,7 @@ static void MoveViewModelStartsReady()
     Assert.False(viewModel.ChooseAudiobookCommand.CanExecute(null), "Audiobook should wait for timing.");
     Assert.False(viewModel.ChooseSoloCommand.CanExecute(null), "Solo should wait for mind occupier.");
     Assert.False(viewModel.ChooseWithSpouseCommand.CanExecute(null), "With Spouse should wait for mind occupier.");
+    Assert.False(viewModel.SaveMovementCommand.CanExecute(null), "Save should wait for all movement choices.");
     Assert.Equal("Choose one small movement activity.", viewModel.EmptyStateText);
     Assert.Equal("Movement is local-first and not saved yet.", viewModel.SaveStatusText);
 
@@ -1499,6 +1505,59 @@ static void MoveViewModelAppliesSpouseOptionChoices()
     Assert.Equal("Walk now with Podcast and spouse ready.", viewModel.MovementDraftStatusText);
 }
 
+static void MoveViewModelSavesMovementActivityLocally()
+{
+    DateTimeOffset now = new(2026, 5, 31, 14, 15, 0, TimeSpan.FromHours(-5));
+    List<MovementSession> savedSessions = [];
+    MoveViewModel viewModel = new(
+        (session, cancellationToken) =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            savedSessions.Add(session);
+            return Task.CompletedTask;
+        },
+        () => now);
+
+    viewModel.SaveMovementAsync(CancellationToken.None).GetAwaiter().GetResult();
+
+    Assert.Equal(0, savedSessions.Count);
+    Assert.Equal("Complete movement choices before saving.", viewModel.SaveStatusText);
+    Assert.Equal("Complete movement choices before saving.", viewModel.StatusText);
+
+    viewModel.ChooseWorkoutCommand.Execute(null);
+    viewModel.ChooseNowCommand.Execute(null);
+    viewModel.ChooseMusicCommand.Execute(null);
+    viewModel.ChooseWithSpouseCommand.Execute(null);
+
+    Assert.True(viewModel.CanSaveMovement, "Completed movement choices should unlock save.");
+    Assert.True(viewModel.SaveMovementCommand.CanExecute(null), "Completed movement choices should enable save command.");
+    Assert.Equal("Ready to save movement locally.", viewModel.SaveStatusText);
+
+    viewModel.SaveMovementAsync(CancellationToken.None).GetAwaiter().GetResult();
+
+    Assert.Equal(1, savedSessions.Count);
+    MovementSession savedSession = savedSessions[0];
+    Assert.Equal(savedSession.Id, viewModel.LastSavedMovementSessionId.GetValueOrDefault());
+    Assert.True(viewModel.HasSavedMovementSession, "Saved movement id should be visible.");
+    Assert.Equal(MovementActivityType.Workout, savedSession.ActivityType);
+    Assert.Equal("Workout", savedSession.ActivityName);
+    Assert.Equal(MovementSessionStatus.Active, savedSession.Status);
+    Assert.Equal(MovementSession.DefaultPlannedMinutes, savedSession.PlannedMinutes);
+    Assert.Equal(now, savedSession.ScheduledFor);
+    Assert.True(savedSession.StartedAt.HasValue, "Now movement should be active after save.");
+    Assert.Equal("Music", savedSession.MindOccupier);
+    Assert.True(savedSession.IsWithSpouse, "With Spouse choice should persist.");
+    Assert.Equal("Mind: Music; Support: With spouse.", savedSession.Notes);
+    Assert.Contains("With spouse", savedSession.Tags);
+    Assert.Equal("Saved locally: active movement session.", viewModel.SaveStatusText);
+    Assert.Equal("Movement started and saved locally.", viewModel.StatusText);
+
+    viewModel.ChooseStretchCommand.Execute(null);
+
+    Assert.False(viewModel.HasSavedMovementSession, "Changing movement draft should clear prior save id.");
+    Assert.Equal("Movement draft changed. Save again locally.", viewModel.SaveStatusText);
+}
+
 static void AssertSpouseOptionChoice(
     MoveViewModel viewModel,
     MovementSpouseChoice expectedSpouseChoice,
@@ -1517,6 +1576,9 @@ static void AssertSpouseOptionChoice(
     Assert.Equal(expectedPanelText, viewModel.MovementPanelText);
     Assert.Equal(expectedDraftStatus, viewModel.MovementDraftStatusText);
     Assert.Equal("Ready to save movement activity.", viewModel.EmptyStateText);
+    Assert.True(viewModel.CanSaveMovement, "Spouse option should unlock movement save.");
+    Assert.True(viewModel.SaveMovementCommand.CanExecute(null), "Spouse option should enable movement save command.");
+    Assert.Equal("Ready to save movement locally.", viewModel.SaveStatusText);
     Assert.Equal(soloSelected, viewModel.IsSoloSelected);
     Assert.Equal(withSpouseSelected, viewModel.IsWithSpouseSelected);
     Assert.Equal(soloSelected ? "Selected" : "Choose", viewModel.SoloChoiceStatusText);

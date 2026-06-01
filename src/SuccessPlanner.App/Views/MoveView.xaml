@@ -849,6 +849,54 @@
                                 Margin="0,4,0,16" />
                         <TextBlock Text="{Binding SaveStatusText}"
                                    Style="{StaticResource QuietTextStyle}" />
+                        <Button Command="{Binding SaveMovementCommand}"
+                                Margin="0,14,0,0"
+                                ToolTip="Save movement locally">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource MoveTimingButtonStyle}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding HasSavedMovementSession}" Value="True">
+                                            <Setter Property="Background" Value="{StaticResource MoveBrush}" />
+                                            <Setter Property="BorderBrush" Value="#A74E0C" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="10" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+
+                                <Border Width="38"
+                                        Height="38"
+                                        CornerRadius="8"
+                                        Background="{StaticResource GreenSoftBrush}"
+                                        BorderBrush="#CDEAD5"
+                                        BorderThickness="1">
+                                    <TextBlock Text="&#xE74E;"
+                                               FontFamily="Segoe MDL2 Assets"
+                                               FontSize="16"
+                                               Foreground="#1E6B3A"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center" />
+                                </Border>
+
+                                <StackPanel Grid.Column="2"
+                                            VerticalAlignment="Center">
+                                    <TextBlock Text="Save"
+                                               Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                               FontSize="16"
+                                               FontWeight="SemiBold" />
+                                    <TextBlock Text="Local"
+                                               Foreground="{StaticResource MoveInkBrush}"
+                                               FontSize="12"
+                                               FontWeight="SemiBold"
+                                               Margin="0,2,0,0" />
+                                </StackPanel>
+                            </Grid>
+                        </Button>
                     </StackPanel>
                 </Border>
 

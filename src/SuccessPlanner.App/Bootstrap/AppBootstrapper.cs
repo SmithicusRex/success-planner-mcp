@@ -14,6 +14,7 @@ public sealed class AppBootstrapper
     private readonly TaskRepository _taskRepository;
     private readonly NoteRepository _noteRepository;
     private readonly FocusSessionRepository _focusSessionRepository;
+    private readonly MovementSessionRepository _movementSessionRepository;
     private readonly BackgroundWorkerHost _backgroundWorkerHost;
     private readonly NavigationService _navigationService;
     private AppSettings? _loadedSettings;
@@ -34,6 +35,7 @@ public sealed class AppBootstrapper
         _taskRepository = new TaskRepository(_paths);
         _noteRepository = new NoteRepository(_paths);
         _focusSessionRepository = new FocusSessionRepository(_paths);
+        _movementSessionRepository = new MovementSessionRepository(_paths);
         _backgroundWorkerHost = new BackgroundWorkerHost();
         _navigationService = new NavigationService();
         RegisterScreens();
@@ -101,7 +103,7 @@ public sealed class AppBootstrapper
             _taskRepository.GetRecentActiveAsync,
             _taskRepository.SaveAsync,
             _noteRepository.AddTaskSmallWinAsync));
-        _navigationService.Register(AppScreen.Move, () => new MoveViewModel());
+        _navigationService.Register(AppScreen.Move, () => new MoveViewModel(_movementSessionRepository.SaveAsync));
         _navigationService.Register(AppScreen.Review, () => new InitialScreenViewModel(ScreenCatalog.Review));
         _navigationService.Register(AppScreen.Find, () => new InitialScreenViewModel(ScreenCatalog.Find));
         _navigationService.Register(AppScreen.Settings, CreateSettingsViewModel);

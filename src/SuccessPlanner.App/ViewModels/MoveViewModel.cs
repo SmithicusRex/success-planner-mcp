@@ -12,6 +12,7 @@ public sealed class MoveViewModel : ScreenViewModelBase, INotifyPropertyChanged
     private const string ReadyStatus = "Ready to plan movement.";
     private static readonly TimeSpan DefaultScheduleOffset = TimeSpan.FromHours(1);
 
+    private readonly Func<MovementSession, CancellationToken, Task> _saveMovementSessionAsync;
     private readonly Func<DateTimeOffset> _nowProvider;
     private string _statusText = ReadyStatus;
     private string _movementPanelTitle = "Choose Movement";
@@ -21,16 +22,28 @@ public sealed class MoveViewModel : ScreenViewModelBase, INotifyPropertyChanged
     private string _mindOccupierText = "No mind occupier selected.";
     private string _spouseText = "Solo movement.";
     private string _movementDraftStatusText = "No movement plan created yet.";
+    private string _saveStatusText = "Movement is local-first and not saved yet.";
+    private bool _isSavingMovement;
     private int _plannedMinutes = MovementSession.DefaultPlannedMinutes;
     private MovementActivityType? _selectedActivityType;
     private MovementTimingChoice? _selectedTimingChoice;
     private MovementMindOccupierChoice? _selectedMindOccupierChoice;
     private MovementSpouseChoice? _selectedSpouseChoice;
     private DateTimeOffset? _selectedScheduledFor;
+    private Guid? _lastSavedMovementSessionId;
 
     public MoveViewModel(Func<DateTimeOffset>? nowProvider = null)
+        : this(MissingMovementSessionRepositorySaveAsync, nowProvider)
+    {
+    }
+
+    public MoveViewModel(
+        Func<MovementSession, CancellationToken, Task> saveMovementSessionAsync,
+        Func<DateTimeOffset>? nowProvider = null)
         : base(ScreenCatalog.Move)
     {
+        ArgumentNullException.ThrowIfNull(saveMovementSessionAsync);
+        _saveMovementSessionAsync = saveMovementSessionAsync;
         _nowProvider = nowProvider ?? (() => DateTimeOffset.Now);
         ChooseWalkCommand = new AsyncRelayCommand(() => ChooseActivityAsync(MovementActivityType.Walk));
         ChooseWorkoutCommand = new AsyncRelayCommand(() => ChooseActivityAsync(MovementActivityType.Workout));
@@ -56,6 +69,9 @@ public sealed class MoveViewModel : ScreenViewModelBase, INotifyPropertyChanged
         ChooseWithSpouseCommand = new AsyncRelayCommand(
             () => ChooseSpouseAsync(MovementSpouseChoice.WithSpouse),
             () => CanChooseSpouseOption);
+        SaveMovementCommand = new AsyncRelayCommand(
+            () => SaveMovementAsync(CancellationToken.None),
+            () => CanSaveMovement);
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -87,6 +103,8 @@ public sealed class MoveViewModel : ScreenViewModelBase, INotifyPropertyChanged
     public AsyncRelayCommand ChooseSoloCommand { get; }
 
     public AsyncRelayCommand ChooseWithSpouseCommand { get; }
+
+    public AsyncRelayCommand SaveMovementCommand { get; }
 
     public string StatusText
     {
@@ -134,6 +152,37 @@ public sealed class MoveViewModel : ScreenViewModelBase, INotifyPropertyChanged
     {
         get => _movementDraftStatusText;
         private set => SetProperty(ref _movementDraftStatusText, value);
+    }
+
+    public string SaveStatusText
+    {
+        get => _saveStatusText;
+        private set => SetProperty(ref _saveStatusText, value);
+    }
+
+    public bool IsSavingMovement
+    {
+        get => _isSavingMovement;
+        private set
+        {
+            if (SetProperty(ref _isSavingMovement, value))
+            {
+                OnPropertyChanged(nameof(CanSaveMovement));
+                SaveMovementCommand.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
+    public Guid? LastSavedMovementSessionId
+    {
+        get => _lastSavedMovementSessionId;
+        private set
+        {
+            if (SetProperty(ref _lastSavedMovementSessionId, value))
+            {
+                OnPropertyChanged(nameof(HasSavedMovementSession));
+            }
+        }
     }
 
     public int PlannedMinutes
@@ -243,6 +292,8 @@ public sealed class MoveViewModel : ScreenViewModelBase, INotifyPropertyChanged
                 OnPropertyChanged(nameof(SoloChoiceStatusText));
                 OnPropertyChanged(nameof(WithSpouseChoiceStatusText));
                 OnPropertyChanged(nameof(EmptyStateText));
+                OnPropertyChanged(nameof(CanSaveMovement));
+                SaveMovementCommand.RaiseCanExecuteChanged();
             }
         }
     }
@@ -263,11 +314,15 @@ public sealed class MoveViewModel : ScreenViewModelBase, INotifyPropertyChanged
 
     public bool HasSelectedSpouseOption => SelectedSpouseChoice.HasValue;
 
+    public bool HasSavedMovementSession => LastSavedMovementSessionId.HasValue;
+
     public bool CanChooseTiming => HasSelectedActivity;
 
     public bool CanChooseMindOccupier => HasSelectedTiming;
 
     public bool CanChooseSpouseOption => HasSelectedMindOccupier;
+
+    public bool CanSaveMovement => HasSelectedSpouseOption && !IsSavingMovement;
 
     public bool IsWalkSelected => SelectedActivityType == MovementActivityType.Walk;
 
@@ -332,8 +387,6 @@ public sealed class MoveViewModel : ScreenViewModelBase, INotifyPropertyChanged
         _ => "Ready to save movement activity."
     };
 
-    public string SaveStatusText => "Movement is local-first and not saved yet.";
-
     public override Task OnNavigatedToAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -345,6 +398,7 @@ public sealed class MoveViewModel : ScreenViewModelBase, INotifyPropertyChanged
     {
         SelectedActivityType = activityType;
         RefreshMovementDraftText();
+        RefreshSaveStatusForDraftChange();
 
         return Task.CompletedTask;
     }
@@ -359,6 +413,7 @@ public sealed class MoveViewModel : ScreenViewModelBase, INotifyPropertyChanged
         SelectedScheduledFor = _nowProvider();
         SelectedTimingChoice = MovementTimingChoice.Now;
         RefreshMovementDraftText();
+        RefreshSaveStatusForDraftChange();
 
         return Task.CompletedTask;
     }
@@ -373,6 +428,7 @@ public sealed class MoveViewModel : ScreenViewModelBase, INotifyPropertyChanged
         SelectedScheduledFor = _nowProvider().Add(DefaultScheduleOffset);
         SelectedTimingChoice = MovementTimingChoice.Schedule;
         RefreshMovementDraftText();
+        RefreshSaveStatusForDraftChange();
 
         return Task.CompletedTask;
     }
@@ -386,6 +442,7 @@ public sealed class MoveViewModel : ScreenViewModelBase, INotifyPropertyChanged
 
         SelectedMindOccupierChoice = mindOccupierChoice;
         RefreshMovementDraftText();
+        RefreshSaveStatusForDraftChange();
 
         return Task.CompletedTask;
     }
@@ -399,8 +456,48 @@ public sealed class MoveViewModel : ScreenViewModelBase, INotifyPropertyChanged
 
         SelectedSpouseChoice = spouseChoice;
         RefreshMovementDraftText();
+        RefreshSaveStatusForDraftChange();
 
         return Task.CompletedTask;
+    }
+
+    public async Task SaveMovementAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (!CanSaveMovement)
+        {
+            SaveStatusText = "Complete movement choices before saving.";
+            StatusText = "Complete movement choices before saving.";
+            return;
+        }
+
+        IsSavingMovement = true;
+        SaveStatusText = "Saving movement locally.";
+
+        try
+        {
+            MovementSession session = CreateMovementSessionDraft();
+            await _saveMovementSessionAsync(session, cancellationToken);
+            LastSavedMovementSessionId = session.Id;
+            SaveStatusText = BuildSavedMovementStatusText(session);
+            StatusText = session.Status == MovementSessionStatus.Active
+                ? "Movement started and saved locally."
+                : "Movement scheduled and saved locally.";
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            SaveStatusText = "Movement was not saved locally.";
+            StatusText = "Movement needs local save.";
+        }
+        finally
+        {
+            IsSavingMovement = false;
+        }
     }
 
     private void RefreshMovementDraftText()
@@ -468,6 +565,81 @@ public sealed class MoveViewModel : ScreenViewModelBase, INotifyPropertyChanged
         StatusText = $"{activityName} selected.";
     }
 
+    private MovementSession CreateMovementSessionDraft()
+    {
+        MovementActivityType activityType = SelectedActivityType
+            ?? throw new InvalidOperationException("Movement activity is required before saving.");
+        MovementTimingChoice timingChoice = SelectedTimingChoice
+            ?? throw new InvalidOperationException("Movement timing is required before saving.");
+        MovementMindOccupierChoice mindOccupierChoice = SelectedMindOccupierChoice
+            ?? throw new InvalidOperationException("Mind occupier is required before saving.");
+        MovementSpouseChoice spouseChoice = SelectedSpouseChoice
+            ?? throw new InvalidOperationException("Spouse option is required before saving.");
+
+        string activityName = GetActivityName(activityType);
+        MovementSession session = timingChoice switch
+        {
+            MovementTimingChoice.Now => CreateStartNowMovementSession(activityType, activityName),
+            MovementTimingChoice.Schedule => MovementSession.Schedule(
+                activityType,
+                SelectedScheduledFor
+                    ?? throw new InvalidOperationException("Scheduled time is required before saving."),
+                PlannedMinutes,
+                activityName),
+            _ => throw new ArgumentOutOfRangeException(nameof(timingChoice), timingChoice, "Unsupported timing choice.")
+        };
+
+        string mindOccupierName = GetMindOccupierName(mindOccupierChoice);
+        session.SetMindOccupier(mindOccupierName);
+        if (spouseChoice == MovementSpouseChoice.WithSpouse)
+        {
+            session.MarkWithSpouse();
+        }
+        else
+        {
+            session.ClearWithSpouse();
+        }
+
+        session.UpdateNotes(BuildMovementNotes(mindOccupierName, spouseChoice));
+        return session;
+    }
+
+    private MovementSession CreateStartNowMovementSession(MovementActivityType activityType, string activityName)
+    {
+        MovementSession session = MovementSession.Schedule(
+            activityType,
+            SelectedScheduledFor ?? _nowProvider(),
+            PlannedMinutes,
+            activityName);
+        session.Start();
+        return session;
+    }
+
+    private string BuildMovementNotes(string mindOccupierName, MovementSpouseChoice spouseChoice)
+    {
+        string supportText = spouseChoice == MovementSpouseChoice.WithSpouse ? "With spouse" : "Solo";
+        return $"Mind: {mindOccupierName}; Support: {supportText}.";
+    }
+
+    private void RefreshSaveStatusForDraftChange()
+    {
+        if (HasSavedMovementSession)
+        {
+            LastSavedMovementSessionId = null;
+            SaveStatusText = CanSaveMovement
+                ? "Movement draft changed. Save again locally."
+                : "Movement is local-first and not saved yet.";
+        }
+        else
+        {
+            SaveStatusText = CanSaveMovement
+                ? "Ready to save movement locally."
+                : "Movement is local-first and not saved yet.";
+        }
+
+        SaveMovementCommand.RaiseCanExecuteChanged();
+    }
+
     private void RaiseMindOccupierCommandStatesChanged()
     {
         ChooseMusicCommand.RaiseCanExecuteChanged();
@@ -479,6 +651,29 @@ public sealed class MoveViewModel : ScreenViewModelBase, INotifyPropertyChanged
     {
         ChooseSoloCommand.RaiseCanExecuteChanged();
         ChooseWithSpouseCommand.RaiseCanExecuteChanged();
+    }
+
+    private static Task MissingMovementSessionRepositorySaveAsync(
+        MovementSession session,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.CompletedTask;
+    }
+
+    private static string BuildSavedMovementStatusText(MovementSession session)
+    {
+        string statusText = session.Status switch
+        {
+            MovementSessionStatus.Active => "active",
+            MovementSessionStatus.Planned => "planned",
+            MovementSessionStatus.Completed => "completed",
+            MovementSessionStatus.Skipped => "skipped",
+            MovementSessionStatus.Cancelled => "cancelled",
+            _ => session.Status.ToString().ToLowerInvariant()
+        };
+
+        return $"Saved locally: {statusText} movement session.";
     }
 
     private string BuildMindOccupierAndSpousePhrase(string mindOccupierName)
