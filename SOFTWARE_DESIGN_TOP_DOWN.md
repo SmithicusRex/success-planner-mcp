@@ -1027,7 +1027,7 @@ Status:
 
 ### 13. Find Workflow
 
-13.1. Create `FindViewModel`.
+~~13.1. Create `FindViewModel`.~~
 
 13.2. Create `FindView`.
 

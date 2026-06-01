@@ -48,6 +48,10 @@ TestRunner.RunAll(
     ("ReviewViewModel creates small win display state", ReviewViewModelCreatesSmallWinDisplayState),
     ("ReviewViewModel creates stuck item display state", ReviewViewModelCreatesStuckItemDisplayState),
     ("ReviewViewModel creates needs-decision display state", ReviewViewModelCreatesNeedsDecisionDisplayState),
+    ("FindViewModel starts in a simple ready state", FindViewModelStartsReady),
+    ("FindViewModel updates query state", FindViewModelUpdatesQueryState),
+    ("FindViewModel clears search state", FindViewModelClearsSearchState),
+    ("FindViewModel reports search service placeholder", FindViewModelReportsSearchServicePlaceholder),
     ("StartWorkViewModel starts in a simple ready state", StartWorkViewModelStartsReady),
     ("StartWorkViewModel applies session choices", StartWorkViewModelAppliesSessionChoices),
     ("StartWorkViewModel loads focus task options", StartWorkViewModelLoadsFocusTaskOptions),
@@ -2027,6 +2031,83 @@ static void ReviewViewModelCreatesNeedsDecisionDisplayState()
     Assert.Equal("Needs Decision", card.BadgeText);
     Assert.Equal("\uE9CE", card.CardIconGlyph);
     Assert.Contains("Choose the project scope", card.CardToolTip);
+}
+
+static void FindViewModelStartsReady()
+{
+    FindViewModel viewModel = new();
+
+    Assert.Equal(ScreenCatalog.Find, viewModel.Descriptor);
+    Assert.Equal("Find", viewModel.Title);
+    Assert.Equal("Search local tasks and notes.", viewModel.Subtitle);
+    Assert.Equal("\uE721", viewModel.IconGlyph);
+    Assert.Equal("#FFFFFF", viewModel.AccentColor);
+    Assert.Equal(string.Empty, viewModel.SearchText);
+    Assert.Equal("Ready to find.", viewModel.StatusText);
+    Assert.Equal("Find Local Data", viewModel.SearchPanelTitle);
+    Assert.Contains("tasks, projects, notes", viewModel.SearchPanelText);
+    Assert.Equal("Type a word or phrase to search local data.", viewModel.EmptyStateText);
+    Assert.Equal("0 results", viewModel.ResultsCountText);
+    Assert.False(viewModel.HasQuery, "Find should start without a query.");
+    Assert.False(viewModel.HasResults, "Find should start without results.");
+    Assert.False(viewModel.CanSearch, "Find should wait for a query before search is enabled.");
+    Assert.False(viewModel.IsSearching, "Find should start idle.");
+    Assert.False(viewModel.SearchCommand.CanExecute(null), "Search command should wait for a query.");
+    Assert.False(viewModel.ClearSearchCommand.CanExecute(null), "Clear command should wait for query or results.");
+}
+
+static void FindViewModelUpdatesQueryState()
+{
+    FindViewModel viewModel = new();
+
+    viewModel.SearchText = "  pharmacy  ";
+
+    Assert.True(viewModel.HasQuery, "Nonblank search text should count as a query.");
+    Assert.True(viewModel.CanSearch, "Nonblank search text should enable search.");
+    Assert.True(viewModel.SearchCommand.CanExecute(null), "Search command should enable with a query.");
+    Assert.True(viewModel.ClearSearchCommand.CanExecute(null), "Clear command should enable with a query.");
+    Assert.Equal("Ready to search locally.", viewModel.StatusText);
+    Assert.Equal("Ready To Search", viewModel.SearchPanelTitle);
+    Assert.Equal("Find local matches for \"pharmacy\".", viewModel.SearchPanelText);
+    Assert.Contains("without Microsoft sync", viewModel.EmptyStateText);
+}
+
+static void FindViewModelClearsSearchState()
+{
+    FindViewModel viewModel = new()
+    {
+        SearchText = "pharmacy"
+    };
+
+    viewModel.ClearSearchAsync().GetAwaiter().GetResult();
+
+    Assert.Equal(string.Empty, viewModel.SearchText);
+    Assert.False(viewModel.HasQuery, "Clear should remove the query.");
+    Assert.False(viewModel.CanSearch, "Clear should disable search.");
+    Assert.False(viewModel.SearchCommand.CanExecute(null), "Search command should disable after clear.");
+    Assert.False(viewModel.ClearSearchCommand.CanExecute(null), "Clear command should disable after clear.");
+    Assert.Equal("Search cleared.", viewModel.StatusText);
+    Assert.Equal("Find Local Data", viewModel.SearchPanelTitle);
+    Assert.Equal("Type a word or phrase to search local data.", viewModel.EmptyStateText);
+    Assert.Equal("0 results", viewModel.ResultsCountText);
+}
+
+static void FindViewModelReportsSearchServicePlaceholder()
+{
+    FindViewModel viewModel = new();
+
+    viewModel.SearchAsync(CancellationToken.None).GetAwaiter().GetResult();
+
+    Assert.Equal("Type something to search.", viewModel.StatusText);
+    Assert.Equal("Type a word or phrase to search local data.", viewModel.EmptyStateText);
+
+    viewModel.SearchText = "notes";
+    viewModel.SearchAsync(CancellationToken.None).GetAwaiter().GetResult();
+
+    Assert.Equal("Local search is not connected yet.", viewModel.StatusText);
+    Assert.Equal("Search service connects in the next Find step.", viewModel.EmptyStateText);
+    Assert.Equal("0 results", viewModel.ResultsCountText);
+    Assert.False(viewModel.HasResults, "Search placeholder should not report real results.");
 }
 
 static void MoveViewModelStartsReady()
