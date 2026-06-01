@@ -10,7 +10,7 @@ namespace SuccessPlanner.App.ViewModels;
 public sealed class ReviewViewModel : ScreenViewModelBase, INotifyPropertyChanged
 {
     private readonly Func<CancellationToken, Task<IReadOnlyList<NoteItem>>> _loadSmallWinsAsync;
-    private readonly Func<CancellationToken, Task<IReadOnlyList<TaskItem>>> _loadStuckItemsAsync;
+    private readonly Func<CancellationToken, Task<IReadOnlyList<TaskItem>>> _loadReviewTasksAsync;
     private string _statusText = "Ready to review.";
     private string _reviewPanelTitle = "Review Gently";
     private string _reviewPanelText = "Notice small wins, stuck places, and one realistic next focus.";
@@ -38,13 +38,13 @@ public sealed class ReviewViewModel : ScreenViewModelBase, INotifyPropertyChange
 
     public ReviewViewModel(
         Func<CancellationToken, Task<IReadOnlyList<NoteItem>>> loadSmallWinsAsync,
-        Func<CancellationToken, Task<IReadOnlyList<TaskItem>>> loadStuckItemsAsync)
+        Func<CancellationToken, Task<IReadOnlyList<TaskItem>>> loadReviewTasksAsync)
         : base(ScreenCatalog.Review)
     {
         ArgumentNullException.ThrowIfNull(loadSmallWinsAsync);
-        ArgumentNullException.ThrowIfNull(loadStuckItemsAsync);
+        ArgumentNullException.ThrowIfNull(loadReviewTasksAsync);
         _loadSmallWinsAsync = loadSmallWinsAsync;
-        _loadStuckItemsAsync = loadStuckItemsAsync;
+        _loadReviewTasksAsync = loadReviewTasksAsync;
         RefreshCommand = new AsyncRelayCommand(
             () => LoadReviewAsync(CancellationToken.None),
             () => !IsLoadingReview);
@@ -63,6 +63,8 @@ public sealed class ReviewViewModel : ScreenViewModelBase, INotifyPropertyChange
     public ObservableCollection<ReviewSmallWinViewModel> SmallWins { get; } = [];
 
     public ObservableCollection<ReviewStuckItemViewModel> StuckItems { get; } = [];
+
+    public ObservableCollection<ReviewNeedsDecisionItemViewModel> NeedsDecisionItems { get; } = [];
 
     public AsyncRelayCommand RefreshCommand { get; }
 
@@ -144,13 +146,13 @@ public sealed class ReviewViewModel : ScreenViewModelBase, INotifyPropertyChange
         }
     }
 
-    public bool HasReviewData => HasSmallWins || HasStuckItems;
+    public bool HasReviewData => HasSmallWins || HasStuckItems || HasNeedsDecisionItems;
 
     public bool HasSmallWins => SmallWins.Count > 0;
 
     public bool HasStuckItems => StuckItems.Count > 0;
 
-    public bool HasNeedsDecisionItems => false;
+    public bool HasNeedsDecisionItems => NeedsDecisionItems.Count > 0;
 
     public bool HasNextFocus => false;
 
@@ -168,24 +170,32 @@ public sealed class ReviewViewModel : ScreenViewModelBase, INotifyPropertyChange
         StatusText = "Loading review.";
         SmallWinsText = "Loading small wins.";
         StuckItemsText = "Loading stuck items.";
+        NeedsDecisionText = "Loading needs-decision items.";
         WeekSummaryText = "Loading local review highlights.";
 
         try
         {
             IReadOnlyList<NoteItem> loadedSmallWins = await _loadSmallWinsAsync(cancellationToken);
-            IReadOnlyList<TaskItem> loadedStuckItems = await _loadStuckItemsAsync(cancellationToken);
+            IReadOnlyList<TaskItem> loadedReviewTasks = await _loadReviewTasksAsync(cancellationToken);
             IReadOnlyList<ReviewSmallWinViewModel> smallWinCards = loadedSmallWins
                 .Where(note => note.IsReviewHighlight)
                 .OrderByDescending(note => note.CreatedAt)
                 .ThenBy(note => note.Text, StringComparer.OrdinalIgnoreCase)
                 .Select(ReviewSmallWinViewModel.FromNote)
                 .ToList();
-            IReadOnlyList<ReviewStuckItemViewModel> stuckCards = loadedStuckItems
+            IReadOnlyList<ReviewStuckItemViewModel> stuckCards = loadedReviewTasks
                 .Where(ShouldShowStuckItem)
                 .OrderBy(task => StuckSortValue(task))
                 .ThenBy(task => task.DueDate ?? task.StartDate ?? DateOnly.MaxValue)
                 .ThenBy(task => task.Title, StringComparer.OrdinalIgnoreCase)
                 .Select(ReviewStuckItemViewModel.FromTask)
+                .ToList();
+            IReadOnlyList<ReviewNeedsDecisionItemViewModel> needsDecisionCards = loadedReviewTasks
+                .Where(ShouldShowNeedsDecisionItem)
+                .OrderBy(task => PrioritySortValue(task.Priority))
+                .ThenBy(task => task.DueDate ?? task.StartDate ?? DateOnly.MaxValue)
+                .ThenBy(task => task.Title, StringComparer.OrdinalIgnoreCase)
+                .Select(ReviewNeedsDecisionItemViewModel.FromTask)
                 .ToList();
 
             SmallWins.Clear();
@@ -200,6 +210,12 @@ public sealed class ReviewViewModel : ScreenViewModelBase, INotifyPropertyChange
                 StuckItems.Add(card);
             }
 
+            NeedsDecisionItems.Clear();
+            foreach (ReviewNeedsDecisionItemViewModel card in needsDecisionCards)
+            {
+                NeedsDecisionItems.Add(card);
+            }
+
             UpdateReviewSummary();
             StatusText = BuildLoadedStatusText();
             EmptyStateText = BuildLoadedEmptyStateText();
@@ -212,11 +228,13 @@ public sealed class ReviewViewModel : ScreenViewModelBase, INotifyPropertyChange
         {
             SmallWins.Clear();
             StuckItems.Clear();
+            NeedsDecisionItems.Clear();
             UpdateReviewSummary();
             StatusText = "Review could not load.";
             WeekSummaryText = "Review highlights could not load.";
             SmallWinsText = "Small wins could not load.";
             StuckItemsText = "Stuck items could not load.";
+            NeedsDecisionText = "Needs-decision items could not load.";
             EmptyStateText = "Try Review again after checking local data.";
         }
         finally
@@ -227,7 +245,7 @@ public sealed class ReviewViewModel : ScreenViewModelBase, INotifyPropertyChange
 
     private void UpdateReviewSummary()
     {
-        int reviewCount = SmallWins.Count + StuckItems.Count;
+        int reviewCount = SmallWins.Count + StuckItems.Count + NeedsDecisionItems.Count;
         ReviewCountText = reviewCount == 1 ? "1 review item" : $"{reviewCount} review items";
         WeekSummaryText = BuildWeekSummaryText();
         SmallWinsText = SmallWins.Count == 1
@@ -240,9 +258,15 @@ public sealed class ReviewViewModel : ScreenViewModelBase, INotifyPropertyChange
             : HasStuckItems
                 ? $"{StuckItems.Count} stuck items ready."
                 : "No stuck items yet.";
+        NeedsDecisionText = NeedsDecisionItems.Count == 1
+            ? "1 needs-decision item ready."
+            : HasNeedsDecisionItems
+                ? $"{NeedsDecisionItems.Count} needs-decision items ready."
+                : "No needs-decision items yet.";
         OnPropertyChanged(nameof(HasReviewData));
         OnPropertyChanged(nameof(HasSmallWins));
         OnPropertyChanged(nameof(HasStuckItems));
+        OnPropertyChanged(nameof(HasNeedsDecisionItems));
     }
 
     public static bool ShouldShowStuckItem(TaskItem task)
@@ -254,9 +278,21 @@ public sealed class ReviewViewModel : ScreenViewModelBase, INotifyPropertyChange
             || HasTag(task, "Repeated Snooze");
     }
 
+    public static bool ShouldShowNeedsDecisionItem(TaskItem task)
+    {
+        ArgumentNullException.ThrowIfNull(task);
+
+        return task.Status != TaskItemStatus.Done
+            && (HasTag(task, "Needs Decision")
+                || HasTag(task, "Decision Needed")
+                || HasTag(task, "Decision")
+                || HasTag(task, "NeedsDecision"));
+    }
+
     private string BuildLoadedStatusText()
     {
-        if (HasSmallWins && HasStuckItems)
+        int categoryCount = CountLoadedCategories();
+        if (categoryCount > 1)
         {
             return "Review ready.";
         }
@@ -266,12 +302,23 @@ public sealed class ReviewViewModel : ScreenViewModelBase, INotifyPropertyChange
             return "Small wins ready.";
         }
 
-        return HasStuckItems ? "Stuck items ready." : "No review items yet.";
+        if (HasStuckItems)
+        {
+            return "Stuck items ready.";
+        }
+
+        if (HasNeedsDecisionItems)
+        {
+            return "Needs-decision items ready.";
+        }
+
+        return "No review items yet.";
     }
 
     private string BuildLoadedEmptyStateText()
     {
-        if (HasSmallWins && HasStuckItems)
+        int categoryCount = CountLoadedCategories();
+        if (categoryCount > 1)
         {
             return "Review data is loaded from local activity.";
         }
@@ -286,33 +333,40 @@ public sealed class ReviewViewModel : ScreenViewModelBase, INotifyPropertyChange
             return "Stuck items are loaded from local task status.";
         }
 
+        if (HasNeedsDecisionItems)
+        {
+            return "Needs-decision items are loaded from local task tags.";
+        }
+
         return "Complete one small task, then come back to Review.";
     }
 
     private string BuildWeekSummaryText()
     {
-        if (!HasSmallWins && !HasStuckItems)
+        if (!HasReviewData)
         {
-            return "No local wins or stuck items loaded yet.";
+            return "No local review items loaded yet.";
         }
 
-        if (HasSmallWins && !HasStuckItems)
+        List<string> parts = [];
+        if (HasSmallWins)
         {
-            return SmallWins.Count == 1
-                ? "1 small win this review."
-                : $"{SmallWins.Count} small wins this review.";
+            parts.Add(SmallWins.Count == 1 ? "1 small win" : $"{SmallWins.Count} small wins");
         }
 
-        if (!HasSmallWins && HasStuckItems)
+        if (HasStuckItems)
         {
-            return StuckItems.Count == 1
-                ? "1 stuck item this review."
-                : $"{StuckItems.Count} stuck items this review.";
+            parts.Add(StuckItems.Count == 1 ? "1 stuck item" : $"{StuckItems.Count} stuck items");
         }
 
-        string winsText = SmallWins.Count == 1 ? "1 small win" : $"{SmallWins.Count} small wins";
-        string stuckText = StuckItems.Count == 1 ? "1 stuck item" : $"{StuckItems.Count} stuck items";
-        return $"{winsText} and {stuckText} this review.";
+        if (HasNeedsDecisionItems)
+        {
+            parts.Add(NeedsDecisionItems.Count == 1
+                ? "1 needs-decision item"
+                : $"{NeedsDecisionItems.Count} needs-decision items");
+        }
+
+        return $"{JoinReviewParts(parts)} this review.";
     }
 
     private static int StuckSortValue(TaskItem task)
@@ -325,9 +379,53 @@ public sealed class ReviewViewModel : ScreenViewModelBase, INotifyPropertyChange
         return HasTag(task, "Repeated Snooze") ? 1 : 2;
     }
 
+    private static int PrioritySortValue(TaskPriority priority)
+    {
+        return priority switch
+        {
+            TaskPriority.Critical => 0,
+            TaskPriority.High => 1,
+            TaskPriority.Normal => 2,
+            TaskPriority.Low => 3,
+            _ => 4
+        };
+    }
+
     private static bool HasTag(TaskItem task, string tag)
     {
         return task.Tags.Contains(tag, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private int CountLoadedCategories()
+    {
+        int count = 0;
+        if (HasSmallWins)
+        {
+            count++;
+        }
+
+        if (HasStuckItems)
+        {
+            count++;
+        }
+
+        if (HasNeedsDecisionItems)
+        {
+            count++;
+        }
+
+        return count;
+    }
+
+    private static string JoinReviewParts(IReadOnlyList<string> parts)
+    {
+        return parts.Count switch
+        {
+            0 => string.Empty,
+            1 => parts[0],
+            2 => $"{parts[0]} and {parts[1]}",
+            _ => $"{string.Join(", ", parts.Take(parts.Count - 1))}, and {parts[^1]}"
+        };
     }
 
     private bool SetProperty<T>(
@@ -493,6 +591,99 @@ public sealed class ReviewStuckItemViewModel
         return task.Tags.Contains("Repeated Snooze", StringComparer.OrdinalIgnoreCase)
             ? "Repeated Snooze"
             : "Stuck";
+    }
+
+    private static string BuildPriorityText(TaskPriority priority)
+    {
+        return priority switch
+        {
+            TaskPriority.Critical => "Critical priority",
+            TaskPriority.High => "High priority",
+            TaskPriority.Normal => "Normal priority",
+            TaskPriority.Low => "Low priority",
+            _ => $"{priority} priority"
+        };
+    }
+
+    private static string BuildDateText(TaskItem task)
+    {
+        if (task.DueDate.HasValue)
+        {
+            return $"Due {task.DueDate.Value:MMM d}";
+        }
+
+        return task.StartDate.HasValue
+            ? $"Selected {task.StartDate.Value:MMM d}"
+            : $"Created {task.CreatedAt.LocalDateTime:MMM d}";
+    }
+
+    private static string BuildNotesPreview(string notes)
+    {
+        string trimmed = notes.Trim();
+        return trimmed.Length <= 120 ? trimmed : $"{trimmed[..117]}...";
+    }
+}
+
+public sealed class ReviewNeedsDecisionItemViewModel
+{
+    private ReviewNeedsDecisionItemViewModel(TaskItem task)
+    {
+        Id = task.Id;
+        Title = task.Title;
+        Notes = task.Notes;
+        Priority = task.Priority;
+        DueDate = task.DueDate;
+        StartDate = task.StartDate;
+        CreatedAt = task.CreatedAt;
+        HasNotes = !string.IsNullOrWhiteSpace(task.Notes);
+        NotesPreview = HasNotes ? BuildNotesPreview(task.Notes) : string.Empty;
+        PriorityText = BuildPriorityText(task.Priority);
+        DateText = BuildDateText(task);
+        BadgeText = "Needs Decision";
+        CardIconGlyph = "\uE9CE";
+        CardAccentColor = "#9DCCFF";
+        CardBorderColor = "#B7D8FF";
+        CardToolTip = HasNotes
+            ? $"{Title} - {NotesPreview}"
+            : $"{Title} - needs a decision";
+    }
+
+    public Guid Id { get; }
+
+    public string Title { get; }
+
+    public string Notes { get; }
+
+    public string NotesPreview { get; }
+
+    public TaskPriority Priority { get; }
+
+    public DateOnly? DueDate { get; }
+
+    public DateOnly? StartDate { get; }
+
+    public DateTimeOffset CreatedAt { get; }
+
+    public bool HasNotes { get; }
+
+    public string PriorityText { get; }
+
+    public string DateText { get; }
+
+    public string BadgeText { get; }
+
+    public string CardIconGlyph { get; }
+
+    public string CardAccentColor { get; }
+
+    public string CardBorderColor { get; }
+
+    public string CardToolTip { get; }
+
+    public static ReviewNeedsDecisionItemViewModel FromTask(TaskItem task)
+    {
+        ArgumentNullException.ThrowIfNull(task);
+        return new ReviewNeedsDecisionItemViewModel(task);
     }
 
     private static string BuildPriorityText(TaskPriority priority)

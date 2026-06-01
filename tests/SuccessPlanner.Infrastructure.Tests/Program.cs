@@ -25,6 +25,7 @@ TestRunner.RunAll(
     ("PlanViewModel saves planning changes through TaskRepository", PlanViewModelSavesPlanningChangesThroughTaskRepository),
     ("ReviewViewModel loads small wins through NoteRepository", ReviewViewModelLoadsSmallWinsThroughNoteRepository),
     ("ReviewViewModel loads stuck items through TaskRepository", ReviewViewModelLoadsStuckItemsThroughTaskRepository),
+    ("ReviewViewModel loads needs-decision items through TaskRepository", ReviewViewModelLoadsNeedsDecisionItemsThroughTaskRepository),
     ("FocusSessionRepository saves and loads focus session state", FocusSessionRepositorySavesAndLoadsFocusSessionState),
     ("StartWorkViewModel records focus sessions through repositories", StartWorkViewModelRecordsFocusSessionsThroughRepositories),
     ("MovementSessionRepository saves and loads movement state", MovementSessionRepositorySavesAndLoadsMovementSessionState),
@@ -690,6 +691,43 @@ static async Task ReviewViewModelLoadsStuckItemsThroughTaskRepository()
     Assert.Equal("2 stuck items this review.", viewModel.WeekSummaryText);
     Assert.Equal("2 stuck items ready.", viewModel.StuckItemsText);
     Assert.Equal("Stuck items ready.", viewModel.StatusText);
+}
+
+static async Task ReviewViewModelLoadsNeedsDecisionItemsThroughTaskRepository()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+    await CreateMigratedDatabaseAsync(paths);
+
+    DateOnly today = new(2026, 5, 30);
+    TaskRepository taskRepository = new(paths);
+    TaskItem decisionTask = CreateRepositoryTask("Choose the project scope", dueDate: today.AddDays(1), priority: TaskPriority.High);
+    decisionTask.UpdateNotes("Pick the smallest shippable shape.");
+    decisionTask.AddTag("Needs Decision");
+    TaskItem ordinaryTask = CreateRepositoryTask("Pay the bill", dueDate: today);
+    TaskItem doneDecision = CreateRepositoryTask("Already decided", dueDate: today, done: true);
+    doneDecision.AddTag("Decision");
+
+    foreach (TaskItem task in new[] { ordinaryTask, doneDecision, decisionTask })
+    {
+        await taskRepository.AddAsync(task, CancellationToken.None);
+    }
+
+    ReviewViewModel viewModel = new(
+        _ => Task.FromResult<IReadOnlyList<NoteItem>>([]),
+        taskRepository.GetAllAsync);
+
+    await viewModel.LoadReviewAsync(CancellationToken.None);
+
+    Assert.True(viewModel.HasNeedsDecisionItems, "Review should load tagged tasks as needs-decision items.");
+    Assert.True(viewModel.HasReviewData, "Review should expose needs-decision items as review data.");
+    Assert.Equal(1, viewModel.NeedsDecisionItems.Count);
+    Assert.Equal(decisionTask.Id, viewModel.NeedsDecisionItems[0].Id);
+    Assert.Equal("Choose the project scope", viewModel.NeedsDecisionItems[0].Title);
+    Assert.Equal("1 review item", viewModel.ReviewCountText);
+    Assert.Equal("1 needs-decision item this review.", viewModel.WeekSummaryText);
+    Assert.Equal("1 needs-decision item ready.", viewModel.NeedsDecisionText);
+    Assert.Equal("Needs-decision items ready.", viewModel.StatusText);
 }
 
 static async Task FocusSessionRepositorySavesAndLoadsFocusSessionState()

@@ -39,10 +39,12 @@ TestRunner.RunAll(
     ("ReviewViewModel starts in a simple ready state", ReviewViewModelStartsReady),
     ("ReviewViewModel loads small wins", ReviewViewModelLoadsSmallWins),
     ("ReviewViewModel loads stuck items", ReviewViewModelLoadsStuckItems),
+    ("ReviewViewModel loads needs-decision items", ReviewViewModelLoadsNeedsDecisionItems),
     ("ReviewViewModel shows empty small wins state", ReviewViewModelShowsEmptySmallWinsState),
     ("ReviewViewModel reports load failures", ReviewViewModelReportsLoadFailures),
     ("ReviewViewModel creates small win display state", ReviewViewModelCreatesSmallWinDisplayState),
     ("ReviewViewModel creates stuck item display state", ReviewViewModelCreatesStuckItemDisplayState),
+    ("ReviewViewModel creates needs-decision display state", ReviewViewModelCreatesNeedsDecisionDisplayState),
     ("StartWorkViewModel starts in a simple ready state", StartWorkViewModelStartsReady),
     ("StartWorkViewModel applies session choices", StartWorkViewModelAppliesSessionChoices),
     ("StartWorkViewModel loads focus task options", StartWorkViewModelLoadsFocusTaskOptions),
@@ -1632,6 +1634,7 @@ static void ReviewViewModelStartsReady()
     Assert.False(viewModel.IsLoadingReview, "Review should start idle.");
     Assert.Equal(0, viewModel.SmallWins.Count);
     Assert.Equal(0, viewModel.StuckItems.Count);
+    Assert.Equal(0, viewModel.NeedsDecisionItems.Count);
     Assert.False(viewModel.HasReviewData, "Review should wait for loaded summary data.");
     Assert.False(viewModel.HasSmallWins, "Small wins should wait for Review loading.");
     Assert.False(viewModel.HasStuckItems, "Stuck items should wait for Review loading.");
@@ -1704,6 +1707,39 @@ static void ReviewViewModelLoadsStuckItems()
     Assert.False(viewModel.IsLoadingReview, "Loading flag should clear after stuck items load.");
 }
 
+static void ReviewViewModelLoadsNeedsDecisionItems()
+{
+    DateOnly today = new(2026, 5, 30);
+    TaskItem highDecision = CreateTask("Choose the project scope", dueDate: today.AddDays(1), priority: TaskPriority.High);
+    highDecision.UpdateNotes("Pick the smallest shippable shape.");
+    highDecision.AddTag("Needs Decision");
+    TaskItem normalDecision = CreateTask("Decide notebook layout", dueDate: today.AddDays(2));
+    normalDecision.AddTag("Decision Needed");
+    TaskItem doneDecision = CreateTask("Already decided", dueDate: today, done: true);
+    doneDecision.AddTag("Needs Decision");
+    TaskItem ordinaryTask = CreateTask("Ordinary planned task", dueDate: today);
+    ReviewViewModel viewModel = new(
+        _ => Task.FromResult<IReadOnlyList<NoteItem>>([]),
+        _ => Task.FromResult<IReadOnlyList<TaskItem>>([ordinaryTask, normalDecision, doneDecision, highDecision]));
+
+    viewModel.LoadReviewAsync().GetAwaiter().GetResult();
+
+    Assert.True(viewModel.HasReviewData, "Review should show data after loading needs-decision items.");
+    Assert.True(viewModel.HasNeedsDecisionItems, "Review should expose loaded needs-decision items.");
+    Assert.False(viewModel.HasSmallWins, "This test should isolate needs-decision items from wins.");
+    Assert.False(viewModel.HasStuckItems, "This test should isolate needs-decision items from stuck items.");
+    Assert.Equal(2, viewModel.NeedsDecisionItems.Count);
+    Assert.Equal(highDecision.Id, viewModel.NeedsDecisionItems[0].Id);
+    Assert.Equal("Needs Decision", viewModel.NeedsDecisionItems[0].BadgeText);
+    Assert.Equal(normalDecision.Id, viewModel.NeedsDecisionItems[1].Id);
+    Assert.Equal("2 review items", viewModel.ReviewCountText);
+    Assert.Equal("2 needs-decision items this review.", viewModel.WeekSummaryText);
+    Assert.Equal("2 needs-decision items ready.", viewModel.NeedsDecisionText);
+    Assert.Equal("Needs-decision items ready.", viewModel.StatusText);
+    Assert.Contains("local task tags", viewModel.EmptyStateText);
+    Assert.False(viewModel.IsLoadingReview, "Loading flag should clear after needs-decision items load.");
+}
+
 static void ReviewViewModelShowsEmptySmallWinsState()
 {
     ReviewViewModel viewModel = new(_ => Task.FromResult<IReadOnlyList<NoteItem>>([]));
@@ -1714,10 +1750,12 @@ static void ReviewViewModelShowsEmptySmallWinsState()
     Assert.False(viewModel.HasSmallWins, "Empty load should not report small wins.");
     Assert.Equal(0, viewModel.SmallWins.Count);
     Assert.Equal(0, viewModel.StuckItems.Count);
+    Assert.Equal(0, viewModel.NeedsDecisionItems.Count);
     Assert.Equal("0 review items", viewModel.ReviewCountText);
-    Assert.Equal("No local wins or stuck items loaded yet.", viewModel.WeekSummaryText);
+    Assert.Equal("No local review items loaded yet.", viewModel.WeekSummaryText);
     Assert.Equal("No small wins yet.", viewModel.SmallWinsText);
     Assert.Equal("No stuck items yet.", viewModel.StuckItemsText);
+    Assert.Equal("No needs-decision items yet.", viewModel.NeedsDecisionText);
     Assert.Equal("No review items yet.", viewModel.StatusText);
     Assert.Contains("Complete one small task", viewModel.EmptyStateText);
 }
@@ -1731,13 +1769,16 @@ static void ReviewViewModelReportsLoadFailures()
     Assert.False(viewModel.HasReviewData, "Failed load should not leave review data visible.");
     Assert.False(viewModel.HasSmallWins, "Failed load should clear small wins.");
     Assert.False(viewModel.HasStuckItems, "Failed load should clear stuck items.");
+    Assert.False(viewModel.HasNeedsDecisionItems, "Failed load should clear needs-decision items.");
     Assert.Equal(0, viewModel.SmallWins.Count);
     Assert.Equal(0, viewModel.StuckItems.Count);
+    Assert.Equal(0, viewModel.NeedsDecisionItems.Count);
     Assert.Equal("0 review items", viewModel.ReviewCountText);
     Assert.Equal("Review could not load.", viewModel.StatusText);
     Assert.Equal("Review highlights could not load.", viewModel.WeekSummaryText);
     Assert.Equal("Small wins could not load.", viewModel.SmallWinsText);
     Assert.Equal("Stuck items could not load.", viewModel.StuckItemsText);
+    Assert.Equal("Needs-decision items could not load.", viewModel.NeedsDecisionText);
     Assert.Contains("Try Review again", viewModel.EmptyStateText);
     Assert.False(viewModel.IsLoadingReview, "Loading flag should clear after failure.");
     Assert.True(viewModel.RefreshCommand.CanExecute(null), "Refresh should be available after failure.");
@@ -1783,6 +1824,27 @@ static void ReviewViewModelCreatesStuckItemDisplayState()
     Assert.Equal("Blocked", card.BadgeText);
     Assert.Equal("\uE7BA", card.CardIconGlyph);
     Assert.Contains("Call the supplier", card.CardToolTip);
+}
+
+static void ReviewViewModelCreatesNeedsDecisionDisplayState()
+{
+    DateOnly today = new(2026, 5, 30);
+    TaskItem decision = CreateTask("Choose the project scope", dueDate: today.AddDays(1), priority: TaskPriority.High);
+    decision.UpdateNotes("Pick the smallest shippable shape.");
+    decision.AddTag("Needs Decision");
+
+    ReviewNeedsDecisionItemViewModel card = ReviewNeedsDecisionItemViewModel.FromTask(decision);
+
+    Assert.Equal(decision.Id, card.Id);
+    Assert.Equal("Choose the project scope", card.Title);
+    Assert.Equal(TaskPriority.High, card.Priority);
+    Assert.Equal("High priority", card.PriorityText);
+    Assert.Equal("Due May 31", card.DateText);
+    Assert.True(card.HasNotes, "Needs-decision card should expose notes when notes exist.");
+    Assert.Contains("smallest shippable", card.NotesPreview);
+    Assert.Equal("Needs Decision", card.BadgeText);
+    Assert.Equal("\uE9CE", card.CardIconGlyph);
+    Assert.Contains("Choose the project scope", card.CardToolTip);
 }
 
 static void MoveViewModelStartsReady()

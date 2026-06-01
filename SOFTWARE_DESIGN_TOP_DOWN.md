@@ -1012,7 +1012,7 @@ Benchmark gate:
 
 ~~12.4. Show stuck items.~~
 
-12.5. Show needs-decision items.
+~~12.5. Show needs-decision items.~~
 
 12.6. Let user choose next focus.
 
