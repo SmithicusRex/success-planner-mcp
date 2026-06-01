@@ -4,13 +4,16 @@ using System.Runtime.CompilerServices;
 using SuccessPlanner.App.Commands;
 using SuccessPlanner.App.Infrastructure;
 using SuccessPlanner.App.Screens;
+using SuccessPlanner.App.Services;
 
 namespace SuccessPlanner.App.ViewModels;
 
 public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChanged
 {
     private readonly SettingsService _settingsService;
+    private readonly MicrosoftToDoConnectionTestService _microsoftToDoConnectionTestService;
     private AppSettings _lastSavedSettings;
+    private MicrosoftToDoConnectionStatus _microsoftToDoConnectionStatus;
     private string _profileName;
     private int _defaultFocusMinutes;
     private bool _startSyncOnLaunch;
@@ -28,15 +31,23 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
     public SettingsViewModel(
         SettingsService settingsService,
         AppSettings settings,
-        string settingsFileStatus = "Loaded settings")
+        string settingsFileStatus = "Loaded settings",
+        MicrosoftToDoConnectionTestService? microsoftToDoConnectionTestService = null)
         : base(ScreenCatalog.Settings)
     {
         _settingsService = settingsService;
+        _microsoftToDoConnectionTestService = microsoftToDoConnectionTestService
+            ?? new MicrosoftToDoConnectionTestService();
         _lastSavedSettings = CopySettings(settings);
+        _microsoftToDoConnectionStatus =
+            _microsoftToDoConnectionTestService.GetInitialStatus(settings.Connections);
 
         DestinationRules = [];
         SaveCommand = new AsyncRelayCommand(SaveAsync, () => HasChanges);
         CancelCommand = new AsyncRelayCommand(CancelAsync, () => HasChanges);
+        TestMicrosoftToDoConnectionCommand = new AsyncRelayCommand(
+            () => TestMicrosoftToDoConnectionAsync(CancellationToken.None),
+            () => CanTestMicrosoftToDoConnection);
 
         _profileName = string.Empty;
         _themeName = string.Empty;
@@ -87,7 +98,14 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
     public bool EnableMicrosoftToDo
     {
         get => _enableMicrosoftToDo;
-        set => SetProperty(ref _enableMicrosoftToDo, value);
+        set
+        {
+            if (SetProperty(ref _enableMicrosoftToDo, value))
+            {
+                SetMicrosoftToDoConnectionStatus(
+                    _microsoftToDoConnectionTestService.GetInitialStatus(BuildCurrentConnectionSettings()));
+            }
+        }
     }
 
     public bool EnablePlanner
@@ -143,6 +161,53 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
 
     public AsyncRelayCommand CancelCommand { get; }
 
+    public AsyncRelayCommand TestMicrosoftToDoConnectionCommand { get; }
+
+    public string MicrosoftToDoStatusText => _microsoftToDoConnectionStatus.StatusText;
+
+    public string MicrosoftToDoStatusDetailText => _microsoftToDoConnectionStatus.DetailText;
+
+    public string MicrosoftToDoStatusBackgroundColor => _microsoftToDoConnectionStatus.State switch
+    {
+        MicrosoftToDoConnectionState.Connected => "#E7F8EE",
+        MicrosoftToDoConnectionState.NeedsSignIn => "#FFF1D6",
+        MicrosoftToDoConnectionState.Unavailable or MicrosoftToDoConnectionState.Failed => "#FFE7E0",
+        MicrosoftToDoConnectionState.Testing => "#EAF2FF",
+        MicrosoftToDoConnectionState.Disabled => "#EEF0F3",
+        _ => "#F4F7FB"
+    };
+
+    public string MicrosoftToDoStatusAccentColor => _microsoftToDoConnectionStatus.State switch
+    {
+        MicrosoftToDoConnectionState.Connected => "#1E6B3A",
+        MicrosoftToDoConnectionState.NeedsSignIn => "#946200",
+        MicrosoftToDoConnectionState.Unavailable or MicrosoftToDoConnectionState.Failed => "#B8331F",
+        MicrosoftToDoConnectionState.Testing => "#2F6FED",
+        MicrosoftToDoConnectionState.Disabled => "#6A717A",
+        _ => "#4E5965"
+    };
+
+    public bool CanTestMicrosoftToDoConnection => _microsoftToDoConnectionStatus.CanTestConnection;
+
+    public bool MicrosoftToDoNeedsAttention => _microsoftToDoConnectionStatus.NeedsAttention;
+
+    public async Task TestMicrosoftToDoConnectionAsync(CancellationToken cancellationToken = default)
+    {
+        if (!CanTestMicrosoftToDoConnection)
+        {
+            return;
+        }
+
+        SetMicrosoftToDoConnectionStatus(MicrosoftToDoConnectionStatus.Testing(DateTimeOffset.Now));
+
+        MicrosoftToDoConnectionStatus testedStatus =
+            await _microsoftToDoConnectionTestService.TestConnectionAsync(
+                BuildCurrentConnectionSettings(),
+                cancellationToken);
+
+        SetMicrosoftToDoConnectionStatus(testedStatus);
+    }
+
     private async Task SaveAsync()
     {
         AppSettings settings = ToSettings();
@@ -154,6 +219,8 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
             SettingsFileStatus = "Saved to local settings file";
             SaveStatus = "Settings saved.";
             HasChanges = false;
+            SetMicrosoftToDoConnectionStatus(
+                _microsoftToDoConnectionTestService.GetInitialStatus(settings.Connections));
         }
         catch (SettingsValidationException ex)
         {
@@ -227,6 +294,29 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
                 })
                 .ToList()
         };
+    }
+
+    private ConnectionSettings BuildCurrentConnectionSettings()
+    {
+        return new ConnectionSettings
+        {
+            EnableMicrosoftToDo = EnableMicrosoftToDo,
+            EnablePlanner = EnablePlanner,
+            EnableProjectDesktop = EnableProjectDesktop,
+            EnablePhoneCompanion = EnablePhoneCompanion
+        };
+    }
+
+    private void SetMicrosoftToDoConnectionStatus(MicrosoftToDoConnectionStatus status)
+    {
+        _microsoftToDoConnectionStatus = status;
+        OnPropertyChanged(nameof(MicrosoftToDoStatusText));
+        OnPropertyChanged(nameof(MicrosoftToDoStatusDetailText));
+        OnPropertyChanged(nameof(MicrosoftToDoStatusBackgroundColor));
+        OnPropertyChanged(nameof(MicrosoftToDoStatusAccentColor));
+        OnPropertyChanged(nameof(CanTestMicrosoftToDoConnection));
+        OnPropertyChanged(nameof(MicrosoftToDoNeedsAttention));
+        TestMicrosoftToDoConnectionCommand.RaiseCanExecuteChanged();
     }
 
     private static AppSettings CopySettings(AppSettings settings)

@@ -150,7 +150,38 @@
                         <CheckBox Content="Microsoft To Do"
                                   IsChecked="{Binding EnableMicrosoftToDo}"
                                   FontSize="15"
-                                  Margin="0,0,0,12" />
+                                  Margin="0,0,0,10" />
+                        <Grid Margin="0,0,0,16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <Border Background="{Binding MicrosoftToDoStatusBackgroundColor}"
+                                    BorderBrush="{Binding MicrosoftToDoStatusAccentColor}"
+                                    BorderThickness="1"
+                                    CornerRadius="8"
+                                    Padding="14"
+                                    Margin="0,0,12,0">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding MicrosoftToDoStatusText}"
+                                               Foreground="{Binding MicrosoftToDoStatusAccentColor}"
+                                               FontWeight="SemiBold"
+                                               FontSize="15" />
+                                    <TextBlock Text="{Binding MicrosoftToDoStatusDetailText}"
+                                               Foreground="{StaticResource MutedBrush}"
+                                               TextWrapping="Wrap"
+                                               Margin="0,4,0,0" />
+                                </StackPanel>
+                            </Border>
+
+                            <Button Grid.Column="1"
+                                    Content="Test To Do"
+                                    Command="{Binding TestMicrosoftToDoConnectionCommand}"
+                                    Style="{StaticResource SettingsButtonStyle}"
+                                    VerticalAlignment="Center"
+                                    Margin="0" />
+                        </Grid>
                         <CheckBox Content="Planner"
                                   IsChecked="{Binding EnablePlanner}"
                                   FontSize="15"

@@ -1070,7 +1070,7 @@ Benchmark gate:
 - ~~Queue survives app restart.~~
 - ~~Build and tests pass.~~
 
-### 15. Microsoft To Do Adapter
+### ~~15. Microsoft To Do Adapter~~
 
 ~~15.1. Add Microsoft To Do connection status model.~~
 
@@ -1080,14 +1080,14 @@ Benchmark gate:
 
 ~~15.4. Push captured tasks to To Do where configured.~~
 
-15.5. Show To Do connection status in Settings.
+~~15.5. Show To Do connection status in Settings.~~
 
-Benchmark gate:
+~~Benchmark gate:~~
 
-- Settings shows To Do connection status.
+- ~~Settings shows To Do connection status.~~
 - ~~App can test whether To Do integration is available.~~
 - ~~Successful sync updates source links.~~
-- Failed sync remains visible and recoverable.
+- ~~Failed sync remains visible and recoverable.~~
 - ~~Build and tests pass.~~
 
 ### 16. Microsoft Project Desktop Detection And Import

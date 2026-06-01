@@ -1,4 +1,5 @@
 using SuccessPlanner.App.Domain;
+using SuccessPlanner.App.Infrastructure;
 using SuccessPlanner.App.Screens;
 using SuccessPlanner.App.Services;
 using SuccessPlanner.App.ViewModels;
@@ -6,6 +7,10 @@ using SuccessPlanner.App.ViewModels;
 TestRunner.RunAll(
     ("AppShellViewModel refreshes visible sync status", AppShellViewModelRefreshesVisibleSyncStatus),
     ("AppShellViewModel reports sync status read failure", AppShellViewModelReportsSyncStatusReadFailure),
+    ("SettingsViewModel shows To Do connection status", SettingsViewModelShowsToDoConnectionStatus),
+    ("SettingsViewModel updates To Do status when disabled", SettingsViewModelUpdatesToDoStatusWhenDisabled),
+    ("SettingsViewModel tests To Do connection", SettingsViewModelTestsToDoConnection),
+    ("SettingsViewModel shows failed To Do connection status", SettingsViewModelShowsFailedToDoConnectionStatus),
     ("CaptureViewModel starts in a simple ready state", CaptureViewModelStartsReady),
     ("CaptureViewModel applies date hint buttons", CaptureViewModelAppliesDateHintButtons),
     ("CaptureViewModel applies destination choices", CaptureViewModelAppliesDestinationChoices),
@@ -120,12 +125,115 @@ static void AppShellViewModelReportsSyncStatusReadFailure()
     Assert.Contains("Local data is still stored safely.", viewModel.SyncStatusDetailText);
 }
 
+static void SettingsViewModelShowsToDoConnectionStatus()
+{
+    SettingsViewModel viewModel = CreateSettingsViewModelWithProbe(
+        AppSettings.CreateDefault(),
+        (_, _) => Task.FromResult(MicrosoftToDoConnectionStatus.Connected()));
+
+    Assert.Equal("Ready to connect", viewModel.MicrosoftToDoStatusText);
+    Assert.Contains("Connect Microsoft To Do", viewModel.MicrosoftToDoStatusDetailText);
+    Assert.Equal("#F4F7FB", viewModel.MicrosoftToDoStatusBackgroundColor);
+    Assert.Equal("#4E5965", viewModel.MicrosoftToDoStatusAccentColor);
+    Assert.True(viewModel.CanTestMicrosoftToDoConnection, "Enabled To Do status should allow testing.");
+    Assert.False(viewModel.MicrosoftToDoNeedsAttention, "Initial enabled To Do status should not need attention.");
+}
+
+static void SettingsViewModelUpdatesToDoStatusWhenDisabled()
+{
+    SettingsViewModel viewModel = CreateSettingsViewModelWithProbe(
+        AppSettings.CreateDefault(),
+        (_, _) => Task.FromResult(MicrosoftToDoConnectionStatus.Connected()));
+
+    viewModel.EnableMicrosoftToDo = false;
+
+    Assert.Equal("To Do is off", viewModel.MicrosoftToDoStatusText);
+    Assert.Contains("turned off", viewModel.MicrosoftToDoStatusDetailText);
+    Assert.Equal("#EEF0F3", viewModel.MicrosoftToDoStatusBackgroundColor);
+    Assert.False(viewModel.CanTestMicrosoftToDoConnection, "Disabled To Do status should not allow testing.");
+    Assert.True(viewModel.HasChanges, "Changing the To Do switch should mark Settings dirty.");
+
+    viewModel.EnableMicrosoftToDo = true;
+
+    Assert.Equal("Ready to connect", viewModel.MicrosoftToDoStatusText);
+    Assert.True(viewModel.CanTestMicrosoftToDoConnection, "Re-enabled To Do status should allow testing.");
+}
+
+static void SettingsViewModelTestsToDoConnection()
+{
+    DateTimeOffset now = new(2026, 6, 1, 23, 0, 0, TimeSpan.Zero);
+    TestMicrosoftToDoConnectionProbe probe = new((checkedAt, _) =>
+        Task.FromResult(MicrosoftToDoConnectionStatus.Connected("smith@example.com", checkedAt)));
+    SettingsViewModel viewModel = CreateSettingsViewModelWithProbeInstance(
+        AppSettings.CreateDefault(),
+        probe,
+        now);
+
+    viewModel.TestMicrosoftToDoConnectionAsync(CancellationToken.None).GetAwaiter().GetResult();
+
+    Assert.Equal(1, probe.CallCount);
+    Assert.Equal("To Do connected", viewModel.MicrosoftToDoStatusText);
+    Assert.Contains("smith@example.com", viewModel.MicrosoftToDoStatusDetailText);
+    Assert.Equal("#E7F8EE", viewModel.MicrosoftToDoStatusBackgroundColor);
+    Assert.Equal("#1E6B3A", viewModel.MicrosoftToDoStatusAccentColor);
+    Assert.True(viewModel.CanTestMicrosoftToDoConnection, "Connected To Do status should allow retesting.");
+}
+
+static void SettingsViewModelShowsFailedToDoConnectionStatus()
+{
+    TestMicrosoftToDoConnectionProbe probe = new((checkedAt, _) =>
+        Task.FromResult(MicrosoftToDoConnectionStatus.Failed("Token cache unavailable.", checkedAt)));
+    SettingsViewModel viewModel = CreateSettingsViewModelWithProbeInstance(
+        AppSettings.CreateDefault(),
+        probe,
+        new DateTimeOffset(2026, 6, 1, 23, 10, 0, TimeSpan.Zero));
+
+    viewModel.TestMicrosoftToDoConnectionAsync(CancellationToken.None).GetAwaiter().GetResult();
+
+    Assert.Equal("Connection failed", viewModel.MicrosoftToDoStatusText);
+    Assert.Contains("Token cache unavailable.", viewModel.MicrosoftToDoStatusDetailText);
+    Assert.Equal("#FFE7E0", viewModel.MicrosoftToDoStatusBackgroundColor);
+    Assert.Equal("#B8331F", viewModel.MicrosoftToDoStatusAccentColor);
+    Assert.True(viewModel.MicrosoftToDoNeedsAttention, "Failed To Do status should stay visible.");
+    Assert.True(viewModel.CanTestMicrosoftToDoConnection, "Failed To Do status should remain recoverable by retesting.");
+}
+
 static NavigationService CreateShellNavigationService()
 {
     NavigationService navigationService = new();
     navigationService.Register(AppScreen.Home, () => new HomeScreenViewModel(navigationService));
     navigationService.GoHomeAsync().GetAwaiter().GetResult();
     return navigationService;
+}
+
+static SettingsViewModel CreateSettingsViewModelWithProbe(
+    AppSettings settings,
+    Func<DateTimeOffset, CancellationToken, Task<MicrosoftToDoConnectionStatus>> testAsync)
+{
+    return CreateSettingsViewModelWithProbeInstance(
+        settings,
+        new TestMicrosoftToDoConnectionProbe(testAsync),
+        DateTimeOffset.Now);
+}
+
+static SettingsViewModel CreateSettingsViewModelWithProbeInstance(
+    AppSettings settings,
+    TestMicrosoftToDoConnectionProbe probe,
+    DateTimeOffset now)
+{
+    string settingsRoot = Path.Combine(
+        Path.GetTempPath(),
+        "SuccessPlannerMCP",
+        "ViewModelTests",
+        Guid.NewGuid().ToString("N"));
+    SettingsService settingsService = new(new AppPaths(settingsRoot));
+    MicrosoftToDoConnectionTestService connectionTestService = new(probe, () => now);
+
+    return new SettingsViewModel(
+        settingsService,
+        settings,
+        settingsFileStatus: "Loaded settings",
+        microsoftToDoConnectionTestService: connectionTestService);
 }
 
 static void CaptureViewModelStartsReady()
@@ -2762,6 +2870,27 @@ static NoteItem CreateReviewHighlight(string text, DateTimeOffset createdAt)
         createdAt,
         isReviewHighlight: true,
         tags: ["Review", "Win", "Small Win"]);
+}
+
+internal sealed class TestMicrosoftToDoConnectionProbe : IMicrosoftToDoConnectionProbe
+{
+    private readonly Func<DateTimeOffset, CancellationToken, Task<MicrosoftToDoConnectionStatus>> _testAsync;
+
+    public TestMicrosoftToDoConnectionProbe(
+        Func<DateTimeOffset, CancellationToken, Task<MicrosoftToDoConnectionStatus>> testAsync)
+    {
+        _testAsync = testAsync;
+    }
+
+    public int CallCount { get; private set; }
+
+    public Task<MicrosoftToDoConnectionStatus> TestConnectionAsync(
+        DateTimeOffset checkedAt,
+        CancellationToken cancellationToken = default)
+    {
+        CallCount++;
+        return _testAsync(checkedAt, cancellationToken);
+    }
 }
 
 internal static class TestRunner
