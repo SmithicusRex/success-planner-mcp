@@ -2,19 +2,58 @@ namespace SuccessPlanner.App.Services;
 
 public sealed class BackgroundWorkerHost
 {
-    public bool IsRunning { get; private set; }
+    private readonly IReadOnlyList<IBackgroundWorker> _workers;
 
-    public Task StartAsync(CancellationToken cancellationToken)
+    public BackgroundWorkerHost(params IBackgroundWorker[] workers)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        IsRunning = true;
-        return Task.CompletedTask;
+        _workers = workers;
     }
 
-    public Task StopAsync(CancellationToken cancellationToken)
+    public bool IsRunning { get; private set; }
+
+    public async Task StartAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        if (IsRunning)
+        {
+            return;
+        }
+
+        List<IBackgroundWorker> startedWorkers = [];
+        try
+        {
+            foreach (IBackgroundWorker worker in _workers)
+            {
+                await worker.StartAsync(cancellationToken);
+                startedWorkers.Add(worker);
+            }
+        }
+        catch
+        {
+            foreach (IBackgroundWorker worker in startedWorkers.AsEnumerable().Reverse())
+            {
+                await worker.StopAsync(CancellationToken.None);
+            }
+
+            throw;
+        }
+
+        IsRunning = true;
+    }
+
+    public async Task StopAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!IsRunning)
+        {
+            return;
+        }
+
+        foreach (IBackgroundWorker worker in _workers.AsEnumerable().Reverse())
+        {
+            await worker.StopAsync(cancellationToken);
+        }
+
         IsRunning = false;
-        return Task.CompletedTask;
     }
 }

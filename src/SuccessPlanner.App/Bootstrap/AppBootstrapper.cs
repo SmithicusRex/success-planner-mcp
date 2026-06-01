@@ -17,6 +17,7 @@ public sealed class AppBootstrapper
     private readonly SearchService _searchService;
     private readonly SyncQueueRepository _syncQueueRepository;
     private readonly SyncService _syncService;
+    private readonly BackgroundSyncWorker _backgroundSyncWorker;
     private readonly FocusSessionRepository _focusSessionRepository;
     private readonly MovementSessionRepository _movementSessionRepository;
     private readonly BackgroundWorkerHost _backgroundWorkerHost;
@@ -42,9 +43,10 @@ public sealed class AppBootstrapper
         _searchService = new SearchService(_paths);
         _syncQueueRepository = new SyncQueueRepository(_paths);
         _syncService = new SyncService(_syncQueueRepository);
+        _backgroundSyncWorker = new BackgroundSyncWorker(_syncService);
         _focusSessionRepository = new FocusSessionRepository(_paths);
         _movementSessionRepository = new MovementSessionRepository(_paths);
-        _backgroundWorkerHost = new BackgroundWorkerHost();
+        _backgroundWorkerHost = new BackgroundWorkerHost(_backgroundSyncWorker);
         _navigationService = new NavigationService();
         RegisterScreens();
     }

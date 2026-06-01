@@ -18,6 +18,9 @@ TestRunner.RunAll(
     ("SyncService queues local changes", SyncServiceQueuesLocalChanges),
     ("SyncService reports ready work and status", SyncServiceReportsReadyWorkAndStatus),
     ("SyncService updates queue item states", SyncServiceUpdatesQueueItemStates),
+    ("BackgroundSyncWorker processes ready queue items", BackgroundSyncWorkerProcessesReadyQueueItems),
+    ("BackgroundSyncWorker records processor failures", BackgroundSyncWorkerRecordsProcessorFailures),
+    ("BackgroundWorkerHost starts and stops workers", BackgroundWorkerHostStartsAndStopsWorkers),
     ("DatabaseService reports a healthy database", DatabaseServiceReportsHealthyDatabase),
     ("DatabaseService reports missing migration health failures", DatabaseServiceReportsMissingMigrationHealthFailures),
     ("DatabaseStartupMigrationService migrates a new database at startup", DatabaseStartupMigrationServiceMigratesNewDatabaseAtStartup),
@@ -482,6 +485,99 @@ static async Task SyncServiceUpdatesQueueItemStates()
     Assert.Equal(SyncState.Synced, synced!.SyncState);
     Assert.Equal(0, synced.RetryCount);
     Assert.Equal(string.Empty, synced.FailureMessage);
+}
+
+static async Task BackgroundSyncWorkerProcessesReadyQueueItems()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+    await CreateMigratedDatabaseAsync(paths);
+
+    DateTimeOffset now = new(2026, 6, 1, 15, 0, 0, TimeSpan.Zero);
+    SyncQueueRepository repository = new(paths);
+    SyncService service = new(repository, () => now);
+    SyncQueueItem queued = await service.QueueUpdateAsync(
+        SourceLinkItemType.Task,
+        Guid.NewGuid(),
+        SourceSystem.MicrosoftToDo,
+        """{"title":"Call the pharmacy"}""",
+        cancellationToken: CancellationToken.None);
+    List<Guid> processedIds = [];
+    BackgroundSyncWorker worker = new(
+        service,
+        (item, cancellationToken) =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            processedIds.Add(item.Id);
+            return Task.CompletedTask;
+        },
+        pollInterval: TimeSpan.FromMilliseconds(50),
+        nowProvider: () => now);
+
+    BackgroundSyncWorkerRunResult result = await worker.RunOnceAsync(CancellationToken.None);
+
+    Assert.Equal(1, result.ReadyItemCount);
+    Assert.Equal(1, result.ProcessedItemCount);
+    Assert.Equal(0, result.FailedItemCount);
+    Assert.Equal(1, processedIds.Count);
+    Assert.Equal(queued.Id, processedIds[0]);
+    Assert.Equal("1 ready item was picked by the background worker.", worker.LastStatusText);
+}
+
+static async Task BackgroundSyncWorkerRecordsProcessorFailures()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+    await CreateMigratedDatabaseAsync(paths);
+
+    DateTimeOffset now = new(2026, 6, 1, 16, 0, 0, TimeSpan.Zero);
+    SyncQueueRepository repository = new(paths);
+    SyncService service = new(repository, () => now);
+    SyncQueueItem queued = await service.QueueCreateAsync(
+        SourceLinkItemType.Project,
+        Guid.NewGuid(),
+        SourceSystem.MicrosoftPlanner,
+        "{}",
+        cancellationToken: CancellationToken.None);
+    BackgroundSyncWorker worker = new(
+        service,
+        (_, _) => throw new InvalidOperationException("Planner adapter missing."),
+        pollInterval: TimeSpan.FromMilliseconds(50),
+        nowProvider: () => now);
+
+    BackgroundSyncWorkerRunResult result = await worker.RunOnceAsync(CancellationToken.None);
+    SyncQueueItem? stored = await repository.GetByIdAsync(queued.Id, CancellationToken.None);
+
+    Assert.Equal(1, result.ReadyItemCount);
+    Assert.Equal(0, result.ProcessedItemCount);
+    Assert.Equal(1, result.FailedItemCount);
+    Assert.Equal("Planner adapter missing.", worker.LastErrorText);
+    Assert.Equal("1 ready item failed in the background worker.", worker.LastStatusText);
+    Assert.NotNull(stored, "Processor failure should not remove local queue work.");
+    Assert.Equal(SyncState.Pending, stored!.SyncState);
+}
+
+static async Task BackgroundWorkerHostStartsAndStopsWorkers()
+{
+    TestBackgroundWorker firstWorker = new();
+    TestBackgroundWorker secondWorker = new();
+    BackgroundWorkerHost host = new(firstWorker, secondWorker);
+
+    await host.StartAsync(CancellationToken.None);
+
+    Assert.True(host.IsRunning, "Host should report running after start.");
+    Assert.True(firstWorker.IsRunning, "First worker should start.");
+    Assert.True(secondWorker.IsRunning, "Second worker should start.");
+    Assert.Equal(1, firstWorker.StartCount);
+    Assert.Equal(1, secondWorker.StartCount);
+
+    await host.StopAsync(CancellationToken.None);
+
+    Assert.False(host.IsRunning, "Host should stop.");
+    Assert.False(firstWorker.IsRunning, "First worker should stop.");
+    Assert.False(secondWorker.IsRunning, "Second worker should stop.");
+    Assert.Equal(1, firstWorker.StopCount);
+    Assert.Equal(1, secondWorker.StopCount);
 }
 
 static async Task DatabaseServiceReportsHealthyDatabase()
@@ -1779,6 +1875,31 @@ internal sealed class TestWorkspace : IDisposable
                 Thread.Sleep(100);
             }
         }
+    }
+}
+
+internal sealed class TestBackgroundWorker : IBackgroundWorker
+{
+    public bool IsRunning { get; private set; }
+
+    public int StartCount { get; private set; }
+
+    public int StopCount { get; private set; }
+
+    public Task StartAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        StartCount++;
+        IsRunning = true;
+        return Task.CompletedTask;
+    }
+
+    public Task StopAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        StopCount++;
+        IsRunning = false;
+        return Task.CompletedTask;
     }
 }
 

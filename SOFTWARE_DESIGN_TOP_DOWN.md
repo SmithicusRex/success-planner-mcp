@@ -1053,7 +1053,7 @@ Benchmark gate:
 
 ~~14.3. Add `SyncService`.~~
 
-14.4. Add background sync worker.
+~~14.4. Add background sync worker.~~
 
 14.5. Show sync status in app header or diagnostics.
 
@@ -1064,6 +1064,7 @@ Benchmark gate:
 - ~~Sync queue table is created by migration.~~
 - ~~Sync queue repository can add, read, update, and delete queue items.~~
 - ~~Local changes create queue items.~~
+- ~~Background sync worker starts and picks ready queue items.~~
 - Header or diagnostics shows sync state.
 - Failed sync does not lose local data.
 - ~~Queue survives app restart.~~
