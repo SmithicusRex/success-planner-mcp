@@ -1006,7 +1006,7 @@ Benchmark gate:
 
 ~~12.1. Create `ReviewViewModel`.~~
 
-12.2. Create `ReviewView`.
+~~12.2. Create `ReviewView`.~~
 
 12.3. Show small wins.
 
