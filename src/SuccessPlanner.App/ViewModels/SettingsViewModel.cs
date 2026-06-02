@@ -12,8 +12,12 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
 {
     private readonly SettingsService _settingsService;
     private readonly MicrosoftToDoConnectionTestService _microsoftToDoConnectionTestService;
+    private readonly MicrosoftProjectDesktopDetector _microsoftProjectDesktopDetector;
     private AppSettings _lastSavedSettings;
     private MicrosoftToDoConnectionStatus _microsoftToDoConnectionStatus;
+    private MicrosoftProjectDesktopDetectionResult? _microsoftProjectDesktopDetectionResult;
+    private string _microsoftProjectDesktopDetectionFailure = string.Empty;
+    private bool _isDetectingMicrosoftProjectDesktop;
     private string _profileName;
     private int _defaultFocusMinutes;
     private bool _startSyncOnLaunch;
@@ -32,12 +36,15 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
         SettingsService settingsService,
         AppSettings settings,
         string settingsFileStatus = "Loaded settings",
-        MicrosoftToDoConnectionTestService? microsoftToDoConnectionTestService = null)
+        MicrosoftToDoConnectionTestService? microsoftToDoConnectionTestService = null,
+        MicrosoftProjectDesktopDetector? microsoftProjectDesktopDetector = null)
         : base(ScreenCatalog.Settings)
     {
         _settingsService = settingsService;
         _microsoftToDoConnectionTestService = microsoftToDoConnectionTestService
             ?? new MicrosoftToDoConnectionTestService();
+        _microsoftProjectDesktopDetector = microsoftProjectDesktopDetector
+            ?? new MicrosoftProjectDesktopDetector();
         _lastSavedSettings = CopySettings(settings);
         _microsoftToDoConnectionStatus =
             _microsoftToDoConnectionTestService.GetInitialStatus(settings.Connections);
@@ -48,6 +55,9 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
         TestMicrosoftToDoConnectionCommand = new AsyncRelayCommand(
             () => TestMicrosoftToDoConnectionAsync(CancellationToken.None),
             () => CanTestMicrosoftToDoConnection);
+        DetectMicrosoftProjectDesktopCommand = new AsyncRelayCommand(
+            () => DetectMicrosoftProjectDesktopAsync(CancellationToken.None),
+            () => CanDetectMicrosoftProjectDesktop);
 
         _profileName = string.Empty;
         _themeName = string.Empty;
@@ -117,7 +127,13 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
     public bool EnableProjectDesktop
     {
         get => _enableProjectDesktop;
-        set => SetProperty(ref _enableProjectDesktop, value);
+        set
+        {
+            if (SetProperty(ref _enableProjectDesktop, value))
+            {
+                ResetMicrosoftProjectDesktopDetection();
+            }
+        }
     }
 
     public bool EnablePhoneCompanion
@@ -163,6 +179,8 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
 
     public AsyncRelayCommand TestMicrosoftToDoConnectionCommand { get; }
 
+    public AsyncRelayCommand DetectMicrosoftProjectDesktopCommand { get; }
+
     public string MicrosoftToDoStatusText => _microsoftToDoConnectionStatus.StatusText;
 
     public string MicrosoftToDoStatusDetailText => _microsoftToDoConnectionStatus.DetailText;
@@ -191,6 +209,112 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
 
     public bool MicrosoftToDoNeedsAttention => _microsoftToDoConnectionStatus.NeedsAttention;
 
+    public string MicrosoftProjectDesktopStatusText
+    {
+        get
+        {
+            if (!EnableProjectDesktop)
+            {
+                return "Project detection off";
+            }
+
+            if (_isDetectingMicrosoftProjectDesktop)
+            {
+                return "Checking Project";
+            }
+
+            if (!string.IsNullOrWhiteSpace(_microsoftProjectDesktopDetectionFailure))
+            {
+                return "Project detection failed";
+            }
+
+            return _microsoftProjectDesktopDetectionResult?.StatusText ?? "Ready to detect";
+        }
+    }
+
+    public string MicrosoftProjectDesktopStatusDetailText
+    {
+        get
+        {
+            if (!EnableProjectDesktop)
+            {
+                return "Microsoft Project Desktop is turned off in Settings.";
+            }
+
+            if (_isDetectingMicrosoftProjectDesktop)
+            {
+                return $"Looking for {MicrosoftProjectDesktopDetectionResult.ExecutableName}.";
+            }
+
+            if (!string.IsNullOrWhiteSpace(_microsoftProjectDesktopDetectionFailure))
+            {
+                return _microsoftProjectDesktopDetectionFailure;
+            }
+
+            return _microsoftProjectDesktopDetectionResult?.DetailText
+                ?? $"Detect Project to find {MicrosoftProjectDesktopDetectionResult.ExecutableName} on this PC.";
+        }
+    }
+
+    public string MicrosoftProjectDesktopStatusBackgroundColor
+    {
+        get
+        {
+            if (!EnableProjectDesktop)
+            {
+                return "#EEF0F3";
+            }
+
+            if (_isDetectingMicrosoftProjectDesktop)
+            {
+                return "#EAF2FF";
+            }
+
+            if (!string.IsNullOrWhiteSpace(_microsoftProjectDesktopDetectionFailure)
+                || _microsoftProjectDesktopDetectionResult is { IsDetected: false })
+            {
+                return "#FFF1D6";
+            }
+
+            return _microsoftProjectDesktopDetectionResult is { IsDetected: true }
+                ? "#E7F8EE"
+                : "#F4F7FB";
+        }
+    }
+
+    public string MicrosoftProjectDesktopStatusAccentColor
+    {
+        get
+        {
+            if (!EnableProjectDesktop)
+            {
+                return "#6A717A";
+            }
+
+            if (_isDetectingMicrosoftProjectDesktop)
+            {
+                return "#2F6FED";
+            }
+
+            if (!string.IsNullOrWhiteSpace(_microsoftProjectDesktopDetectionFailure)
+                || _microsoftProjectDesktopDetectionResult is { IsDetected: false })
+            {
+                return "#946200";
+            }
+
+            return _microsoftProjectDesktopDetectionResult is { IsDetected: true }
+                ? "#1E6B3A"
+                : "#4E5965";
+        }
+    }
+
+    public bool CanDetectMicrosoftProjectDesktop => EnableProjectDesktop
+        && !_isDetectingMicrosoftProjectDesktop;
+
+    public bool MicrosoftProjectDesktopNeedsAttention => EnableProjectDesktop
+        && (!string.IsNullOrWhiteSpace(_microsoftProjectDesktopDetectionFailure)
+            || _microsoftProjectDesktopDetectionResult is { IsDetected: false });
+
     public async Task TestMicrosoftToDoConnectionAsync(CancellationToken cancellationToken = default)
     {
         if (!CanTestMicrosoftToDoConnection)
@@ -206,6 +330,39 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
                 cancellationToken);
 
         SetMicrosoftToDoConnectionStatus(testedStatus);
+    }
+
+    public async Task DetectMicrosoftProjectDesktopAsync(CancellationToken cancellationToken = default)
+    {
+        if (!CanDetectMicrosoftProjectDesktop)
+        {
+            return;
+        }
+
+        _isDetectingMicrosoftProjectDesktop = true;
+        _microsoftProjectDesktopDetectionFailure = string.Empty;
+        RaiseMicrosoftProjectDesktopStatusProperties();
+
+        try
+        {
+            _microsoftProjectDesktopDetectionResult =
+                await _microsoftProjectDesktopDetector.DetectAsync(cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _microsoftProjectDesktopDetectionResult = null;
+            _microsoftProjectDesktopDetectionFailure =
+                $"Project detection could not finish: {BuildFailureMessage(ex)}";
+        }
+        finally
+        {
+            _isDetectingMicrosoftProjectDesktop = false;
+            RaiseMicrosoftProjectDesktopStatusProperties();
+        }
     }
 
     private async Task SaveAsync()
@@ -317,6 +474,32 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
         OnPropertyChanged(nameof(CanTestMicrosoftToDoConnection));
         OnPropertyChanged(nameof(MicrosoftToDoNeedsAttention));
         TestMicrosoftToDoConnectionCommand.RaiseCanExecuteChanged();
+    }
+
+    private void ResetMicrosoftProjectDesktopDetection()
+    {
+        _microsoftProjectDesktopDetectionResult = null;
+        _microsoftProjectDesktopDetectionFailure = string.Empty;
+        _isDetectingMicrosoftProjectDesktop = false;
+        RaiseMicrosoftProjectDesktopStatusProperties();
+    }
+
+    private void RaiseMicrosoftProjectDesktopStatusProperties()
+    {
+        OnPropertyChanged(nameof(MicrosoftProjectDesktopStatusText));
+        OnPropertyChanged(nameof(MicrosoftProjectDesktopStatusDetailText));
+        OnPropertyChanged(nameof(MicrosoftProjectDesktopStatusBackgroundColor));
+        OnPropertyChanged(nameof(MicrosoftProjectDesktopStatusAccentColor));
+        OnPropertyChanged(nameof(CanDetectMicrosoftProjectDesktop));
+        OnPropertyChanged(nameof(MicrosoftProjectDesktopNeedsAttention));
+        DetectMicrosoftProjectDesktopCommand.RaiseCanExecuteChanged();
+    }
+
+    private static string BuildFailureMessage(Exception exception)
+    {
+        return string.IsNullOrWhiteSpace(exception.Message)
+            ? exception.GetType().Name
+            : exception.Message.Trim();
     }
 
     private static AppSettings CopySettings(AppSettings settings)

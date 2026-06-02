@@ -189,7 +189,38 @@
                         <CheckBox Content="Project Desktop"
                                   IsChecked="{Binding EnableProjectDesktop}"
                                   FontSize="15"
-                                  Margin="0,0,0,12" />
+                                  Margin="0,0,0,10" />
+                        <Grid Margin="0,0,0,16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <Border Background="{Binding MicrosoftProjectDesktopStatusBackgroundColor}"
+                                    BorderBrush="{Binding MicrosoftProjectDesktopStatusAccentColor}"
+                                    BorderThickness="1"
+                                    CornerRadius="8"
+                                    Padding="14"
+                                    Margin="0,0,12,0">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding MicrosoftProjectDesktopStatusText}"
+                                               Foreground="{Binding MicrosoftProjectDesktopStatusAccentColor}"
+                                               FontWeight="SemiBold"
+                                               FontSize="15" />
+                                    <TextBlock Text="{Binding MicrosoftProjectDesktopStatusDetailText}"
+                                               Foreground="{StaticResource MutedBrush}"
+                                               TextWrapping="Wrap"
+                                               Margin="0,4,0,0" />
+                                </StackPanel>
+                            </Border>
+
+                            <Button Grid.Column="1"
+                                    Content="Detect Project"
+                                    Command="{Binding DetectMicrosoftProjectDesktopCommand}"
+                                    Style="{StaticResource SettingsButtonStyle}"
+                                    VerticalAlignment="Center"
+                                    Margin="0" />
+                        </Grid>
                         <CheckBox Content="Phone Companion"
                                   IsChecked="{Binding EnablePhoneCompanion}"
                                   FontSize="15"

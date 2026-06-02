@@ -11,6 +11,10 @@ TestRunner.RunAll(
     ("SettingsViewModel updates To Do status when disabled", SettingsViewModelUpdatesToDoStatusWhenDisabled),
     ("SettingsViewModel tests To Do connection", SettingsViewModelTestsToDoConnection),
     ("SettingsViewModel shows failed To Do connection status", SettingsViewModelShowsFailedToDoConnectionStatus),
+    ("SettingsViewModel shows Project desktop detection status", SettingsViewModelShowsProjectDesktopDetectionStatus),
+    ("SettingsViewModel detects Project desktop", SettingsViewModelDetectsProjectDesktop),
+    ("SettingsViewModel shows missing Project desktop status", SettingsViewModelShowsMissingProjectDesktopStatus),
+    ("SettingsViewModel updates Project status when disabled", SettingsViewModelUpdatesProjectStatusWhenDisabled),
     ("CaptureViewModel starts in a simple ready state", CaptureViewModelStartsReady),
     ("CaptureViewModel applies date hint buttons", CaptureViewModelAppliesDateHintButtons),
     ("CaptureViewModel applies destination choices", CaptureViewModelAppliesDestinationChoices),
@@ -198,6 +202,79 @@ static void SettingsViewModelShowsFailedToDoConnectionStatus()
     Assert.True(viewModel.CanTestMicrosoftToDoConnection, "Failed To Do status should remain recoverable by retesting.");
 }
 
+static void SettingsViewModelShowsProjectDesktopDetectionStatus()
+{
+    SettingsViewModel viewModel = CreateSettingsViewModelWithProbe(
+        AppSettings.CreateDefault(),
+        (_, _) => Task.FromResult(MicrosoftToDoConnectionStatus.Connected()));
+
+    Assert.Equal("Ready to detect", viewModel.MicrosoftProjectDesktopStatusText);
+    Assert.Contains("Detect Project", viewModel.MicrosoftProjectDesktopStatusDetailText);
+    Assert.Equal("#F4F7FB", viewModel.MicrosoftProjectDesktopStatusBackgroundColor);
+    Assert.Equal("#4E5965", viewModel.MicrosoftProjectDesktopStatusAccentColor);
+    Assert.True(viewModel.CanDetectMicrosoftProjectDesktop, "Enabled Project desktop should allow detection.");
+    Assert.False(viewModel.MicrosoftProjectDesktopNeedsAttention, "Project desktop should not need attention before detection.");
+}
+
+static void SettingsViewModelDetectsProjectDesktop()
+{
+    string programFilesRoot = CreateFakeProjectDesktopInstall(out string executablePath);
+    SettingsViewModel viewModel = CreateSettingsViewModelWithProjectDetector(
+        AppSettings.CreateDefault(),
+        new MicrosoftProjectDesktopDetector([programFilesRoot], pathDirectories: []));
+
+    viewModel.DetectMicrosoftProjectDesktopAsync(CancellationToken.None).GetAwaiter().GetResult();
+
+    Assert.Equal("Project detected", viewModel.MicrosoftProjectDesktopStatusText);
+    Assert.Contains(executablePath, viewModel.MicrosoftProjectDesktopStatusDetailText);
+    Assert.Equal("#E7F8EE", viewModel.MicrosoftProjectDesktopStatusBackgroundColor);
+    Assert.Equal("#1E6B3A", viewModel.MicrosoftProjectDesktopStatusAccentColor);
+    Assert.True(viewModel.CanDetectMicrosoftProjectDesktop, "Detected Project desktop should allow a refresh detection.");
+    Assert.False(viewModel.MicrosoftProjectDesktopNeedsAttention, "Detected Project desktop should not need attention.");
+}
+
+static void SettingsViewModelShowsMissingProjectDesktopStatus()
+{
+    string missingRoot = Path.Combine(
+        Path.GetTempPath(),
+        "SuccessPlannerMCP",
+        "ViewModelTests",
+        Guid.NewGuid().ToString("N"),
+        "Program Files");
+    SettingsViewModel viewModel = CreateSettingsViewModelWithProjectDetector(
+        AppSettings.CreateDefault(),
+        new MicrosoftProjectDesktopDetector([missingRoot], pathDirectories: []));
+
+    viewModel.DetectMicrosoftProjectDesktopAsync(CancellationToken.None).GetAwaiter().GetResult();
+
+    Assert.Equal("Project not found", viewModel.MicrosoftProjectDesktopStatusText);
+    Assert.Contains("common Microsoft Office install paths", viewModel.MicrosoftProjectDesktopStatusDetailText);
+    Assert.Equal("#FFF1D6", viewModel.MicrosoftProjectDesktopStatusBackgroundColor);
+    Assert.Equal("#946200", viewModel.MicrosoftProjectDesktopStatusAccentColor);
+    Assert.True(viewModel.MicrosoftProjectDesktopNeedsAttention, "Missing Project desktop should stay visible.");
+    Assert.True(viewModel.CanDetectMicrosoftProjectDesktop, "Missing Project desktop should remain recoverable by retrying detection.");
+}
+
+static void SettingsViewModelUpdatesProjectStatusWhenDisabled()
+{
+    SettingsViewModel viewModel = CreateSettingsViewModelWithProbe(
+        AppSettings.CreateDefault(),
+        (_, _) => Task.FromResult(MicrosoftToDoConnectionStatus.Connected()));
+
+    viewModel.EnableProjectDesktop = false;
+
+    Assert.Equal("Project detection off", viewModel.MicrosoftProjectDesktopStatusText);
+    Assert.Contains("turned off", viewModel.MicrosoftProjectDesktopStatusDetailText);
+    Assert.Equal("#EEF0F3", viewModel.MicrosoftProjectDesktopStatusBackgroundColor);
+    Assert.False(viewModel.CanDetectMicrosoftProjectDesktop, "Disabled Project desktop should not allow detection.");
+    Assert.True(viewModel.HasChanges, "Changing the Project desktop switch should mark Settings dirty.");
+
+    viewModel.EnableProjectDesktop = true;
+
+    Assert.Equal("Ready to detect", viewModel.MicrosoftProjectDesktopStatusText);
+    Assert.True(viewModel.CanDetectMicrosoftProjectDesktop, "Re-enabled Project desktop should allow detection.");
+}
+
 static NavigationService CreateShellNavigationService()
 {
     NavigationService navigationService = new();
@@ -216,10 +293,23 @@ static SettingsViewModel CreateSettingsViewModelWithProbe(
         DateTimeOffset.Now);
 }
 
+static SettingsViewModel CreateSettingsViewModelWithProjectDetector(
+    AppSettings settings,
+    MicrosoftProjectDesktopDetector detector)
+{
+    return CreateSettingsViewModelWithProbeInstance(
+        settings,
+        new TestMicrosoftToDoConnectionProbe((checkedAt, _) =>
+            Task.FromResult(MicrosoftToDoConnectionStatus.Connected(checkedAt: checkedAt))),
+        DateTimeOffset.Now,
+        detector);
+}
+
 static SettingsViewModel CreateSettingsViewModelWithProbeInstance(
     AppSettings settings,
     TestMicrosoftToDoConnectionProbe probe,
-    DateTimeOffset now)
+    DateTimeOffset now,
+    MicrosoftProjectDesktopDetector? projectDetector = null)
 {
     string settingsRoot = Path.Combine(
         Path.GetTempPath(),
@@ -233,7 +323,27 @@ static SettingsViewModel CreateSettingsViewModelWithProbeInstance(
         settingsService,
         settings,
         settingsFileStatus: "Loaded settings",
-        microsoftToDoConnectionTestService: connectionTestService);
+        microsoftToDoConnectionTestService: connectionTestService,
+        microsoftProjectDesktopDetector: projectDetector);
+}
+
+static string CreateFakeProjectDesktopInstall(out string executablePath)
+{
+    string programFilesRoot = Path.Combine(
+        Path.GetTempPath(),
+        "SuccessPlannerMCP",
+        "ViewModelTests",
+        Guid.NewGuid().ToString("N"),
+        "Program Files");
+    executablePath = Path.Combine(
+        programFilesRoot,
+        "Microsoft Office",
+        "root",
+        "Office16",
+        MicrosoftProjectDesktopDetectionResult.ExecutableName);
+    Directory.CreateDirectory(Path.GetDirectoryName(executablePath)!);
+    File.WriteAllText(executablePath, "fake project executable");
+    return programFilesRoot;
 }
 
 static void CaptureViewModelStartsReady()
