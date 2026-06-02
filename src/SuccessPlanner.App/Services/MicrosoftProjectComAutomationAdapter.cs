@@ -115,7 +115,13 @@ public sealed class MicrosoftProjectComAutomationAdapter : IMicrosoftProjectAuto
             ReadDate(taskObject, "Start"),
             ReadDate(taskObject, "Finish"),
             ReadInt(taskObject, "PercentComplete"),
-            ReadString(taskObject, "Notes"));
+            ReadString(taskObject, "Notes"),
+            ReadInt(taskObject, "Duration"),
+            ReadInt(taskObject, "OutlineLevel"),
+            ReadBoolean(taskObject, "Summary"),
+            ReadBoolean(taskObject, "Milestone"),
+            ReadBoolean(taskObject, "Critical"),
+            ReadInt(taskObject, "Priority"));
     }
 
     private static IEnumerable<object> EnumerateComCollection(object? collection)
@@ -196,6 +202,25 @@ public sealed class MicrosoftProjectComAutomationAdapter : IMicrosoftProjectAuto
         {
             return null;
         }
+    }
+
+    private static bool ReadBoolean(object target, string propertyName)
+    {
+        object? value = TryGetProperty(target, propertyName);
+        if (value is null)
+        {
+            return false;
+        }
+
+        if (value is bool boolean)
+        {
+            return boolean;
+        }
+
+        string text = value.ToString()?.Trim() ?? string.Empty;
+        return string.Equals(text, "true", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(text, "yes", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(text, "1", StringComparison.OrdinalIgnoreCase);
     }
 
     private static object? TryGetProperty(object? target, string propertyName)

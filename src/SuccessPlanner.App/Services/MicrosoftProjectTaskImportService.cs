@@ -1,4 +1,3 @@
-using SuccessPlanner.App.Domain;
 using SuccessPlanner.App.Infrastructure;
 
 namespace SuccessPlanner.App.Services;
@@ -7,16 +6,33 @@ public sealed class MicrosoftProjectTaskImportService
 {
     private readonly SettingsService _settingsService;
     private readonly TaskRepository _taskRepository;
+    private readonly SourceLinkRepository? _sourceLinkRepository;
     private readonly IMicrosoftProjectAutomationAdapter _automationAdapter;
+    private readonly MicrosoftProjectTaskMapper _taskMapper;
+    private readonly Func<DateTimeOffset> _nowProvider;
 
     public MicrosoftProjectTaskImportService(
         SettingsService settingsService,
         TaskRepository taskRepository,
         IMicrosoftProjectAutomationAdapter? automationAdapter = null)
+        : this(settingsService, taskRepository, null, automationAdapter)
+    {
+    }
+
+    public MicrosoftProjectTaskImportService(
+        SettingsService settingsService,
+        TaskRepository taskRepository,
+        SourceLinkRepository? sourceLinkRepository,
+        IMicrosoftProjectAutomationAdapter? automationAdapter = null,
+        MicrosoftProjectTaskMapper? taskMapper = null,
+        Func<DateTimeOffset>? nowProvider = null)
     {
         _settingsService = settingsService ?? throw new ArgumentNullException(nameof(settingsService));
         _taskRepository = taskRepository ?? throw new ArgumentNullException(nameof(taskRepository));
+        _sourceLinkRepository = sourceLinkRepository;
         _automationAdapter = automationAdapter ?? new MicrosoftProjectComAutomationAdapter();
+        _taskMapper = taskMapper ?? new MicrosoftProjectTaskMapper();
+        _nowProvider = nowProvider ?? (() => DateTimeOffset.Now);
     }
 
     public async Task<MicrosoftProjectImportResult> ImportSelectedProjectFileAsync(
@@ -53,17 +69,32 @@ public sealed class MicrosoftProjectTaskImportService
             IReadOnlyList<MicrosoftProjectImportedTask> importedTasks =
                 await _automationAdapter.ImportTasksAsync(projectFilePath, cancellationToken);
             List<Guid> localTaskIds = [];
+            List<Guid> sourceLinkIds = [];
+            DateTimeOffset mappedAt = _nowProvider();
 
             foreach (MicrosoftProjectImportedTask importedTask in importedTasks)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                TaskItem localTask = CreateLocalTask(projectFilePath, importedTask);
-                await _taskRepository.AddAsync(localTask, cancellationToken);
-                localTaskIds.Add(localTask.Id);
+                MicrosoftProjectMappedTask mappedTask = _taskMapper.Map(
+                    projectFilePath,
+                    importedTask,
+                    mappedAt);
+                await _taskRepository.AddAsync(mappedTask.LocalTask, cancellationToken);
+                localTaskIds.Add(mappedTask.LocalTask.Id);
+
+                if (mappedTask.SourceLink is not null && _sourceLinkRepository is not null)
+                {
+                    await _sourceLinkRepository.SaveAsync(mappedTask.SourceLink, cancellationToken);
+                    sourceLinkIds.Add(mappedTask.SourceLink.Id);
+                }
             }
 
-            return MicrosoftProjectImportResult.Success(projectFilePath, importedTasks, localTaskIds);
+            return MicrosoftProjectImportResult.Success(
+                projectFilePath,
+                importedTasks,
+                localTaskIds,
+                sourceLinkIds);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -76,73 +107,6 @@ public sealed class MicrosoftProjectTaskImportService
                 "Project import failed",
                 BuildFailureMessage(ex));
         }
-    }
-
-    private static TaskItem CreateLocalTask(
-        string projectFilePath,
-        MicrosoftProjectImportedTask importedTask)
-    {
-        TaskItem localTask = TaskItem.Capture(importedTask.Name);
-        DateOnly? startDate = ToDateOnly(importedTask.StartAt);
-        DateOnly? dueDate = ToDateOnly(importedTask.FinishAt);
-
-        if (startDate.HasValue || dueDate.HasValue)
-        {
-            localTask.Schedule(dueDate, startDate);
-        }
-
-        localTask.AddTag("Microsoft Project");
-        localTask.AddTag("Project Import");
-        localTask.UpdateNotes(BuildTaskNotes(projectFilePath, importedTask));
-        return localTask;
-    }
-
-    private static string BuildTaskNotes(
-        string projectFilePath,
-        MicrosoftProjectImportedTask importedTask)
-    {
-        List<string> lines =
-        [
-            $"Imported from Microsoft Project: {Path.GetFileName(projectFilePath)}"
-        ];
-
-        if (!string.IsNullOrWhiteSpace(importedTask.ExternalId))
-        {
-            lines.Add($"Project Task Id: {importedTask.ExternalId}");
-        }
-
-        if (importedTask.StartAt.HasValue)
-        {
-            lines.Add($"Project start: {FormatDate(importedTask.StartAt.Value)}");
-        }
-
-        if (importedTask.FinishAt.HasValue)
-        {
-            lines.Add($"Project finish: {FormatDate(importedTask.FinishAt.Value)}");
-        }
-
-        if (importedTask.PercentComplete.HasValue)
-        {
-            lines.Add($"Project percent complete: {importedTask.PercentComplete.Value}%");
-        }
-
-        if (!string.IsNullOrWhiteSpace(importedTask.Notes))
-        {
-            lines.Add(string.Empty);
-            lines.Add(importedTask.Notes);
-        }
-
-        return string.Join(Environment.NewLine, lines);
-    }
-
-    private static DateOnly? ToDateOnly(DateTimeOffset? value)
-    {
-        return value.HasValue ? DateOnly.FromDateTime(value.Value.DateTime) : null;
-    }
-
-    private static string FormatDate(DateTimeOffset value)
-    {
-        return DateOnly.FromDateTime(value.DateTime).ToString("yyyy-MM-dd");
     }
 
     private static string BuildFailureMessage(Exception exception)

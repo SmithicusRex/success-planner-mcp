@@ -1100,7 +1100,7 @@ Benchmark gate:
 
 ~~16.4. Import Project tasks through the selected automation path.~~
 
-16.5. Map Project tasks into local domain objects.
+~~16.5. Map Project tasks into local domain objects.~~
 
 Benchmark gate:
 

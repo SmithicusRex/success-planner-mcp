@@ -1319,6 +1319,8 @@ static async Task MicrosoftProjectTaskImportServiceImportsSelectedProjectTasks()
     await settingsService.SaveAsync(settings, CancellationToken.None);
 
     TaskRepository taskRepository = new(paths);
+    SourceLinkRepository sourceLinkRepository = new(paths);
+    DateTimeOffset importedAt = new(2026, 6, 2, 10, 30, 0, TimeSpan.Zero);
     TestMicrosoftProjectAutomationAdapter adapter = new(
         new MicrosoftProjectImportedTask(
             "42",
@@ -1326,11 +1328,26 @@ static async Task MicrosoftProjectTaskImportServiceImportsSelectedProjectTasks()
             new DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero),
             new DateTimeOffset(2026, 6, 4, 17, 0, 0, TimeSpan.Zero),
             25,
-            "Block the smallest useful slice."),
+            "Block the smallest useful slice.",
+            durationMinutes: 20,
+            outlineLevel: 3,
+            isCritical: true,
+            projectPriority: 900),
         new MicrosoftProjectImportedTask(
             "43",
-            "Review the next success action"));
-    MicrosoftProjectTaskImportService service = new(settingsService, taskRepository, adapter);
+            "Review the next success action",
+            finishAt: new DateTimeOffset(2026, 6, 5, 17, 0, 0, TimeSpan.Zero),
+            percentComplete: 100,
+            durationMinutes: 0,
+            outlineLevel: 2,
+            isMilestone: true,
+            projectPriority: 500));
+    MicrosoftProjectTaskImportService service = new(
+        settingsService,
+        taskRepository,
+        sourceLinkRepository,
+        adapter,
+        nowProvider: () => importedAt);
 
     MicrosoftProjectImportResult result =
         await service.ImportSelectedProjectFileAsync(CancellationToken.None);
@@ -1346,20 +1363,56 @@ static async Task MicrosoftProjectTaskImportServiceImportsSelectedProjectTasks()
     Assert.Equal(2, localTasks.Count);
 
     TaskItem plannedTask = localTasks.Single(task => task.Title == "Frame the 20-minute plan");
-    Assert.Equal(TaskItemStatus.Planned, plannedTask.Status);
+    Assert.Equal(TaskItemStatus.InProgress, plannedTask.Status);
     Assert.Equal(new DateOnly(2026, 6, 1), plannedTask.StartDate);
     Assert.Equal(new DateOnly(2026, 6, 4), plannedTask.DueDate);
     Assert.Contains("Imported from Microsoft Project: Personal Success Plan.mpp", plannedTask.Notes);
     Assert.Contains("Project Task Id: 42", plannedTask.Notes);
+    Assert.Contains("Project outline level: 3", plannedTask.Notes);
+    Assert.Contains("Project duration: 20 minutes", plannedTask.Notes);
+    Assert.Contains("Project priority: 900", plannedTask.Notes);
     Assert.Contains("Project percent complete: 25%", plannedTask.Notes);
     Assert.Contains("Block the smallest useful slice.", plannedTask.Notes);
+    Assert.Equal(TaskPriority.Critical, plannedTask.Priority);
+    Assert.Equal(20, plannedTask.EstimatedMinutes);
+    Assert.True(plannedTask.IsTinyStep, "A 20-minute Project task should map to a tiny local step.");
     Assert.Contains("Microsoft Project", plannedTask.Tags);
     Assert.Contains("Project Import", plannedTask.Tags);
+    Assert.Contains("Critical Path", plannedTask.Tags);
     Assert.Contains(plannedTask.Id, result.LocalTaskIds);
 
-    TaskItem captureTask = localTasks.Single(task => task.Title == "Review the next success action");
-    Assert.Equal(TaskItemStatus.Captured, captureTask.Status);
-    Assert.Contains(captureTask.Id, result.LocalTaskIds);
+    IReadOnlyList<SourceLink> plannedTaskLinks = await sourceLinkRepository.GetForLocalItemAsync(
+        SourceLinkItemType.Task,
+        plannedTask.Id,
+        CancellationToken.None);
+    Assert.Equal(1, plannedTaskLinks.Count);
+    SourceLink plannedTaskLink = plannedTaskLinks[0];
+    Assert.Equal(SourceSystem.MicrosoftProjectDesktop, plannedTaskLink.SourceSystem);
+    Assert.Equal("42", plannedTaskLink.ExternalId);
+    Assert.Equal(projectFilePath, plannedTaskLink.ExternalContainerId);
+    Assert.Equal("Frame the 20-minute plan", plannedTaskLink.ExternalDisplayName);
+    Assert.Equal(SyncState.Synced, plannedTaskLink.SyncState);
+    Assert.True(plannedTaskLink.IsReadOnly, "Project desktop imports should be tracked as read-only source links.");
+    Assert.True(plannedTaskLink.LastSyncedAt.HasValue, "Project source link should record the import sync time.");
+    Assert.Equal(importedAt, plannedTaskLink.LastSyncedAt!.Value);
+    Assert.Contains("percent=25", plannedTaskLink.SourceVersion);
+    Assert.Contains(plannedTaskLink.Id, result.SourceLinkIds);
+
+    TaskItem milestoneTask = localTasks.Single(task => task.Title == "Review the next success action");
+    Assert.Equal(TaskItemStatus.Done, milestoneTask.Status);
+    Assert.Equal(new DateOnly(2026, 6, 5), milestoneTask.DueDate);
+    Assert.True(milestoneTask.CompletedAt.HasValue, "A 100 percent Project task should map to a done local task.");
+    Assert.Contains("Project task type: Milestone", milestoneTask.Notes);
+    Assert.Contains("Milestone", milestoneTask.Tags);
+    Assert.Contains(milestoneTask.Id, result.LocalTaskIds);
+
+    IReadOnlyList<SourceLink> milestoneTaskLinks = await sourceLinkRepository.GetForLocalItemAsync(
+        SourceLinkItemType.Task,
+        milestoneTask.Id,
+        CancellationToken.None);
+    Assert.Equal(1, milestoneTaskLinks.Count);
+    Assert.Equal("43", milestoneTaskLinks[0].ExternalId);
+    Assert.Contains(milestoneTaskLinks[0].Id, result.SourceLinkIds);
 }
 
 static async Task MicrosoftProjectTaskImportServiceReportsDisabledProjectImport()

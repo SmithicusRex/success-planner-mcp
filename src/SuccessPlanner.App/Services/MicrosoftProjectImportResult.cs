@@ -8,7 +8,8 @@ public sealed class MicrosoftProjectImportResult
         string statusText,
         string detailText,
         IReadOnlyList<MicrosoftProjectImportedTask>? importedTasks = null,
-        IReadOnlyList<Guid>? localTaskIds = null)
+        IReadOnlyList<Guid>? localTaskIds = null,
+        IReadOnlyList<Guid>? sourceLinkIds = null)
     {
         ProjectFilePath = projectFilePath.Trim();
         WasSuccessful = wasSuccessful;
@@ -16,6 +17,7 @@ public sealed class MicrosoftProjectImportResult
         DetailText = detailText.Trim();
         ImportedTasks = importedTasks?.ToArray() ?? [];
         LocalTaskIds = localTaskIds?.ToArray() ?? [];
+        SourceLinkIds = sourceLinkIds?.ToArray() ?? [];
     }
 
     public string ProjectFilePath { get; }
@@ -30,12 +32,15 @@ public sealed class MicrosoftProjectImportResult
 
     public IReadOnlyList<Guid> LocalTaskIds { get; }
 
+    public IReadOnlyList<Guid> SourceLinkIds { get; }
+
     public int ImportedCount => LocalTaskIds.Count;
 
     public static MicrosoftProjectImportResult Success(
         string projectFilePath,
         IReadOnlyList<MicrosoftProjectImportedTask> importedTasks,
-        IReadOnlyList<Guid> localTaskIds)
+        IReadOnlyList<Guid> localTaskIds,
+        IReadOnlyList<Guid>? sourceLinkIds = null)
     {
         string fileName = Path.GetFileName(projectFilePath);
         string statusText = localTaskIds.Count == 0
@@ -51,7 +56,8 @@ public sealed class MicrosoftProjectImportResult
             statusText,
             detailText,
             importedTasks,
-            localTaskIds);
+            localTaskIds,
+            sourceLinkIds);
     }
 
     public static MicrosoftProjectImportResult Failed(
