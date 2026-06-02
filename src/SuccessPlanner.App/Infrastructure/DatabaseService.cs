@@ -265,7 +265,11 @@ public sealed class DatabaseService
         }
 
         Span<byte> header = stackalloc byte[16];
-        using FileStream stream = File.OpenRead(path);
+        using FileStream stream = new(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete);
         int bytesRead = stream.Read(header);
 
         if (bytesRead < 16)

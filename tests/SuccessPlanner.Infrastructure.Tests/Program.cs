@@ -13,6 +13,7 @@ TestRunner.RunAll(
     ("DatabaseService creates a real SQLite database", DatabaseServiceCreatesSqliteDatabase),
     ("DatabaseService replaces the legacy bootstrap marker", DatabaseServiceReplacesLegacyMarker),
     ("DatabaseService records repeatable migrations", DatabaseServiceRecordsRepeatableMigrations),
+    ("DatabaseService opens SQLite file while another handle is active", DatabaseServiceOpensSqliteFileWhileAnotherHandleIsActive),
     ("DatabaseService creates core application tables", DatabaseServiceCreatesCoreApplicationTables),
     ("DatabaseService creates sync queue table", DatabaseServiceCreatesSyncQueueTable),
     ("DatabaseService adds sync queue table to existing stores", DatabaseServiceAddsSyncQueueTableToExistingStores),
@@ -136,6 +137,26 @@ static async Task DatabaseServiceRecordsRepeatableMigrations()
     Assert.Equal(
         "Success Planner MCP SQLite local store",
         await ReadScalarAsync(paths.DatabasePath, "SELECT value FROM local_store_metadata WHERE key = 'store_kind';"));
+}
+
+static async Task DatabaseServiceOpensSqliteFileWhileAnotherHandleIsActive()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+    await CreateMigratedDatabaseAsync(paths);
+
+    using FileStream activeHandle = new(
+        paths.DatabasePath,
+        FileMode.Open,
+        FileAccess.ReadWrite,
+        FileShare.ReadWrite);
+    DatabaseService database = new(paths);
+
+    await database.OpenAsync(CancellationToken.None);
+    await database.HealthCheckAsync(CancellationToken.None);
+    await database.CloseAsync(CancellationToken.None);
+
+    Assert.True(activeHandle.CanRead, "The active database handle should remain open during startup.");
 }
 
 static async Task DatabaseServiceCreatesCoreApplicationTables()
