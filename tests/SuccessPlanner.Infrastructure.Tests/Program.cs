@@ -37,6 +37,9 @@ TestRunner.RunAll(
     ("MicrosoftToDoGraphTaskAdapter does not push without token", MicrosoftToDoGraphTaskAdapterDoesNotPushWithoutToken),
     ("MicrosoftToDoGraphTaskAdapter maps push failures", MicrosoftToDoGraphTaskAdapterMapsPushFailures),
     ("MicrosoftToDoTaskPushService saves source links", MicrosoftToDoTaskPushServiceSavesSourceLinks),
+    ("MicrosoftProjectDesktopDetector finds Click-to-Run Project", MicrosoftProjectDesktopDetectorFindsClickToRunProject),
+    ("MicrosoftProjectDesktopDetector finds Project on PATH", MicrosoftProjectDesktopDetectorFindsProjectOnPath),
+    ("MicrosoftProjectDesktopDetector reports Project not found", MicrosoftProjectDesktopDetectorReportsProjectNotFound),
     ("DatabaseService reports a healthy database", DatabaseServiceReportsHealthyDatabase),
     ("DatabaseService reports missing migration health failures", DatabaseServiceReportsMissingMigrationHealthFailures),
     ("DatabaseStartupMigrationService migrates a new database at startup", DatabaseStartupMigrationServiceMigratesNewDatabaseAtStartup),
@@ -1203,6 +1206,76 @@ static async Task MicrosoftToDoTaskPushServiceSavesSourceLinks()
         CancellationToken.None);
     Assert.NotNull(reloadedById, "Saved source link should reload by id.");
     Assert.Equal(savedLink.ExternalId, reloadedById!.ExternalId);
+}
+
+static async Task MicrosoftProjectDesktopDetectorFindsClickToRunProject()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    string programFilesRoot = Path.Combine(workspace.Path, "Program Files");
+    string executablePath = Path.Combine(
+        programFilesRoot,
+        "Microsoft Office",
+        "root",
+        "Office16",
+        MicrosoftProjectDesktopDetectionResult.ExecutableName);
+    Directory.CreateDirectory(Path.GetDirectoryName(executablePath)!);
+    await File.WriteAllTextAsync(executablePath, "fake project executable", CancellationToken.None);
+    MicrosoftProjectDesktopDetector detector = new(
+        [programFilesRoot],
+        pathDirectories: []);
+
+    MicrosoftProjectDesktopDetectionResult result =
+        await detector.DetectAsync(CancellationToken.None);
+
+    Assert.True(result.IsDetected, "Detector should find Project in the Office Click-to-Run path.");
+    Assert.Equal(executablePath, result.ExecutablePath);
+    Assert.Equal("Microsoft Project Desktop", result.DisplayName);
+    Assert.Equal("Project detected", result.StatusText);
+    Assert.Contains(MicrosoftProjectDesktopDetectionResult.ExecutableName, result.DetailText);
+    Assert.Contains(executablePath, result.SearchedPaths);
+}
+
+static async Task MicrosoftProjectDesktopDetectorFindsProjectOnPath()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    string pathDirectory = Path.Combine(workspace.Path, "ProjectBin");
+    string executablePath = Path.Combine(
+        pathDirectory,
+        MicrosoftProjectDesktopDetectionResult.ExecutableName);
+    Directory.CreateDirectory(pathDirectory);
+    await File.WriteAllTextAsync(executablePath, "fake project executable", CancellationToken.None);
+    MicrosoftProjectDesktopDetector detector = new(
+        programFilesRoots: [],
+        pathDirectories: [pathDirectory]);
+
+    MicrosoftProjectDesktopDetectionResult result =
+        await detector.DetectAsync(CancellationToken.None);
+
+    Assert.True(result.IsDetected, "Detector should find Project when WINPROJ.EXE is on PATH.");
+    Assert.Equal(executablePath, result.ExecutablePath);
+    Assert.Contains(executablePath, result.SearchedPaths);
+}
+
+static async Task MicrosoftProjectDesktopDetectorReportsProjectNotFound()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    string programFilesRoot = Path.Combine(workspace.Path, "Program Files");
+    MicrosoftProjectDesktopDetector detector = new(
+        [programFilesRoot],
+        pathDirectories: []);
+
+    MicrosoftProjectDesktopDetectionResult result =
+        await detector.DetectAsync(CancellationToken.None);
+
+    Assert.False(result.IsDetected, "Detector should report not found when no Project executable exists.");
+    Assert.Equal(string.Empty, result.ExecutablePath);
+    Assert.Equal("Project not found", result.StatusText);
+    Assert.Contains("common Microsoft Office install paths", result.DetailText);
+    Assert.True(
+        result.SearchedPaths.Any(path => path.EndsWith(
+            Path.Combine("Microsoft Office", "root", "Office16", MicrosoftProjectDesktopDetectionResult.ExecutableName),
+            StringComparison.OrdinalIgnoreCase)),
+        "Detector should search the modern Microsoft 365 Office16 Click-to-Run path.");
 }
 
 static async Task DatabaseServiceReportsHealthyDatabase()

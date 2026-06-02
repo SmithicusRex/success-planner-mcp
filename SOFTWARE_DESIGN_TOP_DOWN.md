@@ -1092,7 +1092,7 @@ Benchmark gate:
 
 ### 16. Microsoft Project Desktop Detection And Import
 
-16.1. Detect Project desktop executable.
+~~16.1. Detect Project desktop executable.~~
 
 16.2. Add Project connection status in Settings.
 
@@ -1104,11 +1104,12 @@ Benchmark gate:
 
 Benchmark gate:
 
+- ~~Project executable detection can find WINPROJ.EXE in common Office paths.~~
 - Settings shows Project desktop detection status.
 - User can select or detect a Project source.
 - Imported tasks appear locally.
 - Import failure is visible and recoverable.
-- Build and tests pass.
+- ~~Build and tests pass.~~
 
 ### 17. Planner Availability Test
 
