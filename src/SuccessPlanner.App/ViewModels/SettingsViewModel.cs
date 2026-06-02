@@ -13,6 +13,7 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
     private readonly SettingsService _settingsService;
     private readonly MicrosoftToDoConnectionTestService _microsoftToDoConnectionTestService;
     private readonly MicrosoftProjectDesktopDetector _microsoftProjectDesktopDetector;
+    private readonly IMicrosoftProjectFilePicker _microsoftProjectFilePicker;
     private AppSettings _lastSavedSettings;
     private MicrosoftToDoConnectionStatus _microsoftToDoConnectionStatus;
     private MicrosoftProjectDesktopDetectionResult? _microsoftProjectDesktopDetectionResult;
@@ -23,6 +24,7 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
     private bool _startSyncOnLaunch;
     private string _themeName;
     private string _accentColor;
+    private string _microsoftProjectFilePath;
     private bool _useLargeControls;
     private bool _enableMicrosoftToDo;
     private bool _enablePlanner;
@@ -37,7 +39,8 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
         AppSettings settings,
         string settingsFileStatus = "Loaded settings",
         MicrosoftToDoConnectionTestService? microsoftToDoConnectionTestService = null,
-        MicrosoftProjectDesktopDetector? microsoftProjectDesktopDetector = null)
+        MicrosoftProjectDesktopDetector? microsoftProjectDesktopDetector = null,
+        IMicrosoftProjectFilePicker? microsoftProjectFilePicker = null)
         : base(ScreenCatalog.Settings)
     {
         _settingsService = settingsService;
@@ -45,6 +48,8 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
             ?? new MicrosoftToDoConnectionTestService();
         _microsoftProjectDesktopDetector = microsoftProjectDesktopDetector
             ?? new MicrosoftProjectDesktopDetector();
+        _microsoftProjectFilePicker = microsoftProjectFilePicker
+            ?? new MicrosoftProjectFilePicker();
         _lastSavedSettings = CopySettings(settings);
         _microsoftToDoConnectionStatus =
             _microsoftToDoConnectionTestService.GetInitialStatus(settings.Connections);
@@ -58,10 +63,17 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
         DetectMicrosoftProjectDesktopCommand = new AsyncRelayCommand(
             () => DetectMicrosoftProjectDesktopAsync(CancellationToken.None),
             () => CanDetectMicrosoftProjectDesktop);
+        SelectMicrosoftProjectFileCommand = new AsyncRelayCommand(
+            () => SelectMicrosoftProjectFileAsync(CancellationToken.None),
+            () => CanSelectMicrosoftProjectFile);
+        ClearMicrosoftProjectFileCommand = new AsyncRelayCommand(
+            () => ClearMicrosoftProjectFileAsync(),
+            () => CanClearMicrosoftProjectFile);
 
         _profileName = string.Empty;
         _themeName = string.Empty;
         _accentColor = string.Empty;
+        _microsoftProjectFilePath = string.Empty;
         _settingsFileStatus = settingsFileStatus;
 
         LoadFrom(settings, markClean: true);
@@ -99,6 +111,19 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
         set => SetProperty(ref _accentColor, value);
     }
 
+    public string MicrosoftProjectFilePath
+    {
+        get => _microsoftProjectFilePath;
+        private set
+        {
+            string normalized = value?.Trim() ?? string.Empty;
+            if (SetProperty(ref _microsoftProjectFilePath, normalized))
+            {
+                RaiseMicrosoftProjectFileProperties();
+            }
+        }
+    }
+
     public bool UseLargeControls
     {
         get => _useLargeControls;
@@ -132,6 +157,7 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
             if (SetProperty(ref _enableProjectDesktop, value))
             {
                 ResetMicrosoftProjectDesktopDetection();
+                RaiseMicrosoftProjectFileProperties();
             }
         }
     }
@@ -180,6 +206,10 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
     public AsyncRelayCommand TestMicrosoftToDoConnectionCommand { get; }
 
     public AsyncRelayCommand DetectMicrosoftProjectDesktopCommand { get; }
+
+    public AsyncRelayCommand SelectMicrosoftProjectFileCommand { get; }
+
+    public AsyncRelayCommand ClearMicrosoftProjectFileCommand { get; }
 
     public string MicrosoftToDoStatusText => _microsoftToDoConnectionStatus.StatusText;
 
@@ -315,6 +345,73 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
         && (!string.IsNullOrWhiteSpace(_microsoftProjectDesktopDetectionFailure)
             || _microsoftProjectDesktopDetectionResult is { IsDetected: false });
 
+    public bool HasMicrosoftProjectFileSelection => !string.IsNullOrWhiteSpace(MicrosoftProjectFilePath);
+
+    public string MicrosoftProjectFileStatusText
+    {
+        get
+        {
+            if (!EnableProjectDesktop)
+            {
+                return "Project file selection off";
+            }
+
+            return HasMicrosoftProjectFileSelection
+                ? "Project file selected"
+                : "No Project file selected";
+        }
+    }
+
+    public string MicrosoftProjectFileDetailText
+    {
+        get
+        {
+            if (!EnableProjectDesktop)
+            {
+                return "Turn on Project Desktop to choose a local Project file.";
+            }
+
+            return HasMicrosoftProjectFileSelection
+                ? MicrosoftProjectFilePath
+                : "Choose a local .mpp file before importing Project tasks.";
+        }
+    }
+
+    public string MicrosoftProjectFileName => HasMicrosoftProjectFileSelection
+        ? Path.GetFileName(MicrosoftProjectFilePath)
+        : "None";
+
+    public string MicrosoftProjectFileStatusBackgroundColor
+    {
+        get
+        {
+            if (!EnableProjectDesktop)
+            {
+                return "#EEF0F3";
+            }
+
+            return HasMicrosoftProjectFileSelection ? "#E7F8EE" : "#F4F7FB";
+        }
+    }
+
+    public string MicrosoftProjectFileStatusAccentColor
+    {
+        get
+        {
+            if (!EnableProjectDesktop)
+            {
+                return "#6A717A";
+            }
+
+            return HasMicrosoftProjectFileSelection ? "#1E6B3A" : "#4E5965";
+        }
+    }
+
+    public bool CanSelectMicrosoftProjectFile => EnableProjectDesktop;
+
+    public bool CanClearMicrosoftProjectFile => EnableProjectDesktop
+        && HasMicrosoftProjectFileSelection;
+
     public async Task TestMicrosoftToDoConnectionAsync(CancellationToken cancellationToken = default)
     {
         if (!CanTestMicrosoftToDoConnection)
@@ -365,6 +462,37 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
         }
     }
 
+    public async Task SelectMicrosoftProjectFileAsync(CancellationToken cancellationToken = default)
+    {
+        if (!CanSelectMicrosoftProjectFile)
+        {
+            return;
+        }
+
+        string? selectedPath = await _microsoftProjectFilePicker.PickProjectFileAsync(
+            MicrosoftProjectFilePath,
+            cancellationToken);
+        if (string.IsNullOrWhiteSpace(selectedPath))
+        {
+            return;
+        }
+
+        MicrosoftProjectFilePath = selectedPath;
+        SaveStatus = "Project file selected. Save settings to keep it.";
+    }
+
+    public Task ClearMicrosoftProjectFileAsync()
+    {
+        if (!CanClearMicrosoftProjectFile)
+        {
+            return Task.CompletedTask;
+        }
+
+        MicrosoftProjectFilePath = string.Empty;
+        SaveStatus = "Project file cleared. Save settings to keep it.";
+        return Task.CompletedTask;
+    }
+
     private async Task SaveAsync()
     {
         AppSettings settings = ToSettings();
@@ -403,6 +531,7 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
         StartSyncOnLaunch = settings.StartSyncOnLaunch;
         ThemeName = settings.Display.ThemeName;
         AccentColor = settings.Display.AccentColor;
+        MicrosoftProjectFilePath = settings.ProjectDesktop.LocalProjectFilePath;
         UseLargeControls = settings.Display.UseLargeControls;
         EnableMicrosoftToDo = settings.Connections.EnableMicrosoftToDo;
         EnablePlanner = settings.Connections.EnablePlanner;
@@ -440,6 +569,10 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
                 EnablePlanner = EnablePlanner,
                 EnableProjectDesktop = EnableProjectDesktop,
                 EnablePhoneCompanion = EnablePhoneCompanion
+            },
+            ProjectDesktop = new ProjectDesktopSettings
+            {
+                LocalProjectFilePath = MicrosoftProjectFilePath
             },
             DestinationRules = _lastSavedSettings.DestinationRules
                 .Select(rule => new DestinationRuleSettings
@@ -495,6 +628,20 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
         DetectMicrosoftProjectDesktopCommand.RaiseCanExecuteChanged();
     }
 
+    private void RaiseMicrosoftProjectFileProperties()
+    {
+        OnPropertyChanged(nameof(HasMicrosoftProjectFileSelection));
+        OnPropertyChanged(nameof(MicrosoftProjectFileStatusText));
+        OnPropertyChanged(nameof(MicrosoftProjectFileDetailText));
+        OnPropertyChanged(nameof(MicrosoftProjectFileName));
+        OnPropertyChanged(nameof(MicrosoftProjectFileStatusBackgroundColor));
+        OnPropertyChanged(nameof(MicrosoftProjectFileStatusAccentColor));
+        OnPropertyChanged(nameof(CanSelectMicrosoftProjectFile));
+        OnPropertyChanged(nameof(CanClearMicrosoftProjectFile));
+        SelectMicrosoftProjectFileCommand.RaiseCanExecuteChanged();
+        ClearMicrosoftProjectFileCommand.RaiseCanExecuteChanged();
+    }
+
     private static string BuildFailureMessage(Exception exception)
     {
         return string.IsNullOrWhiteSpace(exception.Message)
@@ -522,6 +669,10 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
                 EnablePlanner = settings.Connections.EnablePlanner,
                 EnableProjectDesktop = settings.Connections.EnableProjectDesktop,
                 EnablePhoneCompanion = settings.Connections.EnablePhoneCompanion
+            },
+            ProjectDesktop = new ProjectDesktopSettings
+            {
+                LocalProjectFilePath = settings.ProjectDesktop.LocalProjectFilePath
             },
             DestinationRules = settings.DestinationRules
                 .Select(rule => new DestinationRuleSettings

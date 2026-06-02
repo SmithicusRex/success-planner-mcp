@@ -15,6 +15,9 @@ TestRunner.RunAll(
     ("SettingsViewModel detects Project desktop", SettingsViewModelDetectsProjectDesktop),
     ("SettingsViewModel shows missing Project desktop status", SettingsViewModelShowsMissingProjectDesktopStatus),
     ("SettingsViewModel updates Project status when disabled", SettingsViewModelUpdatesProjectStatusWhenDisabled),
+    ("SettingsViewModel shows Project file selection status", SettingsViewModelShowsProjectFileSelectionStatus),
+    ("SettingsViewModel selects Project file", SettingsViewModelSelectsProjectFile),
+    ("SettingsViewModel clears Project file selection", SettingsViewModelClearsProjectFileSelection),
     ("CaptureViewModel starts in a simple ready state", CaptureViewModelStartsReady),
     ("CaptureViewModel applies date hint buttons", CaptureViewModelAppliesDateHintButtons),
     ("CaptureViewModel applies destination choices", CaptureViewModelAppliesDestinationChoices),
@@ -275,6 +278,63 @@ static void SettingsViewModelUpdatesProjectStatusWhenDisabled()
     Assert.True(viewModel.CanDetectMicrosoftProjectDesktop, "Re-enabled Project desktop should allow detection.");
 }
 
+static void SettingsViewModelShowsProjectFileSelectionStatus()
+{
+    SettingsViewModel viewModel = CreateSettingsViewModelWithProbe(
+        AppSettings.CreateDefault(),
+        (_, _) => Task.FromResult(MicrosoftToDoConnectionStatus.Connected()));
+
+    Assert.Equal("No Project file selected", viewModel.MicrosoftProjectFileStatusText);
+    Assert.Equal("None", viewModel.MicrosoftProjectFileName);
+    Assert.Contains(".mpp", viewModel.MicrosoftProjectFileDetailText);
+    Assert.Equal("#F4F7FB", viewModel.MicrosoftProjectFileStatusBackgroundColor);
+    Assert.Equal("#4E5965", viewModel.MicrosoftProjectFileStatusAccentColor);
+    Assert.True(viewModel.CanSelectMicrosoftProjectFile, "Enabled Project desktop should allow file selection.");
+    Assert.False(viewModel.CanClearMicrosoftProjectFile, "No file should disable Clear.");
+}
+
+static void SettingsViewModelSelectsProjectFile()
+{
+    string projectFilePath = CreateFakeProjectFile();
+    TestMicrosoftProjectFilePicker picker = new(projectFilePath);
+    SettingsViewModel viewModel = CreateSettingsViewModelWithProjectFilePicker(
+        AppSettings.CreateDefault(),
+        picker);
+
+    viewModel.SelectMicrosoftProjectFileAsync(CancellationToken.None).GetAwaiter().GetResult();
+
+    Assert.Equal(1, picker.CallCount);
+    Assert.Equal(projectFilePath, viewModel.MicrosoftProjectFilePath);
+    Assert.Equal("Project file selected", viewModel.MicrosoftProjectFileStatusText);
+    Assert.Equal(Path.GetFileName(projectFilePath), viewModel.MicrosoftProjectFileName);
+    Assert.Contains(projectFilePath, viewModel.MicrosoftProjectFileDetailText);
+    Assert.Equal("#E7F8EE", viewModel.MicrosoftProjectFileStatusBackgroundColor);
+    Assert.Equal("#1E6B3A", viewModel.MicrosoftProjectFileStatusAccentColor);
+    Assert.True(viewModel.CanClearMicrosoftProjectFile, "Selected Project file should enable Clear.");
+    Assert.True(viewModel.HasChanges, "Selecting a Project file should mark Settings dirty.");
+    Assert.Contains("Save settings", viewModel.SaveStatus);
+}
+
+static void SettingsViewModelClearsProjectFileSelection()
+{
+    AppSettings settings = AppSettings.CreateDefault();
+    settings.ProjectDesktop.LocalProjectFilePath = CreateFakeProjectFile();
+    SettingsViewModel viewModel = CreateSettingsViewModelWithProbe(
+        settings,
+        (_, _) => Task.FromResult(MicrosoftToDoConnectionStatus.Connected()));
+
+    Assert.True(viewModel.HasMicrosoftProjectFileSelection, "Fixture should start with a selected file.");
+
+    viewModel.ClearMicrosoftProjectFileAsync().GetAwaiter().GetResult();
+
+    Assert.Equal(string.Empty, viewModel.MicrosoftProjectFilePath);
+    Assert.Equal("No Project file selected", viewModel.MicrosoftProjectFileStatusText);
+    Assert.Equal("None", viewModel.MicrosoftProjectFileName);
+    Assert.False(viewModel.CanClearMicrosoftProjectFile, "Cleared Project file should disable Clear.");
+    Assert.True(viewModel.HasChanges, "Clearing a Project file should mark Settings dirty.");
+    Assert.Contains("cleared", viewModel.SaveStatus);
+}
+
 static NavigationService CreateShellNavigationService()
 {
     NavigationService navigationService = new();
@@ -305,11 +365,24 @@ static SettingsViewModel CreateSettingsViewModelWithProjectDetector(
         detector);
 }
 
+static SettingsViewModel CreateSettingsViewModelWithProjectFilePicker(
+    AppSettings settings,
+    IMicrosoftProjectFilePicker picker)
+{
+    return CreateSettingsViewModelWithProbeInstance(
+        settings,
+        new TestMicrosoftToDoConnectionProbe((checkedAt, _) =>
+            Task.FromResult(MicrosoftToDoConnectionStatus.Connected(checkedAt: checkedAt))),
+        DateTimeOffset.Now,
+        projectFilePicker: picker);
+}
+
 static SettingsViewModel CreateSettingsViewModelWithProbeInstance(
     AppSettings settings,
     TestMicrosoftToDoConnectionProbe probe,
     DateTimeOffset now,
-    MicrosoftProjectDesktopDetector? projectDetector = null)
+    MicrosoftProjectDesktopDetector? projectDetector = null,
+    IMicrosoftProjectFilePicker? projectFilePicker = null)
 {
     string settingsRoot = Path.Combine(
         Path.GetTempPath(),
@@ -324,7 +397,8 @@ static SettingsViewModel CreateSettingsViewModelWithProbeInstance(
         settings,
         settingsFileStatus: "Loaded settings",
         microsoftToDoConnectionTestService: connectionTestService,
-        microsoftProjectDesktopDetector: projectDetector);
+        microsoftProjectDesktopDetector: projectDetector,
+        microsoftProjectFilePicker: projectFilePicker);
 }
 
 static string CreateFakeProjectDesktopInstall(out string executablePath)
@@ -344,6 +418,19 @@ static string CreateFakeProjectDesktopInstall(out string executablePath)
     Directory.CreateDirectory(Path.GetDirectoryName(executablePath)!);
     File.WriteAllText(executablePath, "fake project executable");
     return programFilesRoot;
+}
+
+static string CreateFakeProjectFile()
+{
+    string filePath = Path.Combine(
+        Path.GetTempPath(),
+        "SuccessPlannerMCP",
+        "ViewModelTests",
+        Guid.NewGuid().ToString("N"),
+        "Personal Success Plan.mpp");
+    Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
+    File.WriteAllText(filePath, "fake project file");
+    return filePath;
 }
 
 static void CaptureViewModelStartsReady()
@@ -3000,6 +3087,30 @@ internal sealed class TestMicrosoftToDoConnectionProbe : IMicrosoftToDoConnectio
     {
         CallCount++;
         return _testAsync(checkedAt, cancellationToken);
+    }
+}
+
+internal sealed class TestMicrosoftProjectFilePicker : IMicrosoftProjectFilePicker
+{
+    private readonly string? _selectedPath;
+
+    public TestMicrosoftProjectFilePicker(string? selectedPath)
+    {
+        _selectedPath = selectedPath;
+    }
+
+    public int CallCount { get; private set; }
+
+    public string LastCurrentFilePath { get; private set; } = string.Empty;
+
+    public Task<string?> PickProjectFileAsync(
+        string currentFilePath = "",
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        CallCount++;
+        LastCurrentFilePath = currentFilePath;
+        return Task.FromResult(_selectedPath);
     }
 }
 

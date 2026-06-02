@@ -16,6 +16,8 @@ public sealed class AppSettings
 
     public ConnectionSettings Connections { get; set; } = new();
 
+    public ProjectDesktopSettings ProjectDesktop { get; set; } = new();
+
     public List<DestinationRuleSettings> DestinationRules { get; set; } = [];
 
     public static AppSettings CreateDefault()
@@ -54,6 +56,11 @@ public sealed class ConnectionSettings
     public bool EnableProjectDesktop { get; set; } = true;
 
     public bool EnablePhoneCompanion { get; set; }
+}
+
+public sealed class ProjectDesktopSettings
+{
+    public string LocalProjectFilePath { get; set; } = string.Empty;
 }
 
 public sealed class DestinationRuleSettings

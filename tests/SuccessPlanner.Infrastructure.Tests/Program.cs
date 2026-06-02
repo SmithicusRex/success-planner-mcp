@@ -66,6 +66,7 @@ TestRunner.RunAll(
     ("MoveViewModel movement save appears in Review", MoveViewModelMovementSaveAppearsInReview),
     ("SearchService finds tasks notes projects and source links", SearchServiceFindsTasksNotesProjectsAndSourceLinks),
     ("FindViewModel searches local data through SearchService", FindViewModelSearchesLocalDataThroughSearchService),
+    ("SettingsService saves Project file selection", SettingsServiceSavesProjectFileSelection),
     ("SettingsMetadataRepository upserts and deletes metadata", SettingsMetadataRepositoryUpsertsAndDeletesMetadata));
 
 static async Task DatabaseServiceCreatesSqliteDatabase()
@@ -2299,6 +2300,24 @@ static async Task FindViewModelSearchesLocalDataThroughSearchService()
     Assert.Equal("Local search view model", viewModel.Results[0].Title);
     Assert.Equal("Search complete.", viewModel.StatusText);
     Assert.Equal("1 result", viewModel.ResultsCountText);
+}
+
+static async Task SettingsServiceSavesProjectFileSelection()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+    SettingsService settingsService = new(paths);
+    string projectFilePath = Path.Combine(
+        workspace.Path,
+        "Plans",
+        "Personal Success Plan.mpp");
+    AppSettings settings = AppSettings.CreateDefault();
+    settings.ProjectDesktop.LocalProjectFilePath = $"  {projectFilePath}  ";
+
+    await settingsService.SaveAsync(settings, CancellationToken.None);
+    AppSettings loaded = await settingsService.LoadOrCreateAsync(CancellationToken.None);
+
+    Assert.Equal(projectFilePath, loaded.ProjectDesktop.LocalProjectFilePath);
 }
 
 static async Task SettingsMetadataRepositoryUpsertsAndDeletesMetadata()
