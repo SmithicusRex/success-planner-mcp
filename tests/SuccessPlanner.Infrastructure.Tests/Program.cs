@@ -40,6 +40,9 @@ TestRunner.RunAll(
     ("MicrosoftProjectDesktopDetector finds Click-to-Run Project", MicrosoftProjectDesktopDetectorFindsClickToRunProject),
     ("MicrosoftProjectDesktopDetector finds Project on PATH", MicrosoftProjectDesktopDetectorFindsProjectOnPath),
     ("MicrosoftProjectDesktopDetector reports Project not found", MicrosoftProjectDesktopDetectorReportsProjectNotFound),
+    ("MicrosoftProjectTaskImportService imports selected Project tasks", MicrosoftProjectTaskImportServiceImportsSelectedProjectTasks),
+    ("MicrosoftProjectTaskImportService reports disabled Project import", MicrosoftProjectTaskImportServiceReportsDisabledProjectImport),
+    ("MicrosoftProjectTaskImportService reports missing Project file", MicrosoftProjectTaskImportServiceReportsMissingProjectFile),
     ("DatabaseService reports a healthy database", DatabaseServiceReportsHealthyDatabase),
     ("DatabaseService reports missing migration health failures", DatabaseServiceReportsMissingMigrationHealthFailures),
     ("DatabaseStartupMigrationService migrates a new database at startup", DatabaseStartupMigrationServiceMigratesNewDatabaseAtStartup),
@@ -1277,6 +1280,124 @@ static async Task MicrosoftProjectDesktopDetectorReportsProjectNotFound()
             Path.Combine("Microsoft Office", "root", "Office16", MicrosoftProjectDesktopDetectionResult.ExecutableName),
             StringComparison.OrdinalIgnoreCase)),
         "Detector should search the modern Microsoft 365 Office16 Click-to-Run path.");
+}
+
+static async Task MicrosoftProjectTaskImportServiceImportsSelectedProjectTasks()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+    await CreateMigratedDatabaseAsync(paths);
+
+    string projectFilePath = Path.Combine(workspace.Path, "Plans", "Personal Success Plan.mpp");
+    Directory.CreateDirectory(Path.GetDirectoryName(projectFilePath)!);
+    await File.WriteAllTextAsync(projectFilePath, "fake project file", CancellationToken.None);
+
+    SettingsService settingsService = new(paths);
+    AppSettings settings = AppSettings.CreateDefault();
+    settings.ProjectDesktop.LocalProjectFilePath = projectFilePath;
+    await settingsService.SaveAsync(settings, CancellationToken.None);
+
+    TaskRepository taskRepository = new(paths);
+    TestMicrosoftProjectAutomationAdapter adapter = new(
+        new MicrosoftProjectImportedTask(
+            "42",
+            "Frame the 20-minute plan",
+            new DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero),
+            new DateTimeOffset(2026, 6, 4, 17, 0, 0, TimeSpan.Zero),
+            25,
+            "Block the smallest useful slice."),
+        new MicrosoftProjectImportedTask(
+            "43",
+            "Review the next success action"));
+    MicrosoftProjectTaskImportService service = new(settingsService, taskRepository, adapter);
+
+    MicrosoftProjectImportResult result =
+        await service.ImportSelectedProjectFileAsync(CancellationToken.None);
+
+    Assert.True(result.WasSuccessful, "Project import should report success.");
+    Assert.Equal("Project tasks imported", result.StatusText);
+    Assert.Contains("Imported 2 Project tasks", result.DetailText);
+    Assert.Equal(2, result.ImportedCount);
+    Assert.Equal(1, adapter.CallCount);
+    Assert.Equal(projectFilePath, adapter.LastProjectFilePath);
+
+    IReadOnlyList<TaskItem> localTasks = await taskRepository.GetAllAsync(CancellationToken.None);
+    Assert.Equal(2, localTasks.Count);
+
+    TaskItem plannedTask = localTasks.Single(task => task.Title == "Frame the 20-minute plan");
+    Assert.Equal(TaskItemStatus.Planned, plannedTask.Status);
+    Assert.Equal(new DateOnly(2026, 6, 1), plannedTask.StartDate);
+    Assert.Equal(new DateOnly(2026, 6, 4), plannedTask.DueDate);
+    Assert.Contains("Imported from Microsoft Project: Personal Success Plan.mpp", plannedTask.Notes);
+    Assert.Contains("Project Task Id: 42", plannedTask.Notes);
+    Assert.Contains("Project percent complete: 25%", plannedTask.Notes);
+    Assert.Contains("Block the smallest useful slice.", plannedTask.Notes);
+    Assert.Contains("Microsoft Project", plannedTask.Tags);
+    Assert.Contains("Project Import", plannedTask.Tags);
+    Assert.Contains(plannedTask.Id, result.LocalTaskIds);
+
+    TaskItem captureTask = localTasks.Single(task => task.Title == "Review the next success action");
+    Assert.Equal(TaskItemStatus.Captured, captureTask.Status);
+    Assert.Contains(captureTask.Id, result.LocalTaskIds);
+}
+
+static async Task MicrosoftProjectTaskImportServiceReportsDisabledProjectImport()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+    await CreateMigratedDatabaseAsync(paths);
+
+    string projectFilePath = Path.Combine(workspace.Path, "Plans", "Personal Success Plan.mpp");
+    Directory.CreateDirectory(Path.GetDirectoryName(projectFilePath)!);
+    await File.WriteAllTextAsync(projectFilePath, "fake project file", CancellationToken.None);
+
+    SettingsService settingsService = new(paths);
+    AppSettings settings = AppSettings.CreateDefault();
+    settings.Connections.EnableProjectDesktop = false;
+    settings.ProjectDesktop.LocalProjectFilePath = projectFilePath;
+    await settingsService.SaveAsync(settings, CancellationToken.None);
+
+    TaskRepository taskRepository = new(paths);
+    TestMicrosoftProjectAutomationAdapter adapter = new(
+        new MicrosoftProjectImportedTask("1", "Should not import"));
+    MicrosoftProjectTaskImportService service = new(settingsService, taskRepository, adapter);
+
+    MicrosoftProjectImportResult result =
+        await service.ImportSelectedProjectFileAsync(CancellationToken.None);
+
+    Assert.False(result.WasSuccessful, "Disabled Project import should report a recoverable failure.");
+    Assert.Equal("Project import off", result.StatusText);
+    Assert.Contains("Turn on Project Desktop", result.DetailText);
+    Assert.Equal(0, adapter.CallCount);
+    Assert.Equal(0, (await taskRepository.GetAllAsync(CancellationToken.None)).Count);
+}
+
+static async Task MicrosoftProjectTaskImportServiceReportsMissingProjectFile()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+    await CreateMigratedDatabaseAsync(paths);
+
+    string projectFilePath = Path.Combine(workspace.Path, "Plans", "Missing Plan.mpp");
+    SettingsService settingsService = new(paths);
+    AppSettings settings = AppSettings.CreateDefault();
+    settings.ProjectDesktop.LocalProjectFilePath = projectFilePath;
+    await settingsService.SaveAsync(settings, CancellationToken.None);
+
+    TaskRepository taskRepository = new(paths);
+    TestMicrosoftProjectAutomationAdapter adapter = new(
+        new MicrosoftProjectImportedTask("1", "Should not import"));
+    MicrosoftProjectTaskImportService service = new(settingsService, taskRepository, adapter);
+
+    MicrosoftProjectImportResult result =
+        await service.ImportSelectedProjectFileAsync(CancellationToken.None);
+
+    Assert.False(result.WasSuccessful, "Missing Project file should report a recoverable failure.");
+    Assert.Equal(projectFilePath, result.ProjectFilePath);
+    Assert.Equal("Project file not found", result.StatusText);
+    Assert.Contains("Select an existing Microsoft Project file", result.DetailText);
+    Assert.Equal(0, adapter.CallCount);
+    Assert.Equal(0, (await taskRepository.GetAllAsync(CancellationToken.None)).Count);
 }
 
 static async Task DatabaseServiceReportsHealthyDatabase()
@@ -2664,6 +2785,30 @@ internal sealed class TestMicrosoftToDoAccessTokenProvider : IMicrosoftToDoAcces
     {
         cancellationToken.ThrowIfCancellationRequested();
         return Task.FromResult(_accessToken);
+    }
+}
+
+internal sealed class TestMicrosoftProjectAutomationAdapter : IMicrosoftProjectAutomationAdapter
+{
+    private readonly IReadOnlyList<MicrosoftProjectImportedTask> _tasks;
+
+    public TestMicrosoftProjectAutomationAdapter(params MicrosoftProjectImportedTask[] tasks)
+    {
+        _tasks = tasks;
+    }
+
+    public int CallCount { get; private set; }
+
+    public string LastProjectFilePath { get; private set; } = string.Empty;
+
+    public Task<IReadOnlyList<MicrosoftProjectImportedTask>> ImportTasksAsync(
+        string projectFilePath,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        CallCount++;
+        LastProjectFilePath = projectFilePath;
+        return Task.FromResult(_tasks);
     }
 }
 

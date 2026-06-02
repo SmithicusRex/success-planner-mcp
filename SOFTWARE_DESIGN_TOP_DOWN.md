@@ -1098,7 +1098,7 @@ Benchmark gate:
 
 ~~16.3. Add local Project file selection.~~
 
-16.4. Import Project tasks through the selected automation path.
+~~16.4. Import Project tasks through the selected automation path.~~
 
 16.5. Map Project tasks into local domain objects.
 
@@ -1107,7 +1107,7 @@ Benchmark gate:
 - ~~Project executable detection can find WINPROJ.EXE in common Office paths.~~
 - ~~Settings shows Project desktop detection status.~~
 - ~~User can select or detect a Project source.~~
-- Imported tasks appear locally.
+- ~~Imported tasks appear locally.~~
 - Import failure is visible and recoverable.
 - ~~Build and tests pass.~~
 
