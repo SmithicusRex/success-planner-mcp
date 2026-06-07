@@ -82,6 +82,7 @@ TestRunner.RunAll(
     ("FindViewModel clears search state", FindViewModelClearsSearchState),
     ("FindViewModel searches local results", FindViewModelSearchesLocalResults),
     ("FindViewModel opens selected local item", FindViewModelOpensSelectedLocalItem),
+    ("FindViewModel shows inactive Open Source without connected source", FindViewModelShowsInactiveOpenSourceWithoutConnectedSource),
     ("FindViewModel handles no results", FindViewModelHandlesNoResults),
     ("FindViewModel reports search failures", FindViewModelReportsSearchFailures),
     ("StartWorkViewModel starts in a simple ready state", StartWorkViewModelStartsReady),
@@ -2964,6 +2965,32 @@ static void FindViewModelOpensSelectedLocalItem()
     Assert.Equal("Project: Kitchen reset", viewModel.OpenedItemPanelText);
 }
 
+static void FindViewModelShowsInactiveOpenSourceWithoutConnectedSource()
+{
+    FindViewModel viewModel = new((_, _) => Task.FromResult<IReadOnlyList<LocalSearchResult>>(
+    [
+        CreateSearchResult(LocalSearchResultKind.Task, "Call the pharmacy", "Task")
+    ]))
+    {
+        SearchText = "pharmacy"
+    };
+    viewModel.SearchAsync(CancellationToken.None).GetAwaiter().GetResult();
+
+    FindResultViewModel taskResult = viewModel.Results[0];
+    viewModel.OpenLocalItemAsync(taskResult).GetAwaiter().GetResult();
+
+    Assert.True(ReferenceEquals(taskResult, viewModel.OpenedResult), "Open should select the task result.");
+    Assert.False(taskResult.HasConnectedSourceItem, "Local-only task should report no connected source.");
+    Assert.False(taskResult.HasExternalSource, "Local-only task should not expose an external source URL.");
+    Assert.False(taskResult.CanOpenSourceItem, "Open Source should be inactive without a connected source.");
+    Assert.False(taskResult.OpenSourceCommand.CanExecute(null), "Open Source command should be disabled without a source.");
+    Assert.Equal("Open Source", taskResult.OpenSourceButtonText);
+    Assert.Equal("No source item connected", taskResult.OpenSourceStatusText);
+    Assert.Contains("only stored in Success Planner", taskResult.OpenSourceDetailText);
+    Assert.Equal("#EEF0F3", taskResult.OpenSourceStatusBackgroundColor);
+    Assert.Equal("#6A717A", taskResult.OpenSourceStatusAccentColor);
+}
+
 static void FindViewModelHandlesNoResults()
 {
     FindViewModel viewModel = new((_, _) => Task.FromResult<IReadOnlyList<LocalSearchResult>>([]))
@@ -3000,7 +3027,8 @@ static void FindViewModelReportsSearchFailures()
 static LocalSearchResult CreateSearchResult(
     LocalSearchResultKind kind,
     string title,
-    string sourceText)
+    string sourceText,
+    string externalWebUrl = "")
 {
     return new LocalSearchResult(
         kind,
@@ -3010,7 +3038,8 @@ static LocalSearchResult CreateSearchResult(
         sourceText,
         new DateTimeOffset(2026, 6, 1, 10, 0, 0, TimeSpan.Zero),
         LocalItemType: sourceText,
-        LocalItemId: Guid.NewGuid());
+        LocalItemId: Guid.NewGuid(),
+        ExternalWebUrl: externalWebUrl);
 }
 
 static void MoveViewModelStartsReady()

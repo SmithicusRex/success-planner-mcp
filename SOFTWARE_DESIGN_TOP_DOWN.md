@@ -1035,7 +1035,7 @@ Status:
 
 ~~13.4. Open selected local item.~~
 
-13.5. Add an inactive Open Source control that clearly shows when no source item is connected.
+~~13.5. Add an inactive Open Source control that clearly shows when no source item is connected.~~
 
 Benchmark gate:
 

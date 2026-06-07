@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using SuccessPlanner.App.Commands;
 using SuccessPlanner.App.Screens;
@@ -341,6 +342,7 @@ public sealed class FindResultViewModel : INotifyPropertyChanged
         ExternalWebUrl = result.ExternalWebUrl;
         HasDetail = !string.IsNullOrWhiteSpace(Detail);
         HasExternalSource = !string.IsNullOrWhiteSpace(ExternalWebUrl);
+        HasConnectedSourceItem = Kind == LocalSearchResultKind.SourceLink || HasExternalSource;
         BadgeText = BuildBadgeText(result.Kind);
         CardIconGlyph = BuildIconGlyph(result.Kind);
         CardAccentColor = BuildAccentColor(result.Kind);
@@ -351,6 +353,9 @@ public sealed class FindResultViewModel : INotifyPropertyChanged
             : Id.ToString("D");
         CreatedText = CreatedAt.ToLocalTime().ToString("g");
         OpenCommand = new AsyncRelayCommand(() => openLocalItemAsync(this));
+        OpenSourceCommand = new AsyncRelayCommand(
+            OpenSourceAsync,
+            () => CanOpenSourceItem);
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -377,6 +382,11 @@ public sealed class FindResultViewModel : INotifyPropertyChanged
 
     public bool HasExternalSource { get; }
 
+    public bool HasConnectedSourceItem { get; }
+
+    public bool CanOpenSourceItem => HasConnectedSourceItem
+        && HasExternalSource;
+
     public string BadgeText { get; }
 
     public string CardIconGlyph { get; }
@@ -392,6 +402,8 @@ public sealed class FindResultViewModel : INotifyPropertyChanged
     public string CreatedText { get; }
 
     public AsyncRelayCommand OpenCommand { get; }
+
+    public AsyncRelayCommand OpenSourceCommand { get; }
 
     public bool IsOpened
     {
@@ -414,12 +426,62 @@ public sealed class FindResultViewModel : INotifyPropertyChanged
 
     public string OpenButtonText => IsOpened ? "Opened" : "Open";
 
+    public string OpenSourceButtonText => "Open Source";
+
+    public string OpenSourceStatusText
+    {
+        get
+        {
+            if (!HasConnectedSourceItem)
+            {
+                return "No source item connected";
+            }
+
+            return HasExternalSource
+                ? "Source item connected"
+                : "Source item has no open link";
+        }
+    }
+
+    public string OpenSourceDetailText
+    {
+        get
+        {
+            if (!HasConnectedSourceItem)
+            {
+                return "This local item is only stored in Success Planner right now.";
+            }
+
+            return HasExternalSource
+                ? ExternalWebUrl
+                : "This source link is saved locally, but it does not include a web link.";
+        }
+    }
+
+    public string OpenSourceStatusBackgroundColor => CanOpenSourceItem ? "#E7F8EE" : "#EEF0F3";
+
+    public string OpenSourceStatusAccentColor => CanOpenSourceItem ? "#1E6B3A" : "#6A717A";
+
     public static FindResultViewModel FromSearchResult(
         LocalSearchResult result,
         Func<FindResultViewModel, Task> openLocalItemAsync)
     {
         ArgumentNullException.ThrowIfNull(result);
         return new FindResultViewModel(result, openLocalItemAsync);
+    }
+
+    private Task OpenSourceAsync()
+    {
+        if (!CanOpenSourceItem)
+        {
+            return Task.CompletedTask;
+        }
+
+        Process.Start(new ProcessStartInfo(ExternalWebUrl)
+        {
+            UseShellExecute = true
+        });
+        return Task.CompletedTask;
     }
 
     private static string BuildBadgeText(LocalSearchResultKind kind)
