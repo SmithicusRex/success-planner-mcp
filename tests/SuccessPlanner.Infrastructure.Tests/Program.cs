@@ -31,6 +31,10 @@ TestRunner.RunAll(
     ("MicrosoftToDoConnectionTestService uses configured probe", MicrosoftToDoConnectionTestServiceUsesConfiguredProbe),
     ("MicrosoftToDoConnectionTestService maps probe failures", MicrosoftToDoConnectionTestServiceMapsProbeFailures),
     ("MicrosoftToDoGraphConnectionProbe maps token and Graph responses", MicrosoftToDoGraphConnectionProbeMapsTokenAndGraphResponses),
+    ("MicrosoftPlannerAvailabilityTestService respects disabled setting", MicrosoftPlannerAvailabilityTestServiceRespectsDisabledSetting),
+    ("MicrosoftPlannerAvailabilityTestService uses configured probe", MicrosoftPlannerAvailabilityTestServiceUsesConfiguredProbe),
+    ("MicrosoftPlannerAvailabilityTestService maps probe failures", MicrosoftPlannerAvailabilityTestServiceMapsProbeFailures),
+    ("MicrosoftPlannerGraphAvailabilityProbe maps token and Graph responses", MicrosoftPlannerGraphAvailabilityProbeMapsTokenAndGraphResponses),
     ("MicrosoftToDoGraphTaskAdapter needs sign-in without token", MicrosoftToDoGraphTaskAdapterNeedsSignInWithoutToken),
     ("MicrosoftToDoGraphTaskAdapter pulls lists and tasks", MicrosoftToDoGraphTaskAdapterPullsListsAndTasks),
     ("MicrosoftToDoGraphTaskAdapter maps pull failures", MicrosoftToDoGraphTaskAdapterMapsPullFailures),
@@ -849,6 +853,172 @@ static async Task MicrosoftToDoGraphConnectionProbeMapsTokenAndGraphResponses()
 
     Assert.Equal(MicrosoftToDoConnectionState.Unavailable, unavailable.State);
     Assert.Contains("503", unavailable.DetailText);
+}
+
+static async Task MicrosoftPlannerAvailabilityTestServiceRespectsDisabledSetting()
+{
+    DateTimeOffset now = new(2026, 6, 6, 21, 0, 0, TimeSpan.Zero);
+    TestMicrosoftPlannerAvailabilityProbe probe = new((_, _) =>
+        throw new InvalidOperationException("Disabled Planner should not call the probe."));
+    MicrosoftPlannerAvailabilityTestService service = new(probe, () => now);
+    ConnectionSettings connectionSettings = new()
+    {
+        EnablePlanner = false
+    };
+
+    MicrosoftPlannerConnectionStatus initialStatus = service.GetInitialStatus(connectionSettings);
+    MicrosoftPlannerConnectionStatus testedStatus =
+        await service.TestAvailabilityAsync(connectionSettings, CancellationToken.None);
+
+    Assert.Equal(MicrosoftPlannerConnectionState.Disabled, initialStatus.State);
+    Assert.Equal(MicrosoftPlannerConnectionState.Disabled, testedStatus.State);
+    Assert.False(testedStatus.CanTestAvailability, "Disabled Planner status should not be testable.");
+    Assert.Equal(0, probe.CallCount);
+}
+
+static async Task MicrosoftPlannerAvailabilityTestServiceUsesConfiguredProbe()
+{
+    DateTimeOffset now = new(2026, 6, 6, 21, 15, 0, TimeSpan.Zero);
+    TestMicrosoftPlannerAvailabilityProbe probe = new((checkedAt, cancellationToken) =>
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(MicrosoftPlannerConnectionStatus.Available("smith@example.com", checkedAt));
+    });
+    MicrosoftPlannerAvailabilityTestService service = new(probe, () => now);
+    ConnectionSettings connectionSettings = new()
+    {
+        EnablePlanner = true
+    };
+
+    MicrosoftPlannerConnectionStatus initialStatus = service.GetInitialStatus(connectionSettings);
+    MicrosoftPlannerConnectionStatus testedStatus =
+        await service.TestAvailabilityAsync(connectionSettings, CancellationToken.None);
+
+    Assert.Equal(MicrosoftPlannerConnectionState.NotConnected, initialStatus.State);
+    Assert.Equal(MicrosoftPlannerConnectionState.Available, testedStatus.State);
+    Assert.Equal("smith@example.com", testedStatus.AccountDisplayName);
+    Assert.Equal(now, testedStatus.LastCheckedAt);
+    Assert.True(testedStatus.CanReadPlannerTasks, "Available Planner status should allow reading tasks.");
+    Assert.Equal(1, probe.CallCount);
+}
+
+static async Task MicrosoftPlannerAvailabilityTestServiceMapsProbeFailures()
+{
+    DateTimeOffset now = new(2026, 6, 6, 21, 30, 0, TimeSpan.Zero);
+    ConnectionSettings connectionSettings = new()
+    {
+        EnablePlanner = true
+    };
+    MicrosoftPlannerAvailabilityTestService unavailableService = new(
+        new TestMicrosoftPlannerAvailabilityProbe((_, _) =>
+            throw new HttpRequestException("Network unavailable.")),
+        () => now);
+    MicrosoftPlannerAvailabilityTestService failedService = new(
+        new TestMicrosoftPlannerAvailabilityProbe((_, _) =>
+            throw new InvalidOperationException("Unexpected Planner probe error.")),
+        () => now);
+
+    MicrosoftPlannerConnectionStatus unavailable =
+        await unavailableService.TestAvailabilityAsync(connectionSettings, CancellationToken.None);
+    MicrosoftPlannerConnectionStatus failed =
+        await failedService.TestAvailabilityAsync(connectionSettings, CancellationToken.None);
+
+    Assert.Equal(MicrosoftPlannerConnectionState.Unavailable, unavailable.State);
+    Assert.Equal("Network unavailable.", unavailable.DetailText);
+    Assert.Equal(now, unavailable.LastCheckedAt);
+    Assert.True(unavailable.NeedsAttention, "Unavailable Planner status should need attention.");
+
+    Assert.Equal(MicrosoftPlannerConnectionState.Failed, failed.State);
+    Assert.Equal("Unexpected Planner probe error.", failed.DetailText);
+    Assert.Equal(now, failed.LastCheckedAt);
+    Assert.True(failed.NeedsAttention, "Failed Planner status should need attention.");
+}
+
+static async Task MicrosoftPlannerGraphAvailabilityProbeMapsTokenAndGraphResponses()
+{
+    DateTimeOffset now = new(2026, 6, 6, 22, 0, 0, TimeSpan.Zero);
+    TestHttpMessageHandler noTokenHandler = new(_ =>
+        throw new InvalidOperationException("No-token Planner probe should not call Graph."));
+    MicrosoftPlannerGraphAvailabilityProbe noTokenProbe = new(
+        new HttpClient(noTokenHandler)
+        {
+            BaseAddress = new Uri("https://graph.test/v1.0/")
+        },
+        new TestMicrosoftPlannerAccessTokenProvider(null));
+
+    MicrosoftPlannerConnectionStatus noTokenStatus =
+        await noTokenProbe.TestAvailabilityAsync(now, CancellationToken.None);
+
+    Assert.Equal(MicrosoftPlannerConnectionState.NeedsSignIn, noTokenStatus.State);
+    Assert.Equal(0, noTokenHandler.CallCount);
+    Assert.Equal(now, noTokenStatus.LastCheckedAt);
+
+    TestHttpMessageHandler successHandler = new(request =>
+    {
+        Assert.Equal("Bearer", request.Headers.Authorization?.Scheme);
+        Assert.Equal("planner-token", request.Headers.Authorization?.Parameter);
+        Assert.Contains("me/planner/tasks", request.RequestUri?.ToString() ?? string.Empty);
+        return JsonResponse("""{ "value": [] }""");
+    });
+    MicrosoftPlannerGraphAvailabilityProbe successProbe = new(
+        new HttpClient(successHandler)
+        {
+            BaseAddress = new Uri("https://graph.test/v1.0/")
+        },
+        new TestMicrosoftPlannerAccessTokenProvider(" planner-token "));
+
+    MicrosoftPlannerConnectionStatus available =
+        await successProbe.TestAvailabilityAsync(now, CancellationToken.None);
+
+    Assert.Equal(MicrosoftPlannerConnectionState.Available, available.State);
+    Assert.True(available.CanReadPlannerTasks, "Successful Planner probe should allow reading tasks.");
+    Assert.Equal(1, successHandler.CallCount);
+
+    TestHttpMessageHandler unauthorizedHandler = new(_ =>
+        new HttpResponseMessage(HttpStatusCode.Unauthorized));
+    MicrosoftPlannerGraphAvailabilityProbe unauthorizedProbe = new(
+        new HttpClient(unauthorizedHandler)
+        {
+            BaseAddress = new Uri("https://graph.test/v1.0/")
+        },
+        new TestMicrosoftPlannerAccessTokenProvider("expired-token"));
+
+    MicrosoftPlannerConnectionStatus needsSignIn =
+        await unauthorizedProbe.TestAvailabilityAsync(now, CancellationToken.None);
+
+    Assert.Equal(MicrosoftPlannerConnectionState.NeedsSignIn, needsSignIn.State);
+    Assert.True(needsSignIn.CanStartSignIn, "Unauthorized Planner response should allow sign-in.");
+
+    TestHttpMessageHandler unavailableHandler = new(_ =>
+        new HttpResponseMessage(HttpStatusCode.Forbidden));
+    MicrosoftPlannerGraphAvailabilityProbe unavailableProbe = new(
+        new HttpClient(unavailableHandler)
+        {
+            BaseAddress = new Uri("https://graph.test/v1.0/")
+        },
+        new TestMicrosoftPlannerAccessTokenProvider("token-123"));
+
+    MicrosoftPlannerConnectionStatus unavailable =
+        await unavailableProbe.TestAvailabilityAsync(now, CancellationToken.None);
+
+    Assert.Equal(MicrosoftPlannerConnectionState.Unavailable, unavailable.State);
+    Assert.Contains("work or school account", unavailable.DetailText);
+    Assert.False(unavailable.CanReadPlannerTasks, "Unavailable Planner should not read tasks.");
+
+    TestHttpMessageHandler failedHandler = new(_ =>
+        new HttpResponseMessage(HttpStatusCode.Conflict));
+    MicrosoftPlannerGraphAvailabilityProbe failedProbe = new(
+        new HttpClient(failedHandler)
+        {
+            BaseAddress = new Uri("https://graph.test/v1.0/")
+        },
+        new TestMicrosoftPlannerAccessTokenProvider("token-123"));
+
+    MicrosoftPlannerConnectionStatus failed =
+        await failedProbe.TestAvailabilityAsync(now, CancellationToken.None);
+
+    Assert.Equal(MicrosoftPlannerConnectionState.Failed, failed.State);
+    Assert.Contains("409", failed.DetailText);
 }
 
 static async Task MicrosoftToDoGraphTaskAdapterNeedsSignInWithoutToken()
@@ -2851,6 +3021,43 @@ internal sealed class TestMicrosoftToDoAccessTokenProvider : IMicrosoftToDoAcces
     private readonly string? _accessToken;
 
     public TestMicrosoftToDoAccessTokenProvider(string? accessToken)
+    {
+        _accessToken = accessToken;
+    }
+
+    public Task<string?> GetAccessTokenAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(_accessToken);
+    }
+}
+
+internal sealed class TestMicrosoftPlannerAvailabilityProbe : IMicrosoftPlannerAvailabilityProbe
+{
+    private readonly Func<DateTimeOffset, CancellationToken, Task<MicrosoftPlannerConnectionStatus>> _testAsync;
+
+    public TestMicrosoftPlannerAvailabilityProbe(
+        Func<DateTimeOffset, CancellationToken, Task<MicrosoftPlannerConnectionStatus>> testAsync)
+    {
+        _testAsync = testAsync;
+    }
+
+    public int CallCount { get; private set; }
+
+    public Task<MicrosoftPlannerConnectionStatus> TestAvailabilityAsync(
+        DateTimeOffset checkedAt,
+        CancellationToken cancellationToken = default)
+    {
+        CallCount++;
+        return _testAsync(checkedAt, cancellationToken);
+    }
+}
+
+internal sealed class TestMicrosoftPlannerAccessTokenProvider : IMicrosoftPlannerAccessTokenProvider
+{
+    private readonly string? _accessToken;
+
+    public TestMicrosoftPlannerAccessTokenProvider(string? accessToken)
     {
         _accessToken = accessToken;
     }
