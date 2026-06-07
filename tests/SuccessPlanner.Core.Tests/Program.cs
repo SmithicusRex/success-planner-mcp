@@ -10,6 +10,7 @@ TestRunner.RunAll(
     ("SuccessGoal creation and status transitions", SuccessGoalCreationAndStatusTransitions),
     ("MovementSession creation and status transitions", MovementSessionCreationAndStatusTransitions),
     ("Microsoft To Do connection status model", MicrosoftToDoConnectionStatusModel),
+    ("Microsoft Planner connection status model", MicrosoftPlannerConnectionStatusModel),
     ("SourceLink creation and sync transitions", SourceLinkCreationAndSyncTransitions),
     ("SyncQueueItem creation and sync transitions", SyncQueueItemCreationAndSyncTransitions));
 
@@ -261,6 +262,73 @@ static void MicrosoftToDoConnectionStatusModel()
     Assert.Equal("Checking To Do", testing.StatusText);
     Assert.False(testing.CanTestConnection, "Testing state should not start another test.");
     Assert.False(testing.CanSync, "Testing state should not sync yet.");
+}
+
+static void MicrosoftPlannerConnectionStatusModel()
+{
+    MicrosoftPlannerConnectionStatus disabled = MicrosoftPlannerConnectionStatus.Disabled();
+
+    Assert.Equal(SourceSystem.MicrosoftPlanner, disabled.SourceSystem);
+    Assert.Equal("Microsoft Planner", disabled.DisplayName);
+    Assert.Equal(MicrosoftPlannerConnectionState.Disabled, disabled.State);
+    Assert.Equal("Planner is off", disabled.StatusText);
+    Assert.Equal("Microsoft Planner is turned off in Settings.", disabled.DetailText);
+    Assert.False(disabled.IsEnabled, "Disabled Planner connection should not be enabled.");
+    Assert.False(disabled.CanTestAvailability, "Disabled Planner connection should not allow testing.");
+    Assert.False(disabled.CanReadPlannerTasks, "Disabled Planner connection should not read tasks.");
+
+    DateTimeOffset checkedAt = new(2026, 6, 6, 10, 0, 0, TimeSpan.Zero);
+    MicrosoftPlannerConnectionStatus available = MicrosoftPlannerConnectionStatus.Available(
+        "  smith@example.com  ",
+        checkedAt);
+
+    Assert.Equal(MicrosoftPlannerConnectionState.Available, available.State);
+    Assert.Equal("smith@example.com", available.AccountDisplayName);
+    Assert.Equal(checkedAt, available.LastCheckedAt);
+    Assert.Equal("Planner available", available.StatusText);
+    Assert.Equal("Planner is available for smith@example.com.", available.DetailText);
+    Assert.True(available.IsAvailable, "Available Planner status should report available.");
+    Assert.True(available.CanReadPlannerTasks, "Available Planner status should allow reading tasks.");
+    Assert.True(available.CanTestAvailability, "Available Planner status should allow retesting.");
+    Assert.False(available.NeedsAttention, "Available Planner status should not need attention.");
+
+    MicrosoftPlannerConnectionStatus unavailable = MicrosoftPlannerConnectionStatus.Unavailable(
+        "  Planner is not included with this account.  ",
+        checkedAt);
+
+    Assert.Equal(MicrosoftPlannerConnectionState.Unavailable, unavailable.State);
+    Assert.Equal("Planner unavailable", unavailable.StatusText);
+    Assert.Equal("Planner is not included with this account.", unavailable.DetailText);
+    Assert.True(unavailable.NeedsAttention, "Unavailable Planner status should need attention.");
+    Assert.False(unavailable.CanReadPlannerTasks, "Unavailable Planner status should not read tasks.");
+    Assert.False(unavailable.CanStartSignIn, "Unavailable Planner access should not imply sign-in can fix licensing.");
+
+    MicrosoftPlannerConnectionStatus needsSignIn = MicrosoftPlannerConnectionStatus.NeedsSignIn(
+        "  Sign in again to check Planner.  ",
+        checkedAt);
+
+    Assert.Equal(MicrosoftPlannerConnectionState.NeedsSignIn, needsSignIn.State);
+    Assert.Equal("Sign in needed", needsSignIn.StatusText);
+    Assert.Equal("Sign in again to check Planner.", needsSignIn.DetailText);
+    Assert.True(needsSignIn.CanStartSignIn, "Needs sign-in status should offer sign-in.");
+    Assert.True(needsSignIn.NeedsAttention, "Needs sign-in status should need attention.");
+
+    MicrosoftPlannerConnectionStatus failed = MicrosoftPlannerConnectionStatus.Failed(
+        "  Graph request timed out.  ",
+        checkedAt);
+
+    Assert.Equal(MicrosoftPlannerConnectionState.Failed, failed.State);
+    Assert.Equal("Planner check failed", failed.StatusText);
+    Assert.Equal("Graph request timed out.", failed.DetailText);
+    Assert.True(failed.NeedsAttention, "Failed Planner check should need attention.");
+    Assert.True(failed.CanStartSignIn, "Failed Planner check should allow a fresh sign-in path.");
+
+    MicrosoftPlannerConnectionStatus testing = MicrosoftPlannerConnectionStatus.Testing(checkedAt);
+
+    Assert.Equal(MicrosoftPlannerConnectionState.Testing, testing.State);
+    Assert.Equal("Checking Planner", testing.StatusText);
+    Assert.False(testing.CanTestAvailability, "Testing state should not start another check.");
+    Assert.False(testing.CanReadPlannerTasks, "Testing state should not read Planner tasks yet.");
 }
 
 static void SourceLinkCreationAndSyncTransitions()

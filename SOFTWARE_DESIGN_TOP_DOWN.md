@@ -1113,7 +1113,7 @@ Benchmark gate:
 
 ### 17. Planner Availability Test
 
-17.1. Add Planner connection status model.
+~~17.1. Add Planner connection status model.~~
 
 17.2. Test whether Planner data is accessible for the current account.
 
