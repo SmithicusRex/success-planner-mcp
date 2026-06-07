@@ -35,6 +35,12 @@ TestRunner.RunAll(
     ("MicrosoftPlannerAvailabilityTestService uses configured probe", MicrosoftPlannerAvailabilityTestServiceUsesConfiguredProbe),
     ("MicrosoftPlannerAvailabilityTestService maps probe failures", MicrosoftPlannerAvailabilityTestServiceMapsProbeFailures),
     ("MicrosoftPlannerGraphAvailabilityProbe maps token and Graph responses", MicrosoftPlannerGraphAvailabilityProbeMapsTokenAndGraphResponses),
+    ("MicrosoftPlannerGraphTaskAdapter needs sign-in without token", MicrosoftPlannerGraphTaskAdapterNeedsSignInWithoutToken),
+    ("MicrosoftPlannerGraphTaskAdapter pulls assigned tasks", MicrosoftPlannerGraphTaskAdapterPullsAssignedTasks),
+    ("MicrosoftPlannerGraphTaskAdapter maps pull failures", MicrosoftPlannerGraphTaskAdapterMapsPullFailures),
+    ("MicrosoftPlannerTaskImportService imports assigned tasks", MicrosoftPlannerTaskImportServiceImportsAssignedTasks),
+    ("MicrosoftPlannerTaskImportService skips existing tasks", MicrosoftPlannerTaskImportServiceSkipsExistingTasks),
+    ("MicrosoftPlannerTaskImportService reports disabled Planner import", MicrosoftPlannerTaskImportServiceReportsDisabledPlannerImport),
     ("MicrosoftToDoGraphTaskAdapter needs sign-in without token", MicrosoftToDoGraphTaskAdapterNeedsSignInWithoutToken),
     ("MicrosoftToDoGraphTaskAdapter pulls lists and tasks", MicrosoftToDoGraphTaskAdapterPullsListsAndTasks),
     ("MicrosoftToDoGraphTaskAdapter maps pull failures", MicrosoftToDoGraphTaskAdapterMapsPullFailures),
@@ -1019,6 +1025,292 @@ static async Task MicrosoftPlannerGraphAvailabilityProbeMapsTokenAndGraphRespons
 
     Assert.Equal(MicrosoftPlannerConnectionState.Failed, failed.State);
     Assert.Contains("409", failed.DetailText);
+}
+
+static async Task MicrosoftPlannerGraphTaskAdapterNeedsSignInWithoutToken()
+{
+    DateTimeOffset now = new(2026, 6, 7, 8, 0, 0, TimeSpan.Zero);
+    TestHttpMessageHandler handler = new(_ =>
+        throw new InvalidOperationException("No-token Planner import should not call Graph."));
+    MicrosoftPlannerGraphTaskAdapter adapter = new(
+        new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://graph.test/v1.0/")
+        },
+        new TestMicrosoftPlannerAccessTokenProvider(null),
+        () => now);
+
+    MicrosoftPlannerPullResult result = await adapter.PullAssignedTasksAsync(CancellationToken.None);
+
+    Assert.Equal(MicrosoftPlannerConnectionState.NeedsSignIn, result.ConnectionStatus.State);
+    Assert.Equal(now, result.ConnectionStatus.LastCheckedAt);
+    Assert.Equal(0, handler.CallCount);
+    Assert.False(result.HasData, "No-token Planner pull should not return data.");
+    Assert.False(result.CanUseData, "No-token Planner data should not be usable.");
+}
+
+static async Task MicrosoftPlannerGraphTaskAdapterPullsAssignedTasks()
+{
+    DateTimeOffset now = new(2026, 6, 7, 8, 15, 0, TimeSpan.Zero);
+    TestHttpMessageHandler handler = new(request =>
+    {
+        Assert.Equal("Bearer", request.Headers.Authorization?.Scheme);
+        Assert.Equal("planner-token", request.Headers.Authorization?.Parameter);
+        Assert.Contains("me/planner/tasks", request.RequestUri?.ToString() ?? string.Empty);
+
+        return JsonResponse(
+            """
+            {
+              "value": [
+                {
+                  "id": "planner-task-1",
+                  "title": "Draft the personal plan",
+                  "planId": "plan-1",
+                  "bucketId": "bucket-1",
+                  "percentComplete": 50,
+                  "priority": 1,
+                  "createdDateTime": "2026-06-01T12:00:00Z",
+                  "startDateTime": "2026-06-07T14:00:00Z",
+                  "dueDateTime": "2026-06-08T22:00:00Z"
+                },
+                {
+                  "id": "planner-task-2",
+                  "title": "Celebrate the small win",
+                  "planId": "plan-1",
+                  "percentComplete": 100,
+                  "completedDateTime": "2026-06-07T15:30:00Z"
+                },
+                {
+                  "id": "",
+                  "title": "Ignored without id"
+                }
+              ]
+            }
+            """);
+    });
+    MicrosoftPlannerGraphTaskAdapter adapter = new(
+        new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://graph.test/v1.0/")
+        },
+        new TestMicrosoftPlannerAccessTokenProvider(" planner-token "),
+        () => now);
+
+    MicrosoftPlannerPullResult result = await adapter.PullAssignedTasksAsync(CancellationToken.None);
+
+    Assert.Equal(MicrosoftPlannerConnectionState.Available, result.ConnectionStatus.State);
+    Assert.True(result.CanUseData, "Successful Planner pull should be usable.");
+    Assert.Equal(2, result.Tasks.Count);
+    Assert.Equal(1, handler.CallCount);
+
+    MicrosoftPlannerTaskItem activeTask = result.Tasks[0];
+    Assert.Equal("planner-task-1", activeTask.Id);
+    Assert.Equal("Draft the personal plan", activeTask.Title);
+    Assert.Equal("plan-1", activeTask.PlanId);
+    Assert.Equal("bucket-1", activeTask.BucketId);
+    Assert.Equal(50, activeTask.PercentComplete);
+    Assert.Equal(1, activeTask.Priority);
+    Assert.Equal(new DateTimeOffset(2026, 6, 8, 22, 0, 0, TimeSpan.Zero), activeTask.DueAt);
+
+    MicrosoftPlannerTaskItem completedTask = result.Tasks[1];
+    Assert.True(completedTask.IsComplete, "Completed Planner task should be recognized.");
+}
+
+static async Task MicrosoftPlannerGraphTaskAdapterMapsPullFailures()
+{
+    DateTimeOffset now = new(2026, 6, 7, 8, 30, 0, TimeSpan.Zero);
+    MicrosoftPlannerGraphTaskAdapter unauthorizedAdapter = new(
+        new HttpClient(new TestHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.Unauthorized)))
+        {
+            BaseAddress = new Uri("https://graph.test/v1.0/")
+        },
+        new TestMicrosoftPlannerAccessTokenProvider("expired-token"),
+        () => now);
+    MicrosoftPlannerGraphTaskAdapter unavailableAdapter = new(
+        new HttpClient(new TestHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.Forbidden)))
+        {
+            BaseAddress = new Uri("https://graph.test/v1.0/")
+        },
+        new TestMicrosoftPlannerAccessTokenProvider("token-123"),
+        () => now);
+
+    MicrosoftPlannerPullResult unauthorized =
+        await unauthorizedAdapter.PullAssignedTasksAsync(CancellationToken.None);
+    MicrosoftPlannerPullResult unavailable =
+        await unavailableAdapter.PullAssignedTasksAsync(CancellationToken.None);
+
+    Assert.Equal(MicrosoftPlannerConnectionState.NeedsSignIn, unauthorized.ConnectionStatus.State);
+    Assert.False(unauthorized.CanUseData, "Unauthorized Planner pull should not be usable.");
+
+    Assert.Equal(MicrosoftPlannerConnectionState.Unavailable, unavailable.ConnectionStatus.State);
+    Assert.Contains("work or school account", unavailable.ConnectionStatus.DetailText);
+    Assert.False(unavailable.CanUseData, "Unavailable Planner pull should not be usable.");
+}
+
+static async Task MicrosoftPlannerTaskImportServiceImportsAssignedTasks()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+    await CreateMigratedDatabaseAsync(paths);
+
+    SettingsService settingsService = new(paths);
+    AppSettings settings = AppSettings.CreateDefault();
+    settings.Connections.EnablePlanner = true;
+    await settingsService.SaveAsync(settings, CancellationToken.None);
+
+    TaskRepository taskRepository = new(paths);
+    SourceLinkRepository sourceLinkRepository = new(paths);
+    DateTimeOffset importedAt = new(2026, 6, 7, 9, 0, 0, TimeSpan.Zero);
+    TestMicrosoftPlannerTaskAdapter adapter = new(new MicrosoftPlannerPullResult(
+        MicrosoftPlannerConnectionStatus.Available(checkedAt: importedAt),
+        [
+            new MicrosoftPlannerTaskItem(
+                "planner-task-1",
+                "Draft the personal plan",
+                "plan-1",
+                "bucket-1",
+                percentComplete: 50,
+                priority: 1,
+                startAt: new DateTimeOffset(2026, 6, 7, 14, 0, 0, TimeSpan.Zero),
+                dueAt: new DateTimeOffset(2026, 6, 8, 22, 0, 0, TimeSpan.Zero)),
+            new MicrosoftPlannerTaskItem(
+                "planner-task-2",
+                "Celebrate the small win",
+                "plan-1",
+                percentComplete: 100,
+                completedAt: new DateTimeOffset(2026, 6, 7, 15, 30, 0, TimeSpan.Zero))
+        ]));
+    MicrosoftPlannerTaskImportService service = new(
+        settingsService,
+        taskRepository,
+        sourceLinkRepository,
+        adapter,
+        nowProvider: () => importedAt);
+
+    MicrosoftPlannerImportResult result =
+        await service.ImportAssignedTasksAsync(CancellationToken.None);
+
+    Assert.True(result.WasSuccessful, "Planner import should report success.");
+    Assert.Equal("Planner tasks imported", result.StatusText);
+    Assert.Contains("Imported 2 Planner tasks", result.DetailText);
+    Assert.Equal(2, result.ImportedCount);
+    Assert.Equal(1, adapter.CallCount);
+
+    IReadOnlyList<TaskItem> localTasks = await taskRepository.GetAllAsync(CancellationToken.None);
+    Assert.Equal(2, localTasks.Count);
+
+    TaskItem activeTask = localTasks.Single(task => task.Title == "Draft the personal plan");
+    Assert.Equal(TaskItemStatus.InProgress, activeTask.Status);
+    Assert.Equal(TaskPriority.High, activeTask.Priority);
+    Assert.Equal(new DateOnly(2026, 6, 7), activeTask.StartDate);
+    Assert.Equal(new DateOnly(2026, 6, 8), activeTask.DueDate);
+    Assert.Contains("Imported read-only from Microsoft Planner.", activeTask.Notes);
+    Assert.Contains("Planner Task Id: planner-task-1", activeTask.Notes);
+    Assert.Contains("Planner plan id: plan-1", activeTask.Notes);
+    Assert.Contains("Planner bucket id: bucket-1", activeTask.Notes);
+    Assert.Contains("Planner percent complete: 50%", activeTask.Notes);
+    Assert.Contains("Microsoft Planner", activeTask.Tags);
+    Assert.Contains("Planner Import", activeTask.Tags);
+    Assert.Contains("Read Only", activeTask.Tags);
+    Assert.Contains(activeTask.Id, result.LocalTaskIds);
+
+    IReadOnlyList<SourceLink> activeTaskLinks = await sourceLinkRepository.GetForLocalItemAsync(
+        SourceLinkItemType.Task,
+        activeTask.Id,
+        CancellationToken.None);
+    Assert.Equal(1, activeTaskLinks.Count);
+    SourceLink activeTaskLink = activeTaskLinks[0];
+    Assert.Equal(SourceSystem.MicrosoftPlanner, activeTaskLink.SourceSystem);
+    Assert.Equal("planner-task-1", activeTaskLink.ExternalId);
+    Assert.Equal("plan-1", activeTaskLink.ExternalContainerId);
+    Assert.Equal("Draft the personal plan", activeTaskLink.ExternalDisplayName);
+    Assert.Equal(SyncState.Synced, activeTaskLink.SyncState);
+    Assert.True(activeTaskLink.IsReadOnly, "Planner imports should be tracked as read-only source links.");
+    Assert.Equal(importedAt, activeTaskLink.LastSyncedAt!.Value);
+    Assert.Contains(activeTaskLink.Id, result.SourceLinkIds);
+
+    SourceLink? lookup = await sourceLinkRepository.GetByExternalReferenceAsync(
+        SourceSystem.MicrosoftPlanner,
+        "planner-task-1",
+        CancellationToken.None);
+    Assert.NotNull(lookup, "Planner source link should be found by external reference.");
+    Assert.Equal(activeTaskLink.Id, lookup!.Id);
+
+    TaskItem completedTask = localTasks.Single(task => task.Title == "Celebrate the small win");
+    Assert.Equal(TaskItemStatus.Done, completedTask.Status);
+    Assert.True(completedTask.CompletedAt.HasValue, "A completed Planner task should map to done locally.");
+}
+
+static async Task MicrosoftPlannerTaskImportServiceSkipsExistingTasks()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+    await CreateMigratedDatabaseAsync(paths);
+
+    SettingsService settingsService = new(paths);
+    AppSettings settings = AppSettings.CreateDefault();
+    settings.Connections.EnablePlanner = true;
+    await settingsService.SaveAsync(settings, CancellationToken.None);
+
+    TaskRepository taskRepository = new(paths);
+    SourceLinkRepository sourceLinkRepository = new(paths);
+    DateTimeOffset importedAt = new(2026, 6, 7, 9, 30, 0, TimeSpan.Zero);
+    MicrosoftPlannerPullResult pullResult = new(
+        MicrosoftPlannerConnectionStatus.Available(checkedAt: importedAt),
+        [new MicrosoftPlannerTaskItem("planner-task-1", "Draft the personal plan", "plan-1")]);
+    TestMicrosoftPlannerTaskAdapter adapter = new(pullResult, pullResult);
+    MicrosoftPlannerTaskImportService service = new(
+        settingsService,
+        taskRepository,
+        sourceLinkRepository,
+        adapter,
+        nowProvider: () => importedAt);
+
+    MicrosoftPlannerImportResult firstImport =
+        await service.ImportAssignedTasksAsync(CancellationToken.None);
+    MicrosoftPlannerImportResult secondImport =
+        await service.ImportAssignedTasksAsync(CancellationToken.None);
+
+    Assert.Equal(1, firstImport.ImportedCount);
+    Assert.Equal(0, firstImport.SkippedExistingCount);
+    Assert.Equal(0, secondImport.ImportedCount);
+    Assert.Equal(1, secondImport.SkippedExistingCount);
+    Assert.Equal("Planner tasks already local", secondImport.StatusText);
+    Assert.Equal(1, (await taskRepository.GetAllAsync(CancellationToken.None)).Count);
+}
+
+static async Task MicrosoftPlannerTaskImportServiceReportsDisabledPlannerImport()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+    await CreateMigratedDatabaseAsync(paths);
+
+    SettingsService settingsService = new(paths);
+    AppSettings settings = AppSettings.CreateDefault();
+    settings.Connections.EnablePlanner = false;
+    await settingsService.SaveAsync(settings, CancellationToken.None);
+
+    TaskRepository taskRepository = new(paths);
+    SourceLinkRepository sourceLinkRepository = new(paths);
+    TestMicrosoftPlannerTaskAdapter adapter = new(new MicrosoftPlannerPullResult(
+        MicrosoftPlannerConnectionStatus.Available(),
+        [new MicrosoftPlannerTaskItem("planner-task-1", "Should not import")]));
+    MicrosoftPlannerTaskImportService service = new(
+        settingsService,
+        taskRepository,
+        sourceLinkRepository,
+        adapter);
+
+    MicrosoftPlannerImportResult result =
+        await service.ImportAssignedTasksAsync(CancellationToken.None);
+
+    Assert.False(result.WasSuccessful, "Disabled Planner import should report a recoverable failure.");
+    Assert.Equal("Planner import off", result.StatusText);
+    Assert.Contains("Turn on Planner", result.DetailText);
+    Assert.Equal(0, adapter.CallCount);
+    Assert.Equal(0, (await taskRepository.GetAllAsync(CancellationToken.None)).Count);
 }
 
 static async Task MicrosoftToDoGraphTaskAdapterNeedsSignInWithoutToken()
@@ -3066,6 +3358,33 @@ internal sealed class TestMicrosoftPlannerAccessTokenProvider : IMicrosoftPlanne
     {
         cancellationToken.ThrowIfCancellationRequested();
         return Task.FromResult(_accessToken);
+    }
+}
+
+internal sealed class TestMicrosoftPlannerTaskAdapter : IMicrosoftPlannerTaskAdapter
+{
+    private readonly Queue<MicrosoftPlannerPullResult> _results;
+
+    public TestMicrosoftPlannerTaskAdapter(params MicrosoftPlannerPullResult[] results)
+    {
+        _results = new Queue<MicrosoftPlannerPullResult>(results);
+    }
+
+    public int CallCount { get; private set; }
+
+    public Task<MicrosoftPlannerPullResult> PullAssignedTasksAsync(
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        CallCount++;
+
+        if (_results.Count == 0)
+        {
+            return Task.FromResult(new MicrosoftPlannerPullResult(
+                MicrosoftPlannerConnectionStatus.Available()));
+        }
+
+        return Task.FromResult(_results.Dequeue());
     }
 }
 

@@ -13,15 +13,18 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
     private readonly SettingsService _settingsService;
     private readonly MicrosoftToDoConnectionTestService _microsoftToDoConnectionTestService;
     private readonly MicrosoftPlannerAvailabilityTestService _microsoftPlannerAvailabilityTestService;
+    private readonly Func<CancellationToken, Task<MicrosoftPlannerImportResult>> _importMicrosoftPlannerTasksAsync;
     private readonly MicrosoftProjectDesktopDetector _microsoftProjectDesktopDetector;
     private readonly IMicrosoftProjectFilePicker _microsoftProjectFilePicker;
     private readonly Func<CancellationToken, Task<MicrosoftProjectImportResult>> _importMicrosoftProjectTasksAsync;
     private AppSettings _lastSavedSettings;
     private MicrosoftToDoConnectionStatus _microsoftToDoConnectionStatus;
     private MicrosoftPlannerConnectionStatus _microsoftPlannerConnectionStatus;
+    private MicrosoftPlannerImportResult? _microsoftPlannerImportResult;
     private MicrosoftProjectDesktopDetectionResult? _microsoftProjectDesktopDetectionResult;
     private MicrosoftProjectImportResult? _microsoftProjectImportResult;
     private string _microsoftProjectDesktopDetectionFailure = string.Empty;
+    private bool _isImportingMicrosoftPlannerTasks;
     private bool _isDetectingMicrosoftProjectDesktop;
     private bool _isImportingMicrosoftProjectTasks;
     private string _profileName;
@@ -45,6 +48,7 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
         string settingsFileStatus = "Loaded settings",
         MicrosoftToDoConnectionTestService? microsoftToDoConnectionTestService = null,
         MicrosoftPlannerAvailabilityTestService? microsoftPlannerAvailabilityTestService = null,
+        Func<CancellationToken, Task<MicrosoftPlannerImportResult>>? importMicrosoftPlannerTasksAsync = null,
         MicrosoftProjectDesktopDetector? microsoftProjectDesktopDetector = null,
         IMicrosoftProjectFilePicker? microsoftProjectFilePicker = null,
         Func<CancellationToken, Task<MicrosoftProjectImportResult>>? importMicrosoftProjectTasksAsync = null)
@@ -55,6 +59,11 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
             ?? new MicrosoftToDoConnectionTestService();
         _microsoftPlannerAvailabilityTestService = microsoftPlannerAvailabilityTestService
             ?? new MicrosoftPlannerAvailabilityTestService();
+        _importMicrosoftPlannerTasksAsync = importMicrosoftPlannerTasksAsync
+            ?? (_ => Task.FromResult(MicrosoftPlannerImportResult.Failed(
+                _microsoftPlannerAvailabilityTestService.GetInitialStatus(settings.Connections),
+                "Planner import unavailable",
+                "Planner import is not configured for this session.")));
         _microsoftProjectDesktopDetector = microsoftProjectDesktopDetector
             ?? new MicrosoftProjectDesktopDetector();
         _microsoftProjectFilePicker = microsoftProjectFilePicker
@@ -79,6 +88,9 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
         TestMicrosoftPlannerAvailabilityCommand = new AsyncRelayCommand(
             () => TestMicrosoftPlannerAvailabilityAsync(CancellationToken.None),
             () => CanTestMicrosoftPlannerAvailability);
+        ImportMicrosoftPlannerTasksCommand = new AsyncRelayCommand(
+            () => ImportMicrosoftPlannerTasksAsync(CancellationToken.None),
+            () => CanImportMicrosoftPlannerTasks);
         DetectMicrosoftProjectDesktopCommand = new AsyncRelayCommand(
             () => DetectMicrosoftProjectDesktopAsync(CancellationToken.None),
             () => CanDetectMicrosoftProjectDesktop);
@@ -174,6 +186,8 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
             {
                 SetMicrosoftPlannerConnectionStatus(
                     _microsoftPlannerAvailabilityTestService.GetInitialStatus(BuildCurrentConnectionSettings()));
+                _microsoftPlannerImportResult = null;
+                RaiseMicrosoftPlannerImportProperties();
             }
         }
     }
@@ -235,6 +249,8 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
     public AsyncRelayCommand TestMicrosoftToDoConnectionCommand { get; }
 
     public AsyncRelayCommand TestMicrosoftPlannerAvailabilityCommand { get; }
+
+    public AsyncRelayCommand ImportMicrosoftPlannerTasksCommand { get; }
 
     public AsyncRelayCommand DetectMicrosoftProjectDesktopCommand { get; }
 
@@ -299,6 +315,95 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
     public bool CanTestMicrosoftPlannerAvailability => _microsoftPlannerConnectionStatus.CanTestAvailability;
 
     public bool MicrosoftPlannerNeedsAttention => _microsoftPlannerConnectionStatus.NeedsAttention;
+
+    public string MicrosoftPlannerImportStatusText
+    {
+        get
+        {
+            if (!EnablePlanner)
+            {
+                return "Planner import off";
+            }
+
+            if (_isImportingMicrosoftPlannerTasks)
+            {
+                return "Importing Planner tasks";
+            }
+
+            return _microsoftPlannerImportResult?.StatusText ?? "Ready to import Planner";
+        }
+    }
+
+    public string MicrosoftPlannerImportDetailText
+    {
+        get
+        {
+            if (!EnablePlanner)
+            {
+                return "Turn on Planner to import assigned Planner tasks.";
+            }
+
+            if (_isImportingMicrosoftPlannerTasks)
+            {
+                return "Reading assigned Planner tasks and saving local read-only copies.";
+            }
+
+            return _microsoftPlannerImportResult?.DetailText
+                ?? "Import assigned Planner tasks as local read-only Success Planner tasks.";
+        }
+    }
+
+    public string MicrosoftPlannerImportStatusBackgroundColor
+    {
+        get
+        {
+            if (!EnablePlanner)
+            {
+                return "#EEF0F3";
+            }
+
+            if (_isImportingMicrosoftPlannerTasks)
+            {
+                return "#EAF2FF";
+            }
+
+            return _microsoftPlannerImportResult switch
+            {
+                { WasSuccessful: true } => "#E7F8EE",
+                { WasSuccessful: false } => "#FFE7E0",
+                _ => "#F4F7FB"
+            };
+        }
+    }
+
+    public string MicrosoftPlannerImportStatusAccentColor
+    {
+        get
+        {
+            if (!EnablePlanner)
+            {
+                return "#6A717A";
+            }
+
+            if (_isImportingMicrosoftPlannerTasks)
+            {
+                return "#2F6FED";
+            }
+
+            return _microsoftPlannerImportResult switch
+            {
+                { WasSuccessful: true } => "#1E6B3A",
+                { WasSuccessful: false } => "#B8331F",
+                _ => "#4E5965"
+            };
+        }
+    }
+
+    public bool CanImportMicrosoftPlannerTasks => EnablePlanner
+        && !_isImportingMicrosoftPlannerTasks;
+
+    public bool MicrosoftPlannerImportNeedsAttention => EnablePlanner
+        && _microsoftPlannerImportResult is { WasSuccessful: false };
 
     public string MicrosoftProjectDesktopStatusText
     {
@@ -602,6 +707,58 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
         SetMicrosoftPlannerConnectionStatus(testedStatus);
     }
 
+    public async Task ImportMicrosoftPlannerTasksAsync(CancellationToken cancellationToken = default)
+    {
+        if (!CanImportMicrosoftPlannerTasks)
+        {
+            return;
+        }
+
+        _isImportingMicrosoftPlannerTasks = true;
+        _microsoftPlannerImportResult = null;
+        RaiseMicrosoftPlannerImportProperties();
+
+        try
+        {
+            if (HasChanges)
+            {
+                await SaveAsync();
+            }
+
+            if (HasChanges)
+            {
+                _microsoftPlannerImportResult = MicrosoftPlannerImportResult.Failed(
+                    _microsoftPlannerConnectionStatus,
+                    "Settings not saved",
+                    "Save settings before importing Planner tasks, then try again.");
+                return;
+            }
+
+            _microsoftPlannerImportResult =
+                await _importMicrosoftPlannerTasksAsync(cancellationToken);
+            SetMicrosoftPlannerConnectionStatus(_microsoftPlannerImportResult.ConnectionStatus);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            MicrosoftPlannerConnectionStatus failed =
+                MicrosoftPlannerConnectionStatus.Failed(BuildFailureMessage(ex), DateTimeOffset.Now);
+            _microsoftPlannerImportResult = MicrosoftPlannerImportResult.Failed(
+                failed,
+                "Planner import failed",
+                $"Check Planner availability and try again: {BuildFailureMessage(ex)}");
+            SetMicrosoftPlannerConnectionStatus(failed);
+        }
+        finally
+        {
+            _isImportingMicrosoftPlannerTasks = false;
+            RaiseMicrosoftPlannerImportProperties();
+        }
+    }
+
     public async Task DetectMicrosoftProjectDesktopAsync(CancellationToken cancellationToken = default)
     {
         if (!CanDetectMicrosoftProjectDesktop)
@@ -733,6 +890,8 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
                 _microsoftToDoConnectionTestService.GetInitialStatus(settings.Connections));
             SetMicrosoftPlannerConnectionStatus(
                 _microsoftPlannerAvailabilityTestService.GetInitialStatus(settings.Connections));
+            _microsoftPlannerImportResult = null;
+            RaiseMicrosoftPlannerImportProperties();
             RaiseMicrosoftProjectImportProperties();
         }
         catch (SettingsValidationException ex)
@@ -847,6 +1006,17 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
         OnPropertyChanged(nameof(CanTestMicrosoftPlannerAvailability));
         OnPropertyChanged(nameof(MicrosoftPlannerNeedsAttention));
         TestMicrosoftPlannerAvailabilityCommand.RaiseCanExecuteChanged();
+    }
+
+    private void RaiseMicrosoftPlannerImportProperties()
+    {
+        OnPropertyChanged(nameof(MicrosoftPlannerImportStatusText));
+        OnPropertyChanged(nameof(MicrosoftPlannerImportDetailText));
+        OnPropertyChanged(nameof(MicrosoftPlannerImportStatusBackgroundColor));
+        OnPropertyChanged(nameof(MicrosoftPlannerImportStatusAccentColor));
+        OnPropertyChanged(nameof(CanImportMicrosoftPlannerTasks));
+        OnPropertyChanged(nameof(MicrosoftPlannerImportNeedsAttention));
+        ImportMicrosoftPlannerTasksCommand.RaiseCanExecuteChanged();
     }
 
     private void ResetMicrosoftProjectDesktopDetection()

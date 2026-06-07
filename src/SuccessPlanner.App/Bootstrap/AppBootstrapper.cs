@@ -21,6 +21,7 @@ public sealed class AppBootstrapper
     private readonly BackgroundSyncWorker _backgroundSyncWorker;
     private readonly FocusSessionRepository _focusSessionRepository;
     private readonly MovementSessionRepository _movementSessionRepository;
+    private readonly MicrosoftPlannerTaskImportService _microsoftPlannerTaskImportService;
     private readonly MicrosoftProjectTaskImportService _microsoftProjectTaskImportService;
     private readonly BackgroundWorkerHost _backgroundWorkerHost;
     private readonly NavigationService _navigationService;
@@ -49,6 +50,10 @@ public sealed class AppBootstrapper
         _backgroundSyncWorker = new BackgroundSyncWorker(_syncService);
         _focusSessionRepository = new FocusSessionRepository(_paths);
         _movementSessionRepository = new MovementSessionRepository(_paths);
+        _microsoftPlannerTaskImportService = new MicrosoftPlannerTaskImportService(
+            _settingsService,
+            _taskRepository,
+            _sourceLinkRepository);
         _microsoftProjectTaskImportService = new MicrosoftProjectTaskImportService(
             _settingsService,
             _taskRepository,
@@ -176,6 +181,7 @@ public sealed class AppBootstrapper
             _settingsService,
             settings,
             settingsFileStatus: _settingsFileStatus,
+            importMicrosoftPlannerTasksAsync: _microsoftPlannerTaskImportService.ImportAssignedTasksAsync,
             importMicrosoftProjectTasksAsync: _microsoftProjectTaskImportService.ImportSelectedProjectFileAsync);
     }
 

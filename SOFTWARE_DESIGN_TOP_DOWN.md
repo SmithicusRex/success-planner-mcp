@@ -1119,14 +1119,14 @@ Benchmark gate:
 
 ~~17.3. Show Planner status in Settings.~~
 
-17.4. Add read-only Planner task import if available.
+~~17.4. Add read-only Planner task import if available.~~
 
-Benchmark gate:
+~~Benchmark gate:~~
 
-- Settings shows Planner availability.
-- App explains unavailable Planner access in plain language.
-- Available Planner tasks can be shown locally.
-- Build and tests pass.
+- ~~Settings shows Planner availability.~~
+- ~~App explains unavailable Planner access in plain language.~~
+- ~~Available Planner tasks can be shown locally.~~
+- ~~Build and tests pass.~~
 
 ### 18. Phone Companion Quick Capture
 

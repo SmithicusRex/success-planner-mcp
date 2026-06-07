@@ -127,6 +127,38 @@ public sealed class SourceLinkRepository
         return sourceLinks;
     }
 
+    public async Task<SourceLink?> GetByExternalReferenceAsync(
+        SourceSystem sourceSystem,
+        string externalId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(externalId))
+        {
+            throw new ArgumentException("External id cannot be blank.", nameof(externalId));
+        }
+
+        await using SqliteConnection connection = await SqliteConnectionFactory.OpenAsync(_paths, cancellationToken);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText =
+            $"""
+            {SelectSourceLinkSql}
+            WHERE source_system = $sourceSystem
+              AND external_id = $externalId
+            ORDER BY created_at
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$sourceSystem", sourceSystem.ToString());
+        command.Parameters.AddWithValue("$externalId", externalId.Trim());
+
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return ReadSourceLink(reader);
+    }
+
     private const string SelectSourceLinkSql =
         """
         SELECT

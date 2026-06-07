@@ -15,6 +15,9 @@ TestRunner.RunAll(
     ("SettingsViewModel updates Planner status when enabled", SettingsViewModelUpdatesPlannerStatusWhenEnabled),
     ("SettingsViewModel tests Planner availability", SettingsViewModelTestsPlannerAvailability),
     ("SettingsViewModel shows unavailable Planner status", SettingsViewModelShowsUnavailablePlannerStatus),
+    ("SettingsViewModel shows Planner import status", SettingsViewModelShowsPlannerImportStatus),
+    ("SettingsViewModel imports Planner tasks", SettingsViewModelImportsPlannerTasks),
+    ("SettingsViewModel shows unavailable Planner import status", SettingsViewModelShowsUnavailablePlannerImportStatus),
     ("SettingsViewModel shows Project desktop detection status", SettingsViewModelShowsProjectDesktopDetectionStatus),
     ("SettingsViewModel detects Project desktop", SettingsViewModelDetectsProjectDesktop),
     ("SettingsViewModel shows missing Project desktop status", SettingsViewModelShowsMissingProjectDesktopStatus),
@@ -294,6 +297,91 @@ static void SettingsViewModelShowsUnavailablePlannerStatus()
     Assert.Equal("#B8331F", viewModel.MicrosoftPlannerStatusAccentColor);
     Assert.True(viewModel.MicrosoftPlannerNeedsAttention, "Unavailable Planner status should stay visible.");
     Assert.True(viewModel.CanTestMicrosoftPlannerAvailability, "Unavailable Planner status should remain recoverable by retesting.");
+}
+
+static void SettingsViewModelShowsPlannerImportStatus()
+{
+    SettingsViewModel disabledViewModel = CreateSettingsViewModelWithProbe(
+        AppSettings.CreateDefault(),
+        (_, _) => Task.FromResult(MicrosoftToDoConnectionStatus.Connected()));
+
+    Assert.Equal("Planner import off", disabledViewModel.MicrosoftPlannerImportStatusText);
+    Assert.Contains("Turn on Planner", disabledViewModel.MicrosoftPlannerImportDetailText);
+    Assert.Equal("#EEF0F3", disabledViewModel.MicrosoftPlannerImportStatusBackgroundColor);
+    Assert.Equal("#6A717A", disabledViewModel.MicrosoftPlannerImportStatusAccentColor);
+    Assert.False(disabledViewModel.CanImportMicrosoftPlannerTasks, "Disabled Planner import should not be runnable.");
+
+    AppSettings settings = AppSettings.CreateDefault();
+    settings.Connections.EnablePlanner = true;
+    SettingsViewModel enabledViewModel = CreateSettingsViewModelWithProbe(
+        settings,
+        (_, _) => Task.FromResult(MicrosoftToDoConnectionStatus.Connected()));
+
+    Assert.Equal("Ready to import Planner", enabledViewModel.MicrosoftPlannerImportStatusText);
+    Assert.Contains("read-only", enabledViewModel.MicrosoftPlannerImportDetailText);
+    Assert.Equal("#F4F7FB", enabledViewModel.MicrosoftPlannerImportStatusBackgroundColor);
+    Assert.Equal("#4E5965", enabledViewModel.MicrosoftPlannerImportStatusAccentColor);
+    Assert.True(enabledViewModel.CanImportMicrosoftPlannerTasks, "Enabled Planner import should be runnable.");
+    Assert.False(enabledViewModel.MicrosoftPlannerImportNeedsAttention, "Ready Planner import should not need attention.");
+}
+
+static void SettingsViewModelImportsPlannerTasks()
+{
+    AppSettings settings = AppSettings.CreateDefault();
+    settings.Connections.EnablePlanner = true;
+    MicrosoftPlannerImportResult importResult = MicrosoftPlannerImportResult.Success(
+        MicrosoftPlannerConnectionStatus.Available(
+            "smith@example.com",
+            new DateTimeOffset(2026, 6, 7, 9, 0, 0, TimeSpan.Zero)),
+        [new MicrosoftPlannerTaskItem("planner-task-1", "Draft the personal plan")],
+        [Guid.NewGuid()],
+        [Guid.NewGuid()]);
+    SettingsViewModel viewModel = CreateSettingsViewModelWithProbeInstance(
+        settings,
+        new TestMicrosoftToDoConnectionProbe((checkedAt, _) =>
+            Task.FromResult(MicrosoftToDoConnectionStatus.Connected(checkedAt: checkedAt))),
+        new DateTimeOffset(2026, 6, 7, 9, 0, 0, TimeSpan.Zero),
+        importPlannerTasksAsync: _ => Task.FromResult(importResult));
+
+    viewModel.ImportMicrosoftPlannerTasksAsync(CancellationToken.None).GetAwaiter().GetResult();
+
+    Assert.Equal("Planner tasks imported", viewModel.MicrosoftPlannerImportStatusText);
+    Assert.Contains("Imported 1 Planner task", viewModel.MicrosoftPlannerImportDetailText);
+    Assert.Equal("#E7F8EE", viewModel.MicrosoftPlannerImportStatusBackgroundColor);
+    Assert.Equal("#1E6B3A", viewModel.MicrosoftPlannerImportStatusAccentColor);
+    Assert.Equal("Planner available", viewModel.MicrosoftPlannerStatusText);
+    Assert.Contains("smith@example.com", viewModel.MicrosoftPlannerStatusDetailText);
+    Assert.False(viewModel.MicrosoftPlannerImportNeedsAttention, "Successful Planner import should clear attention state.");
+    Assert.True(viewModel.CanImportMicrosoftPlannerTasks, "Successful Planner import should allow a refresh import.");
+}
+
+static void SettingsViewModelShowsUnavailablePlannerImportStatus()
+{
+    AppSettings settings = AppSettings.CreateDefault();
+    settings.Connections.EnablePlanner = true;
+    MicrosoftPlannerConnectionStatus unavailableStatus = MicrosoftPlannerConnectionStatus.Unavailable(
+        "Planner data was not available for this account.",
+        new DateTimeOffset(2026, 6, 7, 9, 15, 0, TimeSpan.Zero));
+    MicrosoftPlannerImportResult importResult = MicrosoftPlannerImportResult.Failed(
+        unavailableStatus,
+        unavailableStatus.StatusText,
+        unavailableStatus.DetailText);
+    SettingsViewModel viewModel = CreateSettingsViewModelWithProbeInstance(
+        settings,
+        new TestMicrosoftToDoConnectionProbe((checkedAt, _) =>
+            Task.FromResult(MicrosoftToDoConnectionStatus.Connected(checkedAt: checkedAt))),
+        new DateTimeOffset(2026, 6, 7, 9, 15, 0, TimeSpan.Zero),
+        importPlannerTasksAsync: _ => Task.FromResult(importResult));
+
+    viewModel.ImportMicrosoftPlannerTasksAsync(CancellationToken.None).GetAwaiter().GetResult();
+
+    Assert.Equal("Planner unavailable", viewModel.MicrosoftPlannerImportStatusText);
+    Assert.Contains("not available for this account", viewModel.MicrosoftPlannerImportDetailText);
+    Assert.Equal("#FFE7E0", viewModel.MicrosoftPlannerImportStatusBackgroundColor);
+    Assert.Equal("#B8331F", viewModel.MicrosoftPlannerImportStatusAccentColor);
+    Assert.Equal("Planner unavailable", viewModel.MicrosoftPlannerStatusText);
+    Assert.True(viewModel.MicrosoftPlannerImportNeedsAttention, "Unavailable Planner import should stay visible.");
+    Assert.True(viewModel.CanImportMicrosoftPlannerTasks, "Unavailable Planner import should remain retryable.");
 }
 
 static void SettingsViewModelShowsProjectDesktopDetectionStatus()
@@ -587,6 +675,7 @@ static SettingsViewModel CreateSettingsViewModelWithProbeInstance(
     MicrosoftProjectDesktopDetector? projectDetector = null,
     IMicrosoftProjectFilePicker? projectFilePicker = null,
     Func<CancellationToken, Task<MicrosoftProjectImportResult>>? importProjectTasksAsync = null,
+    Func<CancellationToken, Task<MicrosoftPlannerImportResult>>? importPlannerTasksAsync = null,
     TestMicrosoftPlannerAvailabilityProbe? plannerProbe = null)
 {
     string settingsRoot = Path.Combine(
@@ -607,6 +696,7 @@ static SettingsViewModel CreateSettingsViewModelWithProbeInstance(
         settingsFileStatus: "Loaded settings",
         microsoftToDoConnectionTestService: connectionTestService,
         microsoftPlannerAvailabilityTestService: plannerAvailabilityTestService,
+        importMicrosoftPlannerTasksAsync: importPlannerTasksAsync,
         microsoftProjectDesktopDetector: projectDetector,
         microsoftProjectFilePicker: projectFilePicker,
         importMicrosoftProjectTasksAsync: importProjectTasksAsync);
