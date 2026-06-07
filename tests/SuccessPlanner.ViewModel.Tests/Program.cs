@@ -11,6 +11,10 @@ TestRunner.RunAll(
     ("SettingsViewModel updates To Do status when disabled", SettingsViewModelUpdatesToDoStatusWhenDisabled),
     ("SettingsViewModel tests To Do connection", SettingsViewModelTestsToDoConnection),
     ("SettingsViewModel shows failed To Do connection status", SettingsViewModelShowsFailedToDoConnectionStatus),
+    ("SettingsViewModel shows Planner status", SettingsViewModelShowsPlannerStatus),
+    ("SettingsViewModel updates Planner status when enabled", SettingsViewModelUpdatesPlannerStatusWhenEnabled),
+    ("SettingsViewModel tests Planner availability", SettingsViewModelTestsPlannerAvailability),
+    ("SettingsViewModel shows unavailable Planner status", SettingsViewModelShowsUnavailablePlannerStatus),
     ("SettingsViewModel shows Project desktop detection status", SettingsViewModelShowsProjectDesktopDetectionStatus),
     ("SettingsViewModel detects Project desktop", SettingsViewModelDetectsProjectDesktop),
     ("SettingsViewModel shows missing Project desktop status", SettingsViewModelShowsMissingProjectDesktopStatus),
@@ -206,6 +210,90 @@ static void SettingsViewModelShowsFailedToDoConnectionStatus()
     Assert.Equal("#B8331F", viewModel.MicrosoftToDoStatusAccentColor);
     Assert.True(viewModel.MicrosoftToDoNeedsAttention, "Failed To Do status should stay visible.");
     Assert.True(viewModel.CanTestMicrosoftToDoConnection, "Failed To Do status should remain recoverable by retesting.");
+}
+
+static void SettingsViewModelShowsPlannerStatus()
+{
+    SettingsViewModel viewModel = CreateSettingsViewModelWithProbe(
+        AppSettings.CreateDefault(),
+        (_, _) => Task.FromResult(MicrosoftToDoConnectionStatus.Connected()));
+
+    Assert.Equal("Planner is off", viewModel.MicrosoftPlannerStatusText);
+    Assert.Contains("turned off", viewModel.MicrosoftPlannerStatusDetailText);
+    Assert.Equal("#EEF0F3", viewModel.MicrosoftPlannerStatusBackgroundColor);
+    Assert.Equal("#6A717A", viewModel.MicrosoftPlannerStatusAccentColor);
+    Assert.False(viewModel.CanTestMicrosoftPlannerAvailability, "Disabled Planner status should not allow testing.");
+    Assert.False(viewModel.MicrosoftPlannerNeedsAttention, "Disabled Planner status should not need attention.");
+}
+
+static void SettingsViewModelUpdatesPlannerStatusWhenEnabled()
+{
+    SettingsViewModel viewModel = CreateSettingsViewModelWithPlannerProbe(
+        AppSettings.CreateDefault(),
+        (_, _) => Task.FromResult(MicrosoftPlannerConnectionStatus.Available()));
+
+    viewModel.EnablePlanner = true;
+
+    Assert.Equal("Ready to check Planner", viewModel.MicrosoftPlannerStatusText);
+    Assert.Contains("Check whether Planner data is available", viewModel.MicrosoftPlannerStatusDetailText);
+    Assert.Equal("#F4F7FB", viewModel.MicrosoftPlannerStatusBackgroundColor);
+    Assert.Equal("#4E5965", viewModel.MicrosoftPlannerStatusAccentColor);
+    Assert.True(viewModel.CanTestMicrosoftPlannerAvailability, "Enabled Planner status should allow testing.");
+    Assert.True(viewModel.HasChanges, "Changing the Planner switch should mark Settings dirty.");
+
+    viewModel.EnablePlanner = false;
+
+    Assert.Equal("Planner is off", viewModel.MicrosoftPlannerStatusText);
+    Assert.False(viewModel.CanTestMicrosoftPlannerAvailability, "Disabled Planner status should not allow testing.");
+}
+
+static void SettingsViewModelTestsPlannerAvailability()
+{
+    AppSettings settings = AppSettings.CreateDefault();
+    settings.Connections.EnablePlanner = true;
+    DateTimeOffset now = new(2026, 6, 6, 23, 0, 0, TimeSpan.Zero);
+    TestMicrosoftPlannerAvailabilityProbe probe = new((checkedAt, _) =>
+        Task.FromResult(MicrosoftPlannerConnectionStatus.Available("smith@example.com", checkedAt)));
+    SettingsViewModel viewModel = CreateSettingsViewModelWithProbeInstance(
+        settings,
+        new TestMicrosoftToDoConnectionProbe((checkedAt, _) =>
+            Task.FromResult(MicrosoftToDoConnectionStatus.Connected(checkedAt: checkedAt))),
+        now,
+        plannerProbe: probe);
+
+    viewModel.TestMicrosoftPlannerAvailabilityAsync(CancellationToken.None).GetAwaiter().GetResult();
+
+    Assert.Equal(1, probe.CallCount);
+    Assert.Equal("Planner available", viewModel.MicrosoftPlannerStatusText);
+    Assert.Contains("smith@example.com", viewModel.MicrosoftPlannerStatusDetailText);
+    Assert.Equal("#E7F8EE", viewModel.MicrosoftPlannerStatusBackgroundColor);
+    Assert.Equal("#1E6B3A", viewModel.MicrosoftPlannerStatusAccentColor);
+    Assert.True(viewModel.CanTestMicrosoftPlannerAvailability, "Available Planner status should allow retesting.");
+}
+
+static void SettingsViewModelShowsUnavailablePlannerStatus()
+{
+    AppSettings settings = AppSettings.CreateDefault();
+    settings.Connections.EnablePlanner = true;
+    TestMicrosoftPlannerAvailabilityProbe probe = new((checkedAt, _) =>
+        Task.FromResult(MicrosoftPlannerConnectionStatus.Unavailable(
+            "Planner data was not available for this account.",
+            checkedAt)));
+    SettingsViewModel viewModel = CreateSettingsViewModelWithProbeInstance(
+        settings,
+        new TestMicrosoftToDoConnectionProbe((checkedAt, _) =>
+            Task.FromResult(MicrosoftToDoConnectionStatus.Connected(checkedAt: checkedAt))),
+        new DateTimeOffset(2026, 6, 6, 23, 10, 0, TimeSpan.Zero),
+        plannerProbe: probe);
+
+    viewModel.TestMicrosoftPlannerAvailabilityAsync(CancellationToken.None).GetAwaiter().GetResult();
+
+    Assert.Equal("Planner unavailable", viewModel.MicrosoftPlannerStatusText);
+    Assert.Contains("not available for this account", viewModel.MicrosoftPlannerStatusDetailText);
+    Assert.Equal("#FFE7E0", viewModel.MicrosoftPlannerStatusBackgroundColor);
+    Assert.Equal("#B8331F", viewModel.MicrosoftPlannerStatusAccentColor);
+    Assert.True(viewModel.MicrosoftPlannerNeedsAttention, "Unavailable Planner status should stay visible.");
+    Assert.True(viewModel.CanTestMicrosoftPlannerAvailability, "Unavailable Planner status should remain recoverable by retesting.");
 }
 
 static void SettingsViewModelShowsProjectDesktopDetectionStatus()
@@ -444,6 +532,18 @@ static SettingsViewModel CreateSettingsViewModelWithProbe(
         DateTimeOffset.Now);
 }
 
+static SettingsViewModel CreateSettingsViewModelWithPlannerProbe(
+    AppSettings settings,
+    Func<DateTimeOffset, CancellationToken, Task<MicrosoftPlannerConnectionStatus>> testAsync)
+{
+    return CreateSettingsViewModelWithProbeInstance(
+        settings,
+        new TestMicrosoftToDoConnectionProbe((checkedAt, _) =>
+            Task.FromResult(MicrosoftToDoConnectionStatus.Connected(checkedAt: checkedAt))),
+        DateTimeOffset.Now,
+        plannerProbe: new TestMicrosoftPlannerAvailabilityProbe(testAsync));
+}
+
 static SettingsViewModel CreateSettingsViewModelWithProjectDetector(
     AppSettings settings,
     MicrosoftProjectDesktopDetector detector)
@@ -486,7 +586,8 @@ static SettingsViewModel CreateSettingsViewModelWithProbeInstance(
     DateTimeOffset now,
     MicrosoftProjectDesktopDetector? projectDetector = null,
     IMicrosoftProjectFilePicker? projectFilePicker = null,
-    Func<CancellationToken, Task<MicrosoftProjectImportResult>>? importProjectTasksAsync = null)
+    Func<CancellationToken, Task<MicrosoftProjectImportResult>>? importProjectTasksAsync = null,
+    TestMicrosoftPlannerAvailabilityProbe? plannerProbe = null)
 {
     string settingsRoot = Path.Combine(
         Path.GetTempPath(),
@@ -495,12 +596,17 @@ static SettingsViewModel CreateSettingsViewModelWithProbeInstance(
         Guid.NewGuid().ToString("N"));
     SettingsService settingsService = new(new AppPaths(settingsRoot));
     MicrosoftToDoConnectionTestService connectionTestService = new(probe, () => now);
+    MicrosoftPlannerAvailabilityTestService plannerAvailabilityTestService = new(
+        plannerProbe ?? new TestMicrosoftPlannerAvailabilityProbe((checkedAt, _) =>
+            Task.FromResult(MicrosoftPlannerConnectionStatus.Available(checkedAt: checkedAt))),
+        () => now);
 
     return new SettingsViewModel(
         settingsService,
         settings,
         settingsFileStatus: "Loaded settings",
         microsoftToDoConnectionTestService: connectionTestService,
+        microsoftPlannerAvailabilityTestService: plannerAvailabilityTestService,
         microsoftProjectDesktopDetector: projectDetector,
         microsoftProjectFilePicker: projectFilePicker,
         importMicrosoftProjectTasksAsync: importProjectTasksAsync);
@@ -3187,6 +3293,27 @@ internal sealed class TestMicrosoftToDoConnectionProbe : IMicrosoftToDoConnectio
     public int CallCount { get; private set; }
 
     public Task<MicrosoftToDoConnectionStatus> TestConnectionAsync(
+        DateTimeOffset checkedAt,
+        CancellationToken cancellationToken = default)
+    {
+        CallCount++;
+        return _testAsync(checkedAt, cancellationToken);
+    }
+}
+
+internal sealed class TestMicrosoftPlannerAvailabilityProbe : IMicrosoftPlannerAvailabilityProbe
+{
+    private readonly Func<DateTimeOffset, CancellationToken, Task<MicrosoftPlannerConnectionStatus>> _testAsync;
+
+    public TestMicrosoftPlannerAvailabilityProbe(
+        Func<DateTimeOffset, CancellationToken, Task<MicrosoftPlannerConnectionStatus>> testAsync)
+    {
+        _testAsync = testAsync;
+    }
+
+    public int CallCount { get; private set; }
+
+    public Task<MicrosoftPlannerConnectionStatus> TestAvailabilityAsync(
         DateTimeOffset checkedAt,
         CancellationToken cancellationToken = default)
     {

@@ -12,11 +12,13 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
 {
     private readonly SettingsService _settingsService;
     private readonly MicrosoftToDoConnectionTestService _microsoftToDoConnectionTestService;
+    private readonly MicrosoftPlannerAvailabilityTestService _microsoftPlannerAvailabilityTestService;
     private readonly MicrosoftProjectDesktopDetector _microsoftProjectDesktopDetector;
     private readonly IMicrosoftProjectFilePicker _microsoftProjectFilePicker;
     private readonly Func<CancellationToken, Task<MicrosoftProjectImportResult>> _importMicrosoftProjectTasksAsync;
     private AppSettings _lastSavedSettings;
     private MicrosoftToDoConnectionStatus _microsoftToDoConnectionStatus;
+    private MicrosoftPlannerConnectionStatus _microsoftPlannerConnectionStatus;
     private MicrosoftProjectDesktopDetectionResult? _microsoftProjectDesktopDetectionResult;
     private MicrosoftProjectImportResult? _microsoftProjectImportResult;
     private string _microsoftProjectDesktopDetectionFailure = string.Empty;
@@ -42,6 +44,7 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
         AppSettings settings,
         string settingsFileStatus = "Loaded settings",
         MicrosoftToDoConnectionTestService? microsoftToDoConnectionTestService = null,
+        MicrosoftPlannerAvailabilityTestService? microsoftPlannerAvailabilityTestService = null,
         MicrosoftProjectDesktopDetector? microsoftProjectDesktopDetector = null,
         IMicrosoftProjectFilePicker? microsoftProjectFilePicker = null,
         Func<CancellationToken, Task<MicrosoftProjectImportResult>>? importMicrosoftProjectTasksAsync = null)
@@ -50,6 +53,8 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
         _settingsService = settingsService;
         _microsoftToDoConnectionTestService = microsoftToDoConnectionTestService
             ?? new MicrosoftToDoConnectionTestService();
+        _microsoftPlannerAvailabilityTestService = microsoftPlannerAvailabilityTestService
+            ?? new MicrosoftPlannerAvailabilityTestService();
         _microsoftProjectDesktopDetector = microsoftProjectDesktopDetector
             ?? new MicrosoftProjectDesktopDetector();
         _microsoftProjectFilePicker = microsoftProjectFilePicker
@@ -62,6 +67,8 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
         _lastSavedSettings = CopySettings(settings);
         _microsoftToDoConnectionStatus =
             _microsoftToDoConnectionTestService.GetInitialStatus(settings.Connections);
+        _microsoftPlannerConnectionStatus =
+            _microsoftPlannerAvailabilityTestService.GetInitialStatus(settings.Connections);
 
         DestinationRules = [];
         SaveCommand = new AsyncRelayCommand(SaveAsync, () => HasChanges);
@@ -69,6 +76,9 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
         TestMicrosoftToDoConnectionCommand = new AsyncRelayCommand(
             () => TestMicrosoftToDoConnectionAsync(CancellationToken.None),
             () => CanTestMicrosoftToDoConnection);
+        TestMicrosoftPlannerAvailabilityCommand = new AsyncRelayCommand(
+            () => TestMicrosoftPlannerAvailabilityAsync(CancellationToken.None),
+            () => CanTestMicrosoftPlannerAvailability);
         DetectMicrosoftProjectDesktopCommand = new AsyncRelayCommand(
             () => DetectMicrosoftProjectDesktopAsync(CancellationToken.None),
             () => CanDetectMicrosoftProjectDesktop);
@@ -158,7 +168,14 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
     public bool EnablePlanner
     {
         get => _enablePlanner;
-        set => SetProperty(ref _enablePlanner, value);
+        set
+        {
+            if (SetProperty(ref _enablePlanner, value))
+            {
+                SetMicrosoftPlannerConnectionStatus(
+                    _microsoftPlannerAvailabilityTestService.GetInitialStatus(BuildCurrentConnectionSettings()));
+            }
+        }
     }
 
     public bool EnableProjectDesktop
@@ -217,6 +234,8 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
 
     public AsyncRelayCommand TestMicrosoftToDoConnectionCommand { get; }
 
+    public AsyncRelayCommand TestMicrosoftPlannerAvailabilityCommand { get; }
+
     public AsyncRelayCommand DetectMicrosoftProjectDesktopCommand { get; }
 
     public AsyncRelayCommand SelectMicrosoftProjectFileCommand { get; }
@@ -252,6 +271,34 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
     public bool CanTestMicrosoftToDoConnection => _microsoftToDoConnectionStatus.CanTestConnection;
 
     public bool MicrosoftToDoNeedsAttention => _microsoftToDoConnectionStatus.NeedsAttention;
+
+    public string MicrosoftPlannerStatusText => _microsoftPlannerConnectionStatus.StatusText;
+
+    public string MicrosoftPlannerStatusDetailText => _microsoftPlannerConnectionStatus.DetailText;
+
+    public string MicrosoftPlannerStatusBackgroundColor => _microsoftPlannerConnectionStatus.State switch
+    {
+        MicrosoftPlannerConnectionState.Available => "#E7F8EE",
+        MicrosoftPlannerConnectionState.NeedsSignIn => "#FFF1D6",
+        MicrosoftPlannerConnectionState.Unavailable or MicrosoftPlannerConnectionState.Failed => "#FFE7E0",
+        MicrosoftPlannerConnectionState.Testing => "#EAF2FF",
+        MicrosoftPlannerConnectionState.Disabled => "#EEF0F3",
+        _ => "#F4F7FB"
+    };
+
+    public string MicrosoftPlannerStatusAccentColor => _microsoftPlannerConnectionStatus.State switch
+    {
+        MicrosoftPlannerConnectionState.Available => "#1E6B3A",
+        MicrosoftPlannerConnectionState.NeedsSignIn => "#946200",
+        MicrosoftPlannerConnectionState.Unavailable or MicrosoftPlannerConnectionState.Failed => "#B8331F",
+        MicrosoftPlannerConnectionState.Testing => "#2F6FED",
+        MicrosoftPlannerConnectionState.Disabled => "#6A717A",
+        _ => "#4E5965"
+    };
+
+    public bool CanTestMicrosoftPlannerAvailability => _microsoftPlannerConnectionStatus.CanTestAvailability;
+
+    public bool MicrosoftPlannerNeedsAttention => _microsoftPlannerConnectionStatus.NeedsAttention;
 
     public string MicrosoftProjectDesktopStatusText
     {
@@ -538,6 +585,23 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
         SetMicrosoftToDoConnectionStatus(testedStatus);
     }
 
+    public async Task TestMicrosoftPlannerAvailabilityAsync(CancellationToken cancellationToken = default)
+    {
+        if (!CanTestMicrosoftPlannerAvailability)
+        {
+            return;
+        }
+
+        SetMicrosoftPlannerConnectionStatus(MicrosoftPlannerConnectionStatus.Testing(DateTimeOffset.Now));
+
+        MicrosoftPlannerConnectionStatus testedStatus =
+            await _microsoftPlannerAvailabilityTestService.TestAvailabilityAsync(
+                BuildCurrentConnectionSettings(),
+                cancellationToken);
+
+        SetMicrosoftPlannerConnectionStatus(testedStatus);
+    }
+
     public async Task DetectMicrosoftProjectDesktopAsync(CancellationToken cancellationToken = default)
     {
         if (!CanDetectMicrosoftProjectDesktop)
@@ -667,6 +731,8 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
             HasChanges = false;
             SetMicrosoftToDoConnectionStatus(
                 _microsoftToDoConnectionTestService.GetInitialStatus(settings.Connections));
+            SetMicrosoftPlannerConnectionStatus(
+                _microsoftPlannerAvailabilityTestService.GetInitialStatus(settings.Connections));
             RaiseMicrosoftProjectImportProperties();
         }
         catch (SettingsValidationException ex)
@@ -769,6 +835,18 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
         OnPropertyChanged(nameof(CanTestMicrosoftToDoConnection));
         OnPropertyChanged(nameof(MicrosoftToDoNeedsAttention));
         TestMicrosoftToDoConnectionCommand.RaiseCanExecuteChanged();
+    }
+
+    private void SetMicrosoftPlannerConnectionStatus(MicrosoftPlannerConnectionStatus status)
+    {
+        _microsoftPlannerConnectionStatus = status;
+        OnPropertyChanged(nameof(MicrosoftPlannerStatusText));
+        OnPropertyChanged(nameof(MicrosoftPlannerStatusDetailText));
+        OnPropertyChanged(nameof(MicrosoftPlannerStatusBackgroundColor));
+        OnPropertyChanged(nameof(MicrosoftPlannerStatusAccentColor));
+        OnPropertyChanged(nameof(CanTestMicrosoftPlannerAvailability));
+        OnPropertyChanged(nameof(MicrosoftPlannerNeedsAttention));
+        TestMicrosoftPlannerAvailabilityCommand.RaiseCanExecuteChanged();
     }
 
     private void ResetMicrosoftProjectDesktopDetection()

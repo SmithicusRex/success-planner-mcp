@@ -1117,7 +1117,7 @@ Benchmark gate:
 
 ~~17.2. Test whether Planner data is accessible for the current account.~~
 
-17.3. Show Planner status in Settings.
+~~17.3. Show Planner status in Settings.~~
 
 17.4. Add read-only Planner task import if available.
 
