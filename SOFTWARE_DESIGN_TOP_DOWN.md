@@ -1130,7 +1130,7 @@ Benchmark gate:
 
 ### 18. Phone Companion Quick Capture
 
-18.1. Define phone companion sync contract.
+~~18.1. Define phone companion sync contract.~~
 
 18.2. Add phone companion status in Settings.
 

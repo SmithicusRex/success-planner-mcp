@@ -11,6 +11,7 @@ TestRunner.RunAll(
     ("MovementSession creation and status transitions", MovementSessionCreationAndStatusTransitions),
     ("Microsoft To Do connection status model", MicrosoftToDoConnectionStatusModel),
     ("Microsoft Planner connection status model", MicrosoftPlannerConnectionStatusModel),
+    ("Phone companion sync contract model", PhoneCompanionSyncContractModel),
     ("SourceLink creation and sync transitions", SourceLinkCreationAndSyncTransitions),
     ("SyncQueueItem creation and sync transitions", SyncQueueItemCreationAndSyncTransitions));
 
@@ -331,6 +332,86 @@ static void MicrosoftPlannerConnectionStatusModel()
     Assert.False(testing.CanReadPlannerTasks, "Testing state should not read Planner tasks yet.");
 }
 
+static void PhoneCompanionSyncContractModel()
+{
+    DateTimeOffset capturedAt = new(2026, 6, 7, 10, 0, 0, TimeSpan.Zero);
+    PhoneCompanionQuickCaptureItem capture = new(
+        "  phone-001  ",
+        "  Call pharmacy  ",
+        capturedAt,
+        "  Ask about refill timing.  ",
+        new DateOnly(2026, 6, 8),
+        PhoneCompanionCaptureDestination.LocalInbox,
+        ["Health", "health", "Errand"]);
+
+    Assert.Equal(PhoneCompanionSyncContract.CurrentVersion, capture.ContractVersion);
+    Assert.Equal("phone-001", capture.ClientCaptureId);
+    Assert.Equal("Call pharmacy", capture.Title);
+    Assert.Equal("Ask about refill timing.", capture.Notes);
+    Assert.Equal(capturedAt, capture.CapturedAt);
+    Assert.Equal(new DateOnly(2026, 6, 8), capture.DueDate.GetValueOrDefault());
+    Assert.Equal(PhoneCompanionCaptureDestination.LocalInbox, capture.Destination);
+    Assert.True(capture.HasNotes, "Capture should report notes when notes are supplied.");
+    Assert.True(capture.HasDueDate, "Capture should report a due date when one is supplied.");
+    Assert.True(capture.HasTags, "Capture should report tags when tags are supplied.");
+    Assert.Equal(2, capture.Tags.Count);
+    Assert.Contains("Health", capture.Tags);
+    Assert.Contains("Errand", capture.Tags);
+
+    PhoneCompanionSyncBatch batch = new(
+        " batch-001 ",
+        " device-001 ",
+        " Smith phone ",
+        capturedAt,
+        [capture]);
+
+    Assert.Equal("batch-001", batch.BatchId);
+    Assert.Equal("device-001", batch.DeviceId);
+    Assert.Equal("Smith phone", batch.DeviceName);
+    Assert.Equal(1, batch.CaptureCount);
+    Assert.True(batch.HasCaptures, "Batch should report captures when captures are supplied.");
+
+    Guid localTaskId = Guid.NewGuid();
+    PhoneCompanionCaptureImportOutcome imported =
+        PhoneCompanionCaptureImportOutcome.Imported(capture.ClientCaptureId, localTaskId);
+    PhoneCompanionCaptureImportOutcome skipped =
+        PhoneCompanionCaptureImportOutcome.Skipped("phone-002", "Already imported.");
+    PhoneCompanionSyncResult accepted = PhoneCompanionSyncResult.Accepted([imported, skipped]);
+
+    Assert.Equal(PhoneCompanionCaptureImportState.Imported, imported.State);
+    Assert.Equal(localTaskId, imported.LocalTaskId.GetValueOrDefault());
+    Assert.True(imported.WasImported, "Imported outcome should report success.");
+    Assert.Equal(PhoneCompanionSyncResultState.Accepted, accepted.State);
+    Assert.Equal("Phone captures imported", accepted.StatusText);
+    Assert.Contains("Imported 1 capture", accepted.DetailText);
+    Assert.Contains("1 capture already existed", accepted.DetailText);
+    Assert.Equal(1, accepted.ImportedCount);
+    Assert.Equal(1, accepted.SkippedCount);
+    Assert.False(accepted.NeedsAttention, "Accepted result should not need attention.");
+
+    PhoneCompanionSyncResult rejected =
+        PhoneCompanionSyncResult.Rejected("Phone companion path is not configured.");
+    Assert.Equal("Phone sync unavailable", rejected.StatusText);
+    Assert.True(rejected.NeedsAttention, "Rejected result should need attention.");
+    Assert.False(rejected.WasSuccessful, "Rejected result should not report success.");
+
+    Assert.Throws<ArgumentException>(() => new PhoneCompanionQuickCaptureItem(
+        "phone-003",
+        "   ",
+        capturedAt));
+    Assert.Throws<ArgumentOutOfRangeException>(() => new PhoneCompanionQuickCaptureItem(
+        "phone-004",
+        "Title",
+        capturedAt,
+        contractVersion: PhoneCompanionSyncContract.CurrentVersion + 1));
+    Assert.Throws<ArgumentException>(() => new PhoneCompanionSyncBatch(
+        "batch-002",
+        "device-001",
+        "Smith phone",
+        capturedAt,
+        [capture, new PhoneCompanionQuickCaptureItem("PHONE-001", "Duplicate", capturedAt)]));
+}
+
 static void SourceLinkCreationAndSyncTransitions()
 {
     Guid taskId = Guid.NewGuid();
@@ -476,5 +557,20 @@ internal static class Assert
         {
             throw new InvalidOperationException($"Expected '{actual}' to contain '{expected}'.");
         }
+    }
+
+    public static void Throws<TException>(Action action)
+        where TException : Exception
+    {
+        try
+        {
+            action();
+        }
+        catch (TException)
+        {
+            return;
+        }
+
+        throw new InvalidOperationException($"Expected exception of type '{typeof(TException).Name}'.");
     }
 }
