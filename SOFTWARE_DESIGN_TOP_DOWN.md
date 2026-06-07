@@ -1132,7 +1132,7 @@ Benchmark gate:
 
 ~~18.1. Define phone companion sync contract.~~
 
-18.2. Add phone companion status in Settings.
+~~18.2. Add phone companion status in Settings.~~
 
 18.3. Add quick capture endpoint or shared cloud path.
 

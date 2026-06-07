@@ -28,6 +28,8 @@ TestRunner.RunAll(
     ("SettingsViewModel shows Project import status", SettingsViewModelShowsProjectImportStatus),
     ("SettingsViewModel shows recoverable Project import failure", SettingsViewModelShowsRecoverableProjectImportFailure),
     ("SettingsViewModel recovers Project import after retry", SettingsViewModelRecoversProjectImportAfterRetry),
+    ("SettingsViewModel shows Phone Companion status", SettingsViewModelShowsPhoneCompanionStatus),
+    ("SettingsViewModel updates Phone Companion status when enabled", SettingsViewModelUpdatesPhoneCompanionStatusWhenEnabled),
     ("CaptureViewModel starts in a simple ready state", CaptureViewModelStartsReady),
     ("CaptureViewModel applies date hint buttons", CaptureViewModelAppliesDateHintButtons),
     ("CaptureViewModel applies destination choices", CaptureViewModelAppliesDestinationChoices),
@@ -600,6 +602,42 @@ static void SettingsViewModelRecoversProjectImportAfterRetry()
     Assert.Equal("#E7F8EE", viewModel.MicrosoftProjectImportStatusBackgroundColor);
     Assert.Equal("#1E6B3A", viewModel.MicrosoftProjectImportStatusAccentColor);
     Assert.False(viewModel.MicrosoftProjectImportNeedsAttention, "Successful retry should clear attention state.");
+}
+
+static void SettingsViewModelShowsPhoneCompanionStatus()
+{
+    SettingsViewModel viewModel = CreateSettingsViewModelWithProbe(
+        AppSettings.CreateDefault(),
+        (_, _) => Task.FromResult(MicrosoftToDoConnectionStatus.Connected()));
+
+    Assert.Equal("Phone companion is off", viewModel.PhoneCompanionStatusText);
+    Assert.Contains("turned off", viewModel.PhoneCompanionStatusDetailText);
+    Assert.Equal("#EEF0F3", viewModel.PhoneCompanionStatusBackgroundColor);
+    Assert.Equal("#6A717A", viewModel.PhoneCompanionStatusAccentColor);
+    Assert.False(viewModel.PhoneCompanionNeedsAttention, "Disabled Phone Companion should not need attention.");
+    Assert.False(viewModel.CanImportPhoneCompanionCaptures, "Disabled Phone Companion should not import captures.");
+}
+
+static void SettingsViewModelUpdatesPhoneCompanionStatusWhenEnabled()
+{
+    SettingsViewModel viewModel = CreateSettingsViewModelWithProbe(
+        AppSettings.CreateDefault(),
+        (_, _) => Task.FromResult(MicrosoftToDoConnectionStatus.Connected()));
+
+    viewModel.EnablePhoneCompanion = true;
+
+    Assert.Equal("Ready to set up", viewModel.PhoneCompanionStatusText);
+    Assert.Contains("sync path", viewModel.PhoneCompanionStatusDetailText);
+    Assert.Equal("#F4F7FB", viewModel.PhoneCompanionStatusBackgroundColor);
+    Assert.Equal("#4E5965", viewModel.PhoneCompanionStatusAccentColor);
+    Assert.True(viewModel.PhoneCompanionNeedsAttention, "Enabled Phone Companion should show setup attention.");
+    Assert.False(viewModel.CanImportPhoneCompanionCaptures, "Phone Companion should wait for a configured path before importing.");
+    Assert.True(viewModel.HasChanges, "Changing the Phone Companion switch should mark Settings dirty.");
+
+    viewModel.EnablePhoneCompanion = false;
+
+    Assert.Equal("Phone companion is off", viewModel.PhoneCompanionStatusText);
+    Assert.False(viewModel.PhoneCompanionNeedsAttention, "Turning Phone Companion off should clear setup attention.");
 }
 
 static NavigationService CreateShellNavigationService()

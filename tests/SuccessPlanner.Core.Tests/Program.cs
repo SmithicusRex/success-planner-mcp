@@ -11,6 +11,7 @@ TestRunner.RunAll(
     ("MovementSession creation and status transitions", MovementSessionCreationAndStatusTransitions),
     ("Microsoft To Do connection status model", MicrosoftToDoConnectionStatusModel),
     ("Microsoft Planner connection status model", MicrosoftPlannerConnectionStatusModel),
+    ("Phone companion connection status model", PhoneCompanionConnectionStatusModel),
     ("Phone companion sync contract model", PhoneCompanionSyncContractModel),
     ("SourceLink creation and sync transitions", SourceLinkCreationAndSyncTransitions),
     ("SyncQueueItem creation and sync transitions", SyncQueueItemCreationAndSyncTransitions));
@@ -330,6 +331,55 @@ static void MicrosoftPlannerConnectionStatusModel()
     Assert.Equal("Checking Planner", testing.StatusText);
     Assert.False(testing.CanTestAvailability, "Testing state should not start another check.");
     Assert.False(testing.CanReadPlannerTasks, "Testing state should not read Planner tasks yet.");
+}
+
+static void PhoneCompanionConnectionStatusModel()
+{
+    PhoneCompanionConnectionStatus disabled = PhoneCompanionConnectionStatus.Disabled();
+
+    Assert.Equal(SourceSystem.PhoneCompanion, disabled.SourceSystem);
+    Assert.Equal("Phone Companion", disabled.DisplayName);
+    Assert.Equal(PhoneCompanionConnectionState.Disabled, disabled.State);
+    Assert.Equal("Phone companion is off", disabled.StatusText);
+    Assert.Equal("Phone Companion is turned off in Settings.", disabled.DetailText);
+    Assert.False(disabled.IsEnabled, "Disabled Phone Companion should not be enabled.");
+    Assert.False(disabled.CanImportCaptures, "Disabled Phone Companion should not import captures.");
+    Assert.False(disabled.NeedsAttention, "Disabled Phone Companion should not need attention.");
+
+    PhoneCompanionConnectionStatus notConfigured = PhoneCompanionConnectionStatus.NotConfigured();
+
+    Assert.Equal(PhoneCompanionConnectionState.NotConfigured, notConfigured.State);
+    Assert.Equal("Ready to set up", notConfigured.StatusText);
+    Assert.Contains("sync path", notConfigured.DetailText);
+    Assert.True(notConfigured.IsEnabled, "Enabled Phone Companion should be enabled.");
+    Assert.False(notConfigured.CanImportCaptures, "Not configured Phone Companion should not import captures.");
+    Assert.True(notConfigured.NeedsAttention, "Not configured Phone Companion should need setup attention.");
+
+    PhoneCompanionConnectionStatus ready = PhoneCompanionConnectionStatus.Ready(
+        "  Phone captures can import from OneDrive.  ");
+
+    Assert.Equal(PhoneCompanionConnectionState.Ready, ready.State);
+    Assert.Equal("Phone companion ready", ready.StatusText);
+    Assert.Equal("Phone captures can import from OneDrive.", ready.DetailText);
+    Assert.True(ready.CanImportCaptures, "Ready Phone Companion should import captures.");
+    Assert.False(ready.NeedsAttention, "Ready Phone Companion should not need attention.");
+
+    PhoneCompanionConnectionStatus unavailable = PhoneCompanionConnectionStatus.Unavailable(
+        "  Selected folder is offline.  ");
+
+    Assert.Equal(PhoneCompanionConnectionState.Unavailable, unavailable.State);
+    Assert.Equal("Phone sync unavailable", unavailable.StatusText);
+    Assert.Equal("Selected folder is offline.", unavailable.DetailText);
+    Assert.True(unavailable.NeedsAttention, "Unavailable Phone Companion should need attention.");
+
+    PhoneCompanionConnectionStatus failed = PhoneCompanionConnectionStatus.Failed(
+        "  Import path could not be read.  ");
+
+    Assert.Equal(PhoneCompanionConnectionState.Failed, failed.State);
+    Assert.Equal("Phone sync failed", failed.StatusText);
+    Assert.Equal("Import path could not be read.", failed.DetailText);
+    Assert.True(failed.NeedsAttention, "Failed Phone Companion should need attention.");
+    Assert.Throws<ArgumentException>(() => PhoneCompanionConnectionStatus.Failed("   "));
 }
 
 static void PhoneCompanionSyncContractModel()

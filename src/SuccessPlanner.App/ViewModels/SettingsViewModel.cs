@@ -17,9 +17,11 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
     private readonly MicrosoftProjectDesktopDetector _microsoftProjectDesktopDetector;
     private readonly IMicrosoftProjectFilePicker _microsoftProjectFilePicker;
     private readonly Func<CancellationToken, Task<MicrosoftProjectImportResult>> _importMicrosoftProjectTasksAsync;
+    private readonly PhoneCompanionStatusService _phoneCompanionStatusService;
     private AppSettings _lastSavedSettings;
     private MicrosoftToDoConnectionStatus _microsoftToDoConnectionStatus;
     private MicrosoftPlannerConnectionStatus _microsoftPlannerConnectionStatus;
+    private PhoneCompanionConnectionStatus _phoneCompanionConnectionStatus;
     private MicrosoftPlannerImportResult? _microsoftPlannerImportResult;
     private MicrosoftProjectDesktopDetectionResult? _microsoftProjectDesktopDetectionResult;
     private MicrosoftProjectImportResult? _microsoftProjectImportResult;
@@ -51,7 +53,8 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
         Func<CancellationToken, Task<MicrosoftPlannerImportResult>>? importMicrosoftPlannerTasksAsync = null,
         MicrosoftProjectDesktopDetector? microsoftProjectDesktopDetector = null,
         IMicrosoftProjectFilePicker? microsoftProjectFilePicker = null,
-        Func<CancellationToken, Task<MicrosoftProjectImportResult>>? importMicrosoftProjectTasksAsync = null)
+        Func<CancellationToken, Task<MicrosoftProjectImportResult>>? importMicrosoftProjectTasksAsync = null,
+        PhoneCompanionStatusService? phoneCompanionStatusService = null)
         : base(ScreenCatalog.Settings)
     {
         _settingsService = settingsService;
@@ -73,11 +76,15 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
                 settings.ProjectDesktop.LocalProjectFilePath,
                 "Project import unavailable",
                 "Project import is not configured for this session.")));
+        _phoneCompanionStatusService = phoneCompanionStatusService
+            ?? new PhoneCompanionStatusService();
         _lastSavedSettings = CopySettings(settings);
         _microsoftToDoConnectionStatus =
             _microsoftToDoConnectionTestService.GetInitialStatus(settings.Connections);
         _microsoftPlannerConnectionStatus =
             _microsoftPlannerAvailabilityTestService.GetInitialStatus(settings.Connections);
+        _phoneCompanionConnectionStatus =
+            _phoneCompanionStatusService.GetInitialStatus(settings.Connections);
 
         DestinationRules = [];
         SaveCommand = new AsyncRelayCommand(SaveAsync, () => HasChanges);
@@ -208,7 +215,14 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
     public bool EnablePhoneCompanion
     {
         get => _enablePhoneCompanion;
-        set => SetProperty(ref _enablePhoneCompanion, value);
+        set
+        {
+            if (SetProperty(ref _enablePhoneCompanion, value))
+            {
+                SetPhoneCompanionConnectionStatus(
+                    _phoneCompanionStatusService.GetInitialStatus(BuildCurrentConnectionSettings()));
+            }
+        }
     }
 
     public string SettingsFileStatus
@@ -673,6 +687,34 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
     public bool MicrosoftProjectImportNeedsAttention => EnableProjectDesktop
         && _microsoftProjectImportResult is { WasSuccessful: false };
 
+    public string PhoneCompanionStatusText => _phoneCompanionConnectionStatus.StatusText;
+
+    public string PhoneCompanionStatusDetailText => _phoneCompanionConnectionStatus.DetailText;
+
+    public string PhoneCompanionStatusBackgroundColor => _phoneCompanionConnectionStatus.State switch
+    {
+        PhoneCompanionConnectionState.Ready => "#E7F8EE",
+        PhoneCompanionConnectionState.NotConfigured => "#F4F7FB",
+        PhoneCompanionConnectionState.Unavailable => "#FFF1D6",
+        PhoneCompanionConnectionState.Failed => "#FFE7E0",
+        PhoneCompanionConnectionState.Disabled => "#EEF0F3",
+        _ => "#F4F7FB"
+    };
+
+    public string PhoneCompanionStatusAccentColor => _phoneCompanionConnectionStatus.State switch
+    {
+        PhoneCompanionConnectionState.Ready => "#1E6B3A",
+        PhoneCompanionConnectionState.NotConfigured => "#4E5965",
+        PhoneCompanionConnectionState.Unavailable => "#946200",
+        PhoneCompanionConnectionState.Failed => "#B8331F",
+        PhoneCompanionConnectionState.Disabled => "#6A717A",
+        _ => "#4E5965"
+    };
+
+    public bool PhoneCompanionNeedsAttention => _phoneCompanionConnectionStatus.NeedsAttention;
+
+    public bool CanImportPhoneCompanionCaptures => _phoneCompanionConnectionStatus.CanImportCaptures;
+
     public async Task TestMicrosoftToDoConnectionAsync(CancellationToken cancellationToken = default)
     {
         if (!CanTestMicrosoftToDoConnection)
@@ -890,6 +932,8 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
                 _microsoftToDoConnectionTestService.GetInitialStatus(settings.Connections));
             SetMicrosoftPlannerConnectionStatus(
                 _microsoftPlannerAvailabilityTestService.GetInitialStatus(settings.Connections));
+            SetPhoneCompanionConnectionStatus(
+                _phoneCompanionStatusService.GetInitialStatus(settings.Connections));
             _microsoftPlannerImportResult = null;
             RaiseMicrosoftPlannerImportProperties();
             RaiseMicrosoftProjectImportProperties();
@@ -1006,6 +1050,17 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
         OnPropertyChanged(nameof(CanTestMicrosoftPlannerAvailability));
         OnPropertyChanged(nameof(MicrosoftPlannerNeedsAttention));
         TestMicrosoftPlannerAvailabilityCommand.RaiseCanExecuteChanged();
+    }
+
+    private void SetPhoneCompanionConnectionStatus(PhoneCompanionConnectionStatus status)
+    {
+        _phoneCompanionConnectionStatus = status;
+        OnPropertyChanged(nameof(PhoneCompanionStatusText));
+        OnPropertyChanged(nameof(PhoneCompanionStatusDetailText));
+        OnPropertyChanged(nameof(PhoneCompanionStatusBackgroundColor));
+        OnPropertyChanged(nameof(PhoneCompanionStatusAccentColor));
+        OnPropertyChanged(nameof(PhoneCompanionNeedsAttention));
+        OnPropertyChanged(nameof(CanImportPhoneCompanionCaptures));
     }
 
     private void RaiseMicrosoftPlannerImportProperties()
