@@ -85,6 +85,7 @@ TestRunner.RunAll(
     ("SearchService finds tasks notes projects and source links", SearchServiceFindsTasksNotesProjectsAndSourceLinks),
     ("FindViewModel searches local data through SearchService", FindViewModelSearchesLocalDataThroughSearchService),
     ("SettingsService saves Project file selection", SettingsServiceSavesProjectFileSelection),
+    ("SettingsService saves Phone Companion capture folder", SettingsServiceSavesPhoneCompanionCaptureFolder),
     ("SettingsMetadataRepository upserts and deletes metadata", SettingsMetadataRepositoryUpsertsAndDeletesMetadata));
 
 static async Task DatabaseServiceCreatesSqliteDatabase()
@@ -3177,6 +3178,26 @@ static async Task SettingsServiceSavesProjectFileSelection()
     AppSettings loaded = await settingsService.LoadOrCreateAsync(CancellationToken.None);
 
     Assert.Equal(projectFilePath, loaded.ProjectDesktop.LocalProjectFilePath);
+}
+
+static async Task SettingsServiceSavesPhoneCompanionCaptureFolder()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+    SettingsService settingsService = new(paths);
+    string captureFolderPath = Path.Combine(
+        workspace.Path,
+        "OneDrive",
+        "Success Planner Phone Captures");
+    AppSettings settings = AppSettings.CreateDefault();
+    settings.Connections.EnablePhoneCompanion = true;
+    settings.PhoneCompanion.SharedCaptureFolderPath = $"  {captureFolderPath}  ";
+
+    await settingsService.SaveAsync(settings, CancellationToken.None);
+    AppSettings loaded = await settingsService.LoadOrCreateAsync(CancellationToken.None);
+
+    Assert.True(loaded.Connections.EnablePhoneCompanion, "Saved Phone Companion setting should stay enabled.");
+    Assert.Equal(captureFolderPath, loaded.PhoneCompanion.SharedCaptureFolderPath);
 }
 
 static async Task SettingsMetadataRepositoryUpsertsAndDeletesMetadata()

@@ -1134,16 +1134,16 @@ Benchmark gate:
 
 ~~18.2. Add phone companion status in Settings.~~
 
-18.3. Add quick capture endpoint or shared cloud path.
+~~18.3. Add quick capture endpoint or shared cloud path.~~
 
 ~~18.4. Add phone capture import into local inbox.~~
 
 Benchmark gate:
 
-- Phone companion path is visible in Settings.
-- Quick capture can create a local inbox task.
-- Offline or unavailable phone sync is shown plainly.
-- Build and tests pass.
+- ~~Phone companion path is visible in Settings.~~
+- ~~Quick capture can create a local inbox task.~~
+- ~~Offline or unavailable phone sync is shown plainly.~~
+- ~~Build and tests pass.~~
 
 ## Definition Of Done For Each Component
 

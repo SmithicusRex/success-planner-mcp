@@ -365,7 +365,7 @@
                                 BorderThickness="1"
                                 CornerRadius="8"
                                 Padding="14"
-                                Margin="0,0,0,18">
+                                Margin="0,0,0,12">
                             <StackPanel>
                                 <TextBlock Text="{Binding PhoneCompanionStatusText}"
                                            Foreground="{Binding PhoneCompanionStatusAccentColor}"
@@ -377,6 +377,48 @@
                                            Margin="0,4,0,0" />
                             </StackPanel>
                         </Border>
+                        <Grid Margin="0,0,0,18">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <Border Background="{Binding PhoneCompanionCaptureFolderStatusBackgroundColor}"
+                                    BorderBrush="{Binding PhoneCompanionCaptureFolderStatusAccentColor}"
+                                    BorderThickness="1"
+                                    CornerRadius="8"
+                                    Padding="14"
+                                    Margin="0,0,12,0">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding PhoneCompanionCaptureFolderStatusText}"
+                                               Foreground="{Binding PhoneCompanionCaptureFolderStatusAccentColor}"
+                                               FontWeight="SemiBold"
+                                               FontSize="15" />
+                                    <TextBlock Text="{Binding PhoneCompanionCaptureFolderName}"
+                                               Foreground="{StaticResource InkBrush}"
+                                               FontWeight="SemiBold"
+                                               Margin="0,4,0,0" />
+                                    <TextBlock Text="{Binding PhoneCompanionCaptureFolderDetailText}"
+                                               Foreground="{StaticResource MutedBrush}"
+                                               TextWrapping="Wrap"
+                                               Margin="0,4,0,0" />
+                                </StackPanel>
+                            </Border>
+
+                            <Button Grid.Column="1"
+                                    Content="Choose Folder"
+                                    Command="{Binding SelectPhoneCompanionCaptureFolderCommand}"
+                                    Style="{StaticResource SettingsButtonStyle}"
+                                    VerticalAlignment="Center"
+                                    Margin="0" />
+                            <Button Grid.Column="2"
+                                    Content="Clear"
+                                    Command="{Binding ClearPhoneCompanionCaptureFolderCommand}"
+                                    Style="{StaticResource SettingsButtonStyle}"
+                                    VerticalAlignment="Center"
+                                    Margin="8,0,0,0" />
+                        </Grid>
 
                         <TextBlock Text="Theme" Style="{StaticResource FieldLabelStyle}" />
                         <TextBox Text="{Binding ThemeName, UpdateSourceTrigger=PropertyChanged}"

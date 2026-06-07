@@ -121,12 +121,15 @@ public sealed class SettingsService
         settings.Display ??= new DisplaySettings();
         settings.Connections ??= new ConnectionSettings();
         settings.ProjectDesktop ??= new ProjectDesktopSettings();
+        settings.PhoneCompanion ??= new PhoneCompanionSettings();
         settings.DestinationRules ??= [];
 
         settings.Display.ThemeName = NormalizeText(settings.Display.ThemeName, "Light");
         settings.Display.AccentColor = NormalizeText(settings.Display.AccentColor, "#2F6FED");
         settings.ProjectDesktop.LocalProjectFilePath =
             NormalizeText(settings.ProjectDesktop.LocalProjectFilePath, string.Empty);
+        settings.PhoneCompanion.SharedCaptureFolderPath =
+            NormalizeText(settings.PhoneCompanion.SharedCaptureFolderPath, string.Empty);
 
         foreach (DestinationRuleSettings rule in settings.DestinationRules)
         {
@@ -157,6 +160,11 @@ public sealed class SettingsService
         if (settings.ProjectDesktop.LocalProjectFilePath.Length > 260)
         {
             throw new SettingsValidationException("Project file path must be 260 characters or fewer.");
+        }
+
+        if (settings.PhoneCompanion.SharedCaptureFolderPath.Length > 260)
+        {
+            throw new SettingsValidationException("Phone companion path must be 260 characters or fewer.");
         }
 
         foreach (DestinationRuleSettings rule in settings.DestinationRules)

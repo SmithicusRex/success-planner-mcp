@@ -18,6 +18,8 @@ public sealed class AppSettings
 
     public ProjectDesktopSettings ProjectDesktop { get; set; } = new();
 
+    public PhoneCompanionSettings PhoneCompanion { get; set; } = new();
+
     public List<DestinationRuleSettings> DestinationRules { get; set; } = [];
 
     public static AppSettings CreateDefault()
@@ -61,6 +63,11 @@ public sealed class ConnectionSettings
 public sealed class ProjectDesktopSettings
 {
     public string LocalProjectFilePath { get; set; } = string.Empty;
+}
+
+public sealed class PhoneCompanionSettings
+{
+    public string SharedCaptureFolderPath { get; set; } = string.Empty;
 }
 
 public sealed class DestinationRuleSettings

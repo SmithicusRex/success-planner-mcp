@@ -30,6 +30,8 @@ TestRunner.RunAll(
     ("SettingsViewModel recovers Project import after retry", SettingsViewModelRecoversProjectImportAfterRetry),
     ("SettingsViewModel shows Phone Companion status", SettingsViewModelShowsPhoneCompanionStatus),
     ("SettingsViewModel updates Phone Companion status when enabled", SettingsViewModelUpdatesPhoneCompanionStatusWhenEnabled),
+    ("SettingsViewModel selects Phone Companion capture folder", SettingsViewModelSelectsPhoneCompanionCaptureFolder),
+    ("SettingsViewModel shows unavailable Phone Companion capture folder", SettingsViewModelShowsUnavailablePhoneCompanionCaptureFolder),
     ("CaptureViewModel starts in a simple ready state", CaptureViewModelStartsReady),
     ("CaptureViewModel applies date hint buttons", CaptureViewModelAppliesDateHintButtons),
     ("CaptureViewModel applies destination choices", CaptureViewModelAppliesDestinationChoices),
@@ -616,6 +618,8 @@ static void SettingsViewModelShowsPhoneCompanionStatus()
     Assert.Equal("#6A717A", viewModel.PhoneCompanionStatusAccentColor);
     Assert.False(viewModel.PhoneCompanionNeedsAttention, "Disabled Phone Companion should not need attention.");
     Assert.False(viewModel.CanImportPhoneCompanionCaptures, "Disabled Phone Companion should not import captures.");
+    Assert.Equal("Phone path selection off", viewModel.PhoneCompanionCaptureFolderStatusText);
+    Assert.False(viewModel.CanSelectPhoneCompanionCaptureFolder, "Disabled Phone Companion should not select a folder.");
 }
 
 static void SettingsViewModelUpdatesPhoneCompanionStatusWhenEnabled()
@@ -632,12 +636,75 @@ static void SettingsViewModelUpdatesPhoneCompanionStatusWhenEnabled()
     Assert.Equal("#4E5965", viewModel.PhoneCompanionStatusAccentColor);
     Assert.True(viewModel.PhoneCompanionNeedsAttention, "Enabled Phone Companion should show setup attention.");
     Assert.False(viewModel.CanImportPhoneCompanionCaptures, "Phone Companion should wait for a configured path before importing.");
+    Assert.Equal("No phone capture path selected", viewModel.PhoneCompanionCaptureFolderStatusText);
+    Assert.True(viewModel.CanSelectPhoneCompanionCaptureFolder, "Enabled Phone Companion should allow choosing a shared folder.");
     Assert.True(viewModel.HasChanges, "Changing the Phone Companion switch should mark Settings dirty.");
 
     viewModel.EnablePhoneCompanion = false;
 
     Assert.Equal("Phone companion is off", viewModel.PhoneCompanionStatusText);
     Assert.False(viewModel.PhoneCompanionNeedsAttention, "Turning Phone Companion off should clear setup attention.");
+}
+
+static void SettingsViewModelSelectsPhoneCompanionCaptureFolder()
+{
+    AppSettings settings = AppSettings.CreateDefault();
+    settings.Connections.EnablePhoneCompanion = true;
+    string folderPath = CreateFakePhoneCompanionCaptureFolder();
+    TestPhoneCompanionFolderPicker picker = new(folderPath);
+    SettingsViewModel viewModel = CreateSettingsViewModelWithPhoneFolderPicker(settings, picker);
+
+    viewModel.SelectPhoneCompanionCaptureFolderAsync(CancellationToken.None).GetAwaiter().GetResult();
+
+    Assert.Equal(1, picker.CallCount);
+    Assert.Equal(string.Empty, picker.LastCurrentFolderPath);
+    Assert.Equal(folderPath, viewModel.PhoneCompanionCaptureFolderPath);
+    Assert.Equal("Phone companion ready", viewModel.PhoneCompanionStatusText);
+    Assert.Contains(folderPath, viewModel.PhoneCompanionStatusDetailText);
+    Assert.Equal("#E7F8EE", viewModel.PhoneCompanionStatusBackgroundColor);
+    Assert.Equal("#1E6B3A", viewModel.PhoneCompanionStatusAccentColor);
+    Assert.False(viewModel.PhoneCompanionNeedsAttention, "Selected existing folder should clear setup attention.");
+    Assert.True(viewModel.CanImportPhoneCompanionCaptures, "Selected existing folder should allow capture import.");
+    Assert.Equal("Phone capture path selected", viewModel.PhoneCompanionCaptureFolderStatusText);
+    Assert.Equal(Path.GetFileName(folderPath), viewModel.PhoneCompanionCaptureFolderName);
+    Assert.Equal(folderPath, viewModel.PhoneCompanionCaptureFolderDetailText);
+    Assert.Equal("#E7F8EE", viewModel.PhoneCompanionCaptureFolderStatusBackgroundColor);
+    Assert.Equal("#1E6B3A", viewModel.PhoneCompanionCaptureFolderStatusAccentColor);
+    Assert.True(viewModel.CanClearPhoneCompanionCaptureFolder, "Selected folder should allow clearing.");
+
+    viewModel.ClearPhoneCompanionCaptureFolderAsync().GetAwaiter().GetResult();
+
+    Assert.Equal(string.Empty, viewModel.PhoneCompanionCaptureFolderPath);
+    Assert.Equal("Ready to set up", viewModel.PhoneCompanionStatusText);
+    Assert.Equal("No phone capture path selected", viewModel.PhoneCompanionCaptureFolderStatusText);
+    Assert.False(viewModel.CanImportPhoneCompanionCaptures, "Clearing the folder should stop capture import.");
+}
+
+static void SettingsViewModelShowsUnavailablePhoneCompanionCaptureFolder()
+{
+    AppSettings settings = AppSettings.CreateDefault();
+    settings.Connections.EnablePhoneCompanion = true;
+    settings.PhoneCompanion.SharedCaptureFolderPath = Path.Combine(
+        Path.GetTempPath(),
+        "SuccessPlannerMCP",
+        "ViewModelTests",
+        Guid.NewGuid().ToString("N"),
+        "MissingPhoneCaptures");
+
+    SettingsViewModel viewModel = CreateSettingsViewModelWithProbe(
+        settings,
+        (_, _) => Task.FromResult(MicrosoftToDoConnectionStatus.Connected()));
+
+    Assert.Equal("Phone sync unavailable", viewModel.PhoneCompanionStatusText);
+    Assert.Contains(settings.PhoneCompanion.SharedCaptureFolderPath, viewModel.PhoneCompanionStatusDetailText);
+    Assert.Equal("#FFF1D6", viewModel.PhoneCompanionStatusBackgroundColor);
+    Assert.Equal("#946200", viewModel.PhoneCompanionStatusAccentColor);
+    Assert.True(viewModel.PhoneCompanionNeedsAttention, "Missing capture folder should stay visible.");
+    Assert.False(viewModel.CanImportPhoneCompanionCaptures, "Missing capture folder should not import captures.");
+    Assert.Equal("Phone capture path unavailable", viewModel.PhoneCompanionCaptureFolderStatusText);
+    Assert.Equal("#FFF1D6", viewModel.PhoneCompanionCaptureFolderStatusBackgroundColor);
+    Assert.Equal("#946200", viewModel.PhoneCompanionCaptureFolderStatusAccentColor);
+    Assert.True(viewModel.CanClearPhoneCompanionCaptureFolder, "Unavailable folder should remain clearable.");
 }
 
 static NavigationService CreateShellNavigationService()
@@ -706,6 +773,18 @@ static SettingsViewModel CreateSettingsViewModelWithProjectImport(
         importProjectTasksAsync: importProjectTasksAsync);
 }
 
+static SettingsViewModel CreateSettingsViewModelWithPhoneFolderPicker(
+    AppSettings settings,
+    IPhoneCompanionFolderPicker picker)
+{
+    return CreateSettingsViewModelWithProbeInstance(
+        settings,
+        new TestMicrosoftToDoConnectionProbe((checkedAt, _) =>
+            Task.FromResult(MicrosoftToDoConnectionStatus.Connected(checkedAt: checkedAt))),
+        DateTimeOffset.Now,
+        phoneFolderPicker: picker);
+}
+
 static SettingsViewModel CreateSettingsViewModelWithProbeInstance(
     AppSettings settings,
     TestMicrosoftToDoConnectionProbe probe,
@@ -714,7 +793,8 @@ static SettingsViewModel CreateSettingsViewModelWithProbeInstance(
     IMicrosoftProjectFilePicker? projectFilePicker = null,
     Func<CancellationToken, Task<MicrosoftProjectImportResult>>? importProjectTasksAsync = null,
     Func<CancellationToken, Task<MicrosoftPlannerImportResult>>? importPlannerTasksAsync = null,
-    TestMicrosoftPlannerAvailabilityProbe? plannerProbe = null)
+    TestMicrosoftPlannerAvailabilityProbe? plannerProbe = null,
+    IPhoneCompanionFolderPicker? phoneFolderPicker = null)
 {
     string settingsRoot = Path.Combine(
         Path.GetTempPath(),
@@ -737,7 +817,8 @@ static SettingsViewModel CreateSettingsViewModelWithProbeInstance(
         importMicrosoftPlannerTasksAsync: importPlannerTasksAsync,
         microsoftProjectDesktopDetector: projectDetector,
         microsoftProjectFilePicker: projectFilePicker,
-        importMicrosoftProjectTasksAsync: importProjectTasksAsync);
+        importMicrosoftProjectTasksAsync: importProjectTasksAsync,
+        phoneCompanionFolderPicker: phoneFolderPicker);
 }
 
 static string CreateFakeProjectDesktopInstall(out string executablePath)
@@ -770,6 +851,18 @@ static string CreateFakeProjectFile()
     Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
     File.WriteAllText(filePath, "fake project file");
     return filePath;
+}
+
+static string CreateFakePhoneCompanionCaptureFolder()
+{
+    string folderPath = Path.Combine(
+        Path.GetTempPath(),
+        "SuccessPlannerMCP",
+        "ViewModelTests",
+        Guid.NewGuid().ToString("N"),
+        "PhoneCaptures");
+    Directory.CreateDirectory(folderPath);
+    return folderPath;
 }
 
 static void CaptureViewModelStartsReady()
@@ -3470,6 +3563,30 @@ internal sealed class TestMicrosoftProjectFilePicker : IMicrosoftProjectFilePick
         cancellationToken.ThrowIfCancellationRequested();
         CallCount++;
         LastCurrentFilePath = currentFilePath;
+        return Task.FromResult(_selectedPath);
+    }
+}
+
+internal sealed class TestPhoneCompanionFolderPicker : IPhoneCompanionFolderPicker
+{
+    private readonly string? _selectedPath;
+
+    public TestPhoneCompanionFolderPicker(string? selectedPath)
+    {
+        _selectedPath = selectedPath;
+    }
+
+    public int CallCount { get; private set; }
+
+    public string LastCurrentFolderPath { get; private set; } = string.Empty;
+
+    public Task<string?> PickCaptureFolderAsync(
+        string currentFolderPath = "",
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        CallCount++;
+        LastCurrentFolderPath = currentFolderPath;
         return Task.FromResult(_selectedPath);
     }
 }

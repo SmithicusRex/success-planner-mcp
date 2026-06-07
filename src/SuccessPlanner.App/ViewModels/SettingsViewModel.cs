@@ -18,6 +18,7 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
     private readonly IMicrosoftProjectFilePicker _microsoftProjectFilePicker;
     private readonly Func<CancellationToken, Task<MicrosoftProjectImportResult>> _importMicrosoftProjectTasksAsync;
     private readonly PhoneCompanionStatusService _phoneCompanionStatusService;
+    private readonly IPhoneCompanionFolderPicker _phoneCompanionFolderPicker;
     private AppSettings _lastSavedSettings;
     private MicrosoftToDoConnectionStatus _microsoftToDoConnectionStatus;
     private MicrosoftPlannerConnectionStatus _microsoftPlannerConnectionStatus;
@@ -35,6 +36,7 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
     private string _themeName;
     private string _accentColor;
     private string _microsoftProjectFilePath;
+    private string _phoneCompanionCaptureFolderPath;
     private bool _useLargeControls;
     private bool _enableMicrosoftToDo;
     private bool _enablePlanner;
@@ -54,7 +56,8 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
         MicrosoftProjectDesktopDetector? microsoftProjectDesktopDetector = null,
         IMicrosoftProjectFilePicker? microsoftProjectFilePicker = null,
         Func<CancellationToken, Task<MicrosoftProjectImportResult>>? importMicrosoftProjectTasksAsync = null,
-        PhoneCompanionStatusService? phoneCompanionStatusService = null)
+        PhoneCompanionStatusService? phoneCompanionStatusService = null,
+        IPhoneCompanionFolderPicker? phoneCompanionFolderPicker = null)
         : base(ScreenCatalog.Settings)
     {
         _settingsService = settingsService;
@@ -78,13 +81,15 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
                 "Project import is not configured for this session.")));
         _phoneCompanionStatusService = phoneCompanionStatusService
             ?? new PhoneCompanionStatusService();
+        _phoneCompanionFolderPicker = phoneCompanionFolderPicker
+            ?? new PhoneCompanionFolderPicker();
         _lastSavedSettings = CopySettings(settings);
         _microsoftToDoConnectionStatus =
             _microsoftToDoConnectionTestService.GetInitialStatus(settings.Connections);
         _microsoftPlannerConnectionStatus =
             _microsoftPlannerAvailabilityTestService.GetInitialStatus(settings.Connections);
         _phoneCompanionConnectionStatus =
-            _phoneCompanionStatusService.GetInitialStatus(settings.Connections);
+            _phoneCompanionStatusService.GetInitialStatus(settings.Connections, settings.PhoneCompanion);
 
         DestinationRules = [];
         SaveCommand = new AsyncRelayCommand(SaveAsync, () => HasChanges);
@@ -110,11 +115,18 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
         ImportMicrosoftProjectTasksCommand = new AsyncRelayCommand(
             () => ImportMicrosoftProjectTasksAsync(CancellationToken.None),
             () => CanImportMicrosoftProjectTasks);
+        SelectPhoneCompanionCaptureFolderCommand = new AsyncRelayCommand(
+            () => SelectPhoneCompanionCaptureFolderAsync(CancellationToken.None),
+            () => CanSelectPhoneCompanionCaptureFolder);
+        ClearPhoneCompanionCaptureFolderCommand = new AsyncRelayCommand(
+            () => ClearPhoneCompanionCaptureFolderAsync(),
+            () => CanClearPhoneCompanionCaptureFolder);
 
         _profileName = string.Empty;
         _themeName = string.Empty;
         _accentColor = string.Empty;
         _microsoftProjectFilePath = string.Empty;
+        _phoneCompanionCaptureFolderPath = string.Empty;
         _settingsFileStatus = settingsFileStatus;
 
         LoadFrom(settings, markClean: true);
@@ -161,6 +173,23 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
             if (SetProperty(ref _microsoftProjectFilePath, normalized))
             {
                 RaiseMicrosoftProjectFileProperties();
+            }
+        }
+    }
+
+    public string PhoneCompanionCaptureFolderPath
+    {
+        get => _phoneCompanionCaptureFolderPath;
+        private set
+        {
+            string normalized = value?.Trim() ?? string.Empty;
+            if (SetProperty(ref _phoneCompanionCaptureFolderPath, normalized))
+            {
+                SetPhoneCompanionConnectionStatus(
+                    _phoneCompanionStatusService.GetInitialStatus(
+                        BuildCurrentConnectionSettings(),
+                        BuildCurrentPhoneCompanionSettings()));
+                RaisePhoneCompanionCaptureFolderProperties();
             }
         }
     }
@@ -220,7 +249,10 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
             if (SetProperty(ref _enablePhoneCompanion, value))
             {
                 SetPhoneCompanionConnectionStatus(
-                    _phoneCompanionStatusService.GetInitialStatus(BuildCurrentConnectionSettings()));
+                    _phoneCompanionStatusService.GetInitialStatus(
+                        BuildCurrentConnectionSettings(),
+                        BuildCurrentPhoneCompanionSettings()));
+                RaisePhoneCompanionCaptureFolderProperties();
             }
         }
     }
@@ -273,6 +305,10 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
     public AsyncRelayCommand ClearMicrosoftProjectFileCommand { get; }
 
     public AsyncRelayCommand ImportMicrosoftProjectTasksCommand { get; }
+
+    public AsyncRelayCommand SelectPhoneCompanionCaptureFolderCommand { get; }
+
+    public AsyncRelayCommand ClearPhoneCompanionCaptureFolderCommand { get; }
 
     public string MicrosoftToDoStatusText => _microsoftToDoConnectionStatus.StatusText;
 
@@ -715,6 +751,100 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
 
     public bool CanImportPhoneCompanionCaptures => _phoneCompanionConnectionStatus.CanImportCaptures;
 
+    public bool HasPhoneCompanionCaptureFolderSelection =>
+        !string.IsNullOrWhiteSpace(PhoneCompanionCaptureFolderPath);
+
+    public string PhoneCompanionCaptureFolderStatusText
+    {
+        get
+        {
+            if (!EnablePhoneCompanion)
+            {
+                return "Phone path selection off";
+            }
+
+            if (!HasPhoneCompanionCaptureFolderSelection)
+            {
+                return "No phone capture path selected";
+            }
+
+            return Directory.Exists(PhoneCompanionCaptureFolderPath)
+                ? "Phone capture path selected"
+                : "Phone capture path unavailable";
+        }
+    }
+
+    public string PhoneCompanionCaptureFolderDetailText
+    {
+        get
+        {
+            if (!EnablePhoneCompanion)
+            {
+                return "Turn on Phone Companion to choose a shared capture folder.";
+            }
+
+            return HasPhoneCompanionCaptureFolderSelection
+                ? PhoneCompanionCaptureFolderPath
+                : "Choose a OneDrive or shared cloud folder where phone quick captures will be dropped.";
+        }
+    }
+
+    public string PhoneCompanionCaptureFolderName
+    {
+        get
+        {
+            if (!HasPhoneCompanionCaptureFolderSelection)
+            {
+                return "None";
+            }
+
+            string trimmedPath = Path.TrimEndingDirectorySeparator(PhoneCompanionCaptureFolderPath);
+            string folderName = Path.GetFileName(trimmedPath);
+            return string.IsNullOrWhiteSpace(folderName) ? PhoneCompanionCaptureFolderPath : folderName;
+        }
+    }
+
+    public string PhoneCompanionCaptureFolderStatusBackgroundColor
+    {
+        get
+        {
+            if (!EnablePhoneCompanion)
+            {
+                return "#EEF0F3";
+            }
+
+            if (!HasPhoneCompanionCaptureFolderSelection)
+            {
+                return "#F4F7FB";
+            }
+
+            return Directory.Exists(PhoneCompanionCaptureFolderPath) ? "#E7F8EE" : "#FFF1D6";
+        }
+    }
+
+    public string PhoneCompanionCaptureFolderStatusAccentColor
+    {
+        get
+        {
+            if (!EnablePhoneCompanion)
+            {
+                return "#6A717A";
+            }
+
+            if (!HasPhoneCompanionCaptureFolderSelection)
+            {
+                return "#4E5965";
+            }
+
+            return Directory.Exists(PhoneCompanionCaptureFolderPath) ? "#1E6B3A" : "#946200";
+        }
+    }
+
+    public bool CanSelectPhoneCompanionCaptureFolder => EnablePhoneCompanion;
+
+    public bool CanClearPhoneCompanionCaptureFolder => EnablePhoneCompanion
+        && HasPhoneCompanionCaptureFolderSelection;
+
     public async Task TestMicrosoftToDoConnectionAsync(CancellationToken cancellationToken = default)
     {
         if (!CanTestMicrosoftToDoConnection)
@@ -869,6 +999,37 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
         return Task.CompletedTask;
     }
 
+    public async Task SelectPhoneCompanionCaptureFolderAsync(CancellationToken cancellationToken = default)
+    {
+        if (!CanSelectPhoneCompanionCaptureFolder)
+        {
+            return;
+        }
+
+        string? selectedPath = await _phoneCompanionFolderPicker.PickCaptureFolderAsync(
+            PhoneCompanionCaptureFolderPath,
+            cancellationToken);
+        if (string.IsNullOrWhiteSpace(selectedPath))
+        {
+            return;
+        }
+
+        PhoneCompanionCaptureFolderPath = selectedPath;
+        SaveStatus = "Phone capture folder selected. Save settings to keep it.";
+    }
+
+    public Task ClearPhoneCompanionCaptureFolderAsync()
+    {
+        if (!CanClearPhoneCompanionCaptureFolder)
+        {
+            return Task.CompletedTask;
+        }
+
+        PhoneCompanionCaptureFolderPath = string.Empty;
+        SaveStatus = "Phone capture folder cleared. Save settings to keep it.";
+        return Task.CompletedTask;
+    }
+
     public async Task ImportMicrosoftProjectTasksAsync(CancellationToken cancellationToken = default)
     {
         if (!CanImportMicrosoftProjectTasks)
@@ -933,10 +1094,11 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
             SetMicrosoftPlannerConnectionStatus(
                 _microsoftPlannerAvailabilityTestService.GetInitialStatus(settings.Connections));
             SetPhoneCompanionConnectionStatus(
-                _phoneCompanionStatusService.GetInitialStatus(settings.Connections));
+                _phoneCompanionStatusService.GetInitialStatus(settings.Connections, settings.PhoneCompanion));
             _microsoftPlannerImportResult = null;
             RaiseMicrosoftPlannerImportProperties();
             RaiseMicrosoftProjectImportProperties();
+            RaisePhoneCompanionCaptureFolderProperties();
         }
         catch (SettingsValidationException ex)
         {
@@ -963,6 +1125,7 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
         ThemeName = settings.Display.ThemeName;
         AccentColor = settings.Display.AccentColor;
         MicrosoftProjectFilePath = settings.ProjectDesktop.LocalProjectFilePath;
+        PhoneCompanionCaptureFolderPath = settings.PhoneCompanion.SharedCaptureFolderPath;
         UseLargeControls = settings.Display.UseLargeControls;
         EnableMicrosoftToDo = settings.Connections.EnableMicrosoftToDo;
         EnablePlanner = settings.Connections.EnablePlanner;
@@ -1005,6 +1168,10 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
             {
                 LocalProjectFilePath = MicrosoftProjectFilePath
             },
+            PhoneCompanion = new PhoneCompanionSettings
+            {
+                SharedCaptureFolderPath = PhoneCompanionCaptureFolderPath
+            },
             DestinationRules = _lastSavedSettings.DestinationRules
                 .Select(rule => new DestinationRuleSettings
                 {
@@ -1025,6 +1192,14 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
             EnablePlanner = EnablePlanner,
             EnableProjectDesktop = EnableProjectDesktop,
             EnablePhoneCompanion = EnablePhoneCompanion
+        };
+    }
+
+    private PhoneCompanionSettings BuildCurrentPhoneCompanionSettings()
+    {
+        return new PhoneCompanionSettings
+        {
+            SharedCaptureFolderPath = PhoneCompanionCaptureFolderPath
         };
     }
 
@@ -1120,6 +1295,20 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
         ImportMicrosoftProjectTasksCommand.RaiseCanExecuteChanged();
     }
 
+    private void RaisePhoneCompanionCaptureFolderProperties()
+    {
+        OnPropertyChanged(nameof(HasPhoneCompanionCaptureFolderSelection));
+        OnPropertyChanged(nameof(PhoneCompanionCaptureFolderStatusText));
+        OnPropertyChanged(nameof(PhoneCompanionCaptureFolderDetailText));
+        OnPropertyChanged(nameof(PhoneCompanionCaptureFolderName));
+        OnPropertyChanged(nameof(PhoneCompanionCaptureFolderStatusBackgroundColor));
+        OnPropertyChanged(nameof(PhoneCompanionCaptureFolderStatusAccentColor));
+        OnPropertyChanged(nameof(CanSelectPhoneCompanionCaptureFolder));
+        OnPropertyChanged(nameof(CanClearPhoneCompanionCaptureFolder));
+        SelectPhoneCompanionCaptureFolderCommand.RaiseCanExecuteChanged();
+        ClearPhoneCompanionCaptureFolderCommand.RaiseCanExecuteChanged();
+    }
+
     private static string BuildFailureMessage(Exception exception)
     {
         return string.IsNullOrWhiteSpace(exception.Message)
@@ -1151,6 +1340,10 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
             ProjectDesktop = new ProjectDesktopSettings
             {
                 LocalProjectFilePath = settings.ProjectDesktop.LocalProjectFilePath
+            },
+            PhoneCompanion = new PhoneCompanionSettings
+            {
+                SharedCaptureFolderPath = settings.PhoneCompanion.SharedCaptureFolderPath
             },
             DestinationRules = settings.DestinationRules
                 .Select(rule => new DestinationRuleSettings
