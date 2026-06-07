@@ -41,6 +41,10 @@ TestRunner.RunAll(
     ("MicrosoftPlannerTaskImportService imports assigned tasks", MicrosoftPlannerTaskImportServiceImportsAssignedTasks),
     ("MicrosoftPlannerTaskImportService skips existing tasks", MicrosoftPlannerTaskImportServiceSkipsExistingTasks),
     ("MicrosoftPlannerTaskImportService reports disabled Planner import", MicrosoftPlannerTaskImportServiceReportsDisabledPlannerImport),
+    ("PhoneCompanionCaptureImportService imports captures into local inbox", PhoneCompanionCaptureImportServiceImportsCapturesIntoLocalInbox),
+    ("PhoneCompanionCaptureImportService skips existing captures", PhoneCompanionCaptureImportServiceSkipsExistingCaptures),
+    ("PhoneCompanionCaptureImportService reports disabled import", PhoneCompanionCaptureImportServiceReportsDisabledImport),
+    ("PhoneCompanionCaptureImportService rejects unsupported destinations", PhoneCompanionCaptureImportServiceRejectsUnsupportedDestinations),
     ("MicrosoftToDoGraphTaskAdapter needs sign-in without token", MicrosoftToDoGraphTaskAdapterNeedsSignInWithoutToken),
     ("MicrosoftToDoGraphTaskAdapter pulls lists and tasks", MicrosoftToDoGraphTaskAdapterPullsListsAndTasks),
     ("MicrosoftToDoGraphTaskAdapter maps pull failures", MicrosoftToDoGraphTaskAdapterMapsPullFailures),
@@ -1311,6 +1315,204 @@ static async Task MicrosoftPlannerTaskImportServiceReportsDisabledPlannerImport(
     Assert.Contains("Turn on Planner", result.DetailText);
     Assert.Equal(0, adapter.CallCount);
     Assert.Equal(0, (await taskRepository.GetAllAsync(CancellationToken.None)).Count);
+}
+
+static async Task PhoneCompanionCaptureImportServiceImportsCapturesIntoLocalInbox()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+    await CreateMigratedDatabaseAsync(paths);
+
+    SettingsService settingsService = new(paths);
+    AppSettings settings = AppSettings.CreateDefault();
+    settings.Connections.EnablePhoneCompanion = true;
+    await settingsService.SaveAsync(settings, CancellationToken.None);
+
+    TaskRepository taskRepository = new(paths);
+    SourceLinkRepository sourceLinkRepository = new(paths);
+    DateTimeOffset importedAt = new(2026, 6, 7, 10, 30, 0, TimeSpan.Zero);
+    DateTimeOffset capturedAt = new(2026, 6, 7, 10, 0, 0, TimeSpan.Zero);
+    PhoneCompanionCaptureImportService service = new(
+        settingsService,
+        taskRepository,
+        sourceLinkRepository,
+        nowProvider: () => importedAt);
+    PhoneCompanionSyncBatch batch = new(
+        "batch-1",
+        "device-1",
+        "Smith phone",
+        capturedAt,
+        [
+            new PhoneCompanionQuickCaptureItem(
+                "phone-1",
+                "Call pharmacy",
+                capturedAt,
+                "Ask about refill timing.",
+                tags: ["Health"]),
+            new PhoneCompanionQuickCaptureItem(
+                "phone-2",
+                "Buy walking shoes",
+                capturedAt.AddMinutes(1),
+                dueDate: new DateOnly(2026, 6, 8),
+                destination: PhoneCompanionCaptureDestination.LetSuccessPlannerChoose)
+        ]);
+
+    PhoneCompanionSyncResult result = await service.ImportBatchAsync(batch, CancellationToken.None);
+
+    Assert.True(result.WasSuccessful, "Phone import should report success.");
+    Assert.Equal("Phone captures imported", result.StatusText);
+    Assert.Equal(2, result.ImportedCount);
+    Assert.Equal(0, result.SkippedCount);
+    Assert.Equal(0, result.RejectedCount);
+
+    IReadOnlyList<TaskItem> localTasks = await taskRepository.GetAllAsync(CancellationToken.None);
+    Assert.Equal(2, localTasks.Count);
+
+    TaskItem pharmacyTask = localTasks.Single(task => task.Title == "Call pharmacy");
+    Assert.Equal(TaskItemStatus.Captured, pharmacyTask.Status);
+    Assert.Equal(capturedAt, pharmacyTask.CreatedAt);
+    Assert.Equal("Ask about refill timing.", pharmacyTask.Notes);
+    Assert.Contains("Phone Companion", pharmacyTask.Tags);
+    Assert.Contains("Phone Capture", pharmacyTask.Tags);
+    Assert.Contains("Health", pharmacyTask.Tags);
+    Assert.Contains(pharmacyTask.Id, result.Outcomes.Select(outcome => outcome.LocalTaskId.GetValueOrDefault()));
+
+    IReadOnlyList<SourceLink> pharmacyLinks = await sourceLinkRepository.GetForLocalItemAsync(
+        SourceLinkItemType.Task,
+        pharmacyTask.Id,
+        CancellationToken.None);
+    Assert.Equal(1, pharmacyLinks.Count);
+    SourceLink pharmacyLink = pharmacyLinks[0];
+    Assert.Equal(SourceSystem.PhoneCompanion, pharmacyLink.SourceSystem);
+    Assert.Equal("device-1:phone-1", pharmacyLink.ExternalId);
+    Assert.Equal("device-1", pharmacyLink.ExternalContainerId);
+    Assert.Equal("Call pharmacy", pharmacyLink.ExternalDisplayName);
+    Assert.Equal(SyncState.Synced, pharmacyLink.SyncState);
+    Assert.False(pharmacyLink.IsReadOnly, "Phone captures should remain editable local tasks.");
+    Assert.Equal(importedAt, pharmacyLink.LastSyncedAt!.Value);
+
+    TaskItem shoesTask = localTasks.Single(task => task.Title == "Buy walking shoes");
+    Assert.Equal(TaskItemStatus.Planned, shoesTask.Status);
+    Assert.Equal(new DateOnly(2026, 6, 8), shoesTask.DueDate);
+    Assert.Contains("MCP Chosen", shoesTask.Tags);
+}
+
+static async Task PhoneCompanionCaptureImportServiceSkipsExistingCaptures()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+    await CreateMigratedDatabaseAsync(paths);
+
+    SettingsService settingsService = new(paths);
+    AppSettings settings = AppSettings.CreateDefault();
+    settings.Connections.EnablePhoneCompanion = true;
+    await settingsService.SaveAsync(settings, CancellationToken.None);
+
+    TaskRepository taskRepository = new(paths);
+    SourceLinkRepository sourceLinkRepository = new(paths);
+    DateTimeOffset capturedAt = new(2026, 6, 7, 11, 0, 0, TimeSpan.Zero);
+    PhoneCompanionCaptureImportService service = new(
+        settingsService,
+        taskRepository,
+        sourceLinkRepository,
+        nowProvider: () => capturedAt);
+    PhoneCompanionSyncBatch batch = new(
+        "batch-duplicate",
+        "device-1",
+        "Smith phone",
+        capturedAt,
+        [new PhoneCompanionQuickCaptureItem("phone-1", "Call pharmacy", capturedAt)]);
+
+    PhoneCompanionSyncResult firstImport = await service.ImportBatchAsync(batch, CancellationToken.None);
+    PhoneCompanionSyncResult secondImport = await service.ImportBatchAsync(batch, CancellationToken.None);
+
+    Assert.Equal(1, firstImport.ImportedCount);
+    Assert.Equal(0, firstImport.SkippedCount);
+    Assert.Equal(0, secondImport.ImportedCount);
+    Assert.Equal(1, secondImport.SkippedCount);
+    Assert.Equal("No new phone captures", secondImport.StatusText);
+    Assert.Contains("already existed", secondImport.DetailText);
+    Assert.Equal(1, (await taskRepository.GetAllAsync(CancellationToken.None)).Count);
+}
+
+static async Task PhoneCompanionCaptureImportServiceReportsDisabledImport()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+    await CreateMigratedDatabaseAsync(paths);
+
+    SettingsService settingsService = new(paths);
+    AppSettings settings = AppSettings.CreateDefault();
+    settings.Connections.EnablePhoneCompanion = false;
+    await settingsService.SaveAsync(settings, CancellationToken.None);
+
+    TaskRepository taskRepository = new(paths);
+    SourceLinkRepository sourceLinkRepository = new(paths);
+    DateTimeOffset capturedAt = new(2026, 6, 7, 12, 0, 0, TimeSpan.Zero);
+    PhoneCompanionCaptureImportService service = new(
+        settingsService,
+        taskRepository,
+        sourceLinkRepository);
+    PhoneCompanionSyncBatch batch = new(
+        "batch-disabled",
+        "device-1",
+        "Smith phone",
+        capturedAt,
+        [new PhoneCompanionQuickCaptureItem("phone-1", "Should not import", capturedAt)]);
+
+    PhoneCompanionSyncResult result = await service.ImportBatchAsync(batch, CancellationToken.None);
+
+    Assert.False(result.WasSuccessful, "Disabled Phone Companion import should report a recoverable failure.");
+    Assert.Equal("Phone sync unavailable", result.StatusText);
+    Assert.Contains("Turn on Phone Companion", result.DetailText);
+    Assert.Equal(0, (await taskRepository.GetAllAsync(CancellationToken.None)).Count);
+}
+
+static async Task PhoneCompanionCaptureImportServiceRejectsUnsupportedDestinations()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+    await CreateMigratedDatabaseAsync(paths);
+
+    SettingsService settingsService = new(paths);
+    AppSettings settings = AppSettings.CreateDefault();
+    settings.Connections.EnablePhoneCompanion = true;
+    await settingsService.SaveAsync(settings, CancellationToken.None);
+
+    TaskRepository taskRepository = new(paths);
+    SourceLinkRepository sourceLinkRepository = new(paths);
+    DateTimeOffset capturedAt = new(2026, 6, 7, 13, 0, 0, TimeSpan.Zero);
+    PhoneCompanionCaptureImportService service = new(
+        settingsService,
+        taskRepository,
+        sourceLinkRepository);
+    PhoneCompanionSyncBatch batch = new(
+        "batch-partial",
+        "device-1",
+        "Smith phone",
+        capturedAt,
+        [
+            new PhoneCompanionQuickCaptureItem(
+                "phone-1",
+                "Save locally",
+                capturedAt,
+                destination: PhoneCompanionCaptureDestination.LocalInbox),
+            new PhoneCompanionQuickCaptureItem(
+                "phone-2",
+                "Send to To Do later",
+                capturedAt,
+                destination: PhoneCompanionCaptureDestination.MicrosoftToDo)
+        ]);
+
+    PhoneCompanionSyncResult result = await service.ImportBatchAsync(batch, CancellationToken.None);
+
+    Assert.Equal(PhoneCompanionSyncResultState.Partial, result.State);
+    Assert.True(result.NeedsAttention, "Unsupported destinations should stay visible.");
+    Assert.Equal(1, result.ImportedCount);
+    Assert.Equal(1, result.RejectedCount);
+    Assert.Contains("Only local inbox", result.Outcomes.Single(outcome =>
+        outcome.State == PhoneCompanionCaptureImportState.Rejected).Message);
+    Assert.Equal(1, (await taskRepository.GetAllAsync(CancellationToken.None)).Count);
 }
 
 static async Task MicrosoftToDoGraphTaskAdapterNeedsSignInWithoutToken()

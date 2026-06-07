@@ -1136,7 +1136,7 @@ Benchmark gate:
 
 18.3. Add quick capture endpoint or shared cloud path.
 
-18.4. Add phone capture import into local inbox.
+~~18.4. Add phone capture import into local inbox.~~
 
 Benchmark gate:
 
