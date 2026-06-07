@@ -14,11 +14,14 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
     private readonly MicrosoftToDoConnectionTestService _microsoftToDoConnectionTestService;
     private readonly MicrosoftProjectDesktopDetector _microsoftProjectDesktopDetector;
     private readonly IMicrosoftProjectFilePicker _microsoftProjectFilePicker;
+    private readonly Func<CancellationToken, Task<MicrosoftProjectImportResult>> _importMicrosoftProjectTasksAsync;
     private AppSettings _lastSavedSettings;
     private MicrosoftToDoConnectionStatus _microsoftToDoConnectionStatus;
     private MicrosoftProjectDesktopDetectionResult? _microsoftProjectDesktopDetectionResult;
+    private MicrosoftProjectImportResult? _microsoftProjectImportResult;
     private string _microsoftProjectDesktopDetectionFailure = string.Empty;
     private bool _isDetectingMicrosoftProjectDesktop;
+    private bool _isImportingMicrosoftProjectTasks;
     private string _profileName;
     private int _defaultFocusMinutes;
     private bool _startSyncOnLaunch;
@@ -40,7 +43,8 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
         string settingsFileStatus = "Loaded settings",
         MicrosoftToDoConnectionTestService? microsoftToDoConnectionTestService = null,
         MicrosoftProjectDesktopDetector? microsoftProjectDesktopDetector = null,
-        IMicrosoftProjectFilePicker? microsoftProjectFilePicker = null)
+        IMicrosoftProjectFilePicker? microsoftProjectFilePicker = null,
+        Func<CancellationToken, Task<MicrosoftProjectImportResult>>? importMicrosoftProjectTasksAsync = null)
         : base(ScreenCatalog.Settings)
     {
         _settingsService = settingsService;
@@ -50,6 +54,11 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
             ?? new MicrosoftProjectDesktopDetector();
         _microsoftProjectFilePicker = microsoftProjectFilePicker
             ?? new MicrosoftProjectFilePicker();
+        _importMicrosoftProjectTasksAsync = importMicrosoftProjectTasksAsync
+            ?? (_ => Task.FromResult(MicrosoftProjectImportResult.Failed(
+                settings.ProjectDesktop.LocalProjectFilePath,
+                "Project import unavailable",
+                "Project import is not configured for this session.")));
         _lastSavedSettings = CopySettings(settings);
         _microsoftToDoConnectionStatus =
             _microsoftToDoConnectionTestService.GetInitialStatus(settings.Connections);
@@ -69,6 +78,9 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
         ClearMicrosoftProjectFileCommand = new AsyncRelayCommand(
             () => ClearMicrosoftProjectFileAsync(),
             () => CanClearMicrosoftProjectFile);
+        ImportMicrosoftProjectTasksCommand = new AsyncRelayCommand(
+            () => ImportMicrosoftProjectTasksAsync(CancellationToken.None),
+            () => CanImportMicrosoftProjectTasks);
 
         _profileName = string.Empty;
         _themeName = string.Empty;
@@ -210,6 +222,8 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
     public AsyncRelayCommand SelectMicrosoftProjectFileCommand { get; }
 
     public AsyncRelayCommand ClearMicrosoftProjectFileCommand { get; }
+
+    public AsyncRelayCommand ImportMicrosoftProjectTasksCommand { get; }
 
     public string MicrosoftToDoStatusText => _microsoftToDoConnectionStatus.StatusText;
 
@@ -412,6 +426,101 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
     public bool CanClearMicrosoftProjectFile => EnableProjectDesktop
         && HasMicrosoftProjectFileSelection;
 
+    public string MicrosoftProjectImportStatusText
+    {
+        get
+        {
+            if (!EnableProjectDesktop)
+            {
+                return "Project import off";
+            }
+
+            if (_isImportingMicrosoftProjectTasks)
+            {
+                return "Importing Project tasks";
+            }
+
+            return _microsoftProjectImportResult?.StatusText ?? "Ready to import";
+        }
+    }
+
+    public string MicrosoftProjectImportDetailText
+    {
+        get
+        {
+            if (!EnableProjectDesktop)
+            {
+                return "Turn on Project Desktop to import tasks.";
+            }
+
+            if (_isImportingMicrosoftProjectTasks)
+            {
+                return "Reading the selected Project file and saving local tasks.";
+            }
+
+            if (_microsoftProjectImportResult is not null)
+            {
+                return _microsoftProjectImportResult.DetailText;
+            }
+
+            return HasMicrosoftProjectFileSelection
+                ? $"Import {MicrosoftProjectFileName} into local Success Planner tasks."
+                : "Choose a local .mpp file, then select Import Tasks.";
+        }
+    }
+
+    public string MicrosoftProjectImportStatusBackgroundColor
+    {
+        get
+        {
+            if (!EnableProjectDesktop)
+            {
+                return "#EEF0F3";
+            }
+
+            if (_isImportingMicrosoftProjectTasks)
+            {
+                return "#EAF2FF";
+            }
+
+            return _microsoftProjectImportResult switch
+            {
+                { WasSuccessful: true } => "#E7F8EE",
+                { WasSuccessful: false } => "#FFE7E0",
+                _ => "#F4F7FB"
+            };
+        }
+    }
+
+    public string MicrosoftProjectImportStatusAccentColor
+    {
+        get
+        {
+            if (!EnableProjectDesktop)
+            {
+                return "#6A717A";
+            }
+
+            if (_isImportingMicrosoftProjectTasks)
+            {
+                return "#2F6FED";
+            }
+
+            return _microsoftProjectImportResult switch
+            {
+                { WasSuccessful: true } => "#1E6B3A",
+                { WasSuccessful: false } => "#B8331F",
+                _ => "#4E5965"
+            };
+        }
+    }
+
+    public bool CanImportMicrosoftProjectTasks => EnableProjectDesktop
+        && !_isImportingMicrosoftProjectTasks;
+
+    public bool MicrosoftProjectImportNeedsAttention => EnableProjectDesktop
+        && _microsoftProjectImportResult is { WasSuccessful: false };
+
     public async Task TestMicrosoftToDoConnectionAsync(CancellationToken cancellationToken = default)
     {
         if (!CanTestMicrosoftToDoConnection)
@@ -478,6 +587,8 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
         }
 
         MicrosoftProjectFilePath = selectedPath;
+        _microsoftProjectImportResult = null;
+        RaiseMicrosoftProjectImportProperties();
         SaveStatus = "Project file selected. Save settings to keep it.";
     }
 
@@ -489,8 +600,58 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
         }
 
         MicrosoftProjectFilePath = string.Empty;
+        _microsoftProjectImportResult = null;
+        RaiseMicrosoftProjectImportProperties();
         SaveStatus = "Project file cleared. Save settings to keep it.";
         return Task.CompletedTask;
+    }
+
+    public async Task ImportMicrosoftProjectTasksAsync(CancellationToken cancellationToken = default)
+    {
+        if (!CanImportMicrosoftProjectTasks)
+        {
+            return;
+        }
+
+        _isImportingMicrosoftProjectTasks = true;
+        _microsoftProjectImportResult = null;
+        RaiseMicrosoftProjectImportProperties();
+
+        try
+        {
+            if (HasChanges)
+            {
+                await SaveAsync();
+            }
+
+            if (HasChanges)
+            {
+                _microsoftProjectImportResult = MicrosoftProjectImportResult.Failed(
+                    MicrosoftProjectFilePath,
+                    "Settings not saved",
+                    "Save settings before importing Project tasks, then try again.");
+                return;
+            }
+
+            _microsoftProjectImportResult =
+                await _importMicrosoftProjectTasksAsync(cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _microsoftProjectImportResult = MicrosoftProjectImportResult.Failed(
+                MicrosoftProjectFilePath,
+                "Project import failed",
+                $"Check the selected Project file and try again: {BuildFailureMessage(ex)}");
+        }
+        finally
+        {
+            _isImportingMicrosoftProjectTasks = false;
+            RaiseMicrosoftProjectImportProperties();
+        }
     }
 
     private async Task SaveAsync()
@@ -506,6 +667,7 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
             HasChanges = false;
             SetMicrosoftToDoConnectionStatus(
                 _microsoftToDoConnectionTestService.GetInitialStatus(settings.Connections));
+            RaiseMicrosoftProjectImportProperties();
         }
         catch (SettingsValidationException ex)
         {
@@ -615,6 +777,7 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
         _microsoftProjectDesktopDetectionFailure = string.Empty;
         _isDetectingMicrosoftProjectDesktop = false;
         RaiseMicrosoftProjectDesktopStatusProperties();
+        RaiseMicrosoftProjectImportProperties();
     }
 
     private void RaiseMicrosoftProjectDesktopStatusProperties()
@@ -640,6 +803,18 @@ public sealed class SettingsViewModel : ScreenViewModelBase, INotifyPropertyChan
         OnPropertyChanged(nameof(CanClearMicrosoftProjectFile));
         SelectMicrosoftProjectFileCommand.RaiseCanExecuteChanged();
         ClearMicrosoftProjectFileCommand.RaiseCanExecuteChanged();
+        RaiseMicrosoftProjectImportProperties();
+    }
+
+    private void RaiseMicrosoftProjectImportProperties()
+    {
+        OnPropertyChanged(nameof(MicrosoftProjectImportStatusText));
+        OnPropertyChanged(nameof(MicrosoftProjectImportDetailText));
+        OnPropertyChanged(nameof(MicrosoftProjectImportStatusBackgroundColor));
+        OnPropertyChanged(nameof(MicrosoftProjectImportStatusAccentColor));
+        OnPropertyChanged(nameof(CanImportMicrosoftProjectTasks));
+        OnPropertyChanged(nameof(MicrosoftProjectImportNeedsAttention));
+        ImportMicrosoftProjectTasksCommand.RaiseCanExecuteChanged();
     }
 
     private static string BuildFailureMessage(Exception exception)

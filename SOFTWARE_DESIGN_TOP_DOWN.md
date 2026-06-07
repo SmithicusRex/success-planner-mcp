@@ -1102,13 +1102,13 @@ Benchmark gate:
 
 ~~16.5. Map Project tasks into local domain objects.~~
 
-Benchmark gate:
+~~Benchmark gate:~~
 
 - ~~Project executable detection can find WINPROJ.EXE in common Office paths.~~
 - ~~Settings shows Project desktop detection status.~~
 - ~~User can select or detect a Project source.~~
 - ~~Imported tasks appear locally.~~
-- Import failure is visible and recoverable.
+- ~~Import failure is visible and recoverable.~~
 - ~~Build and tests pass.~~
 
 ### 17. Planner Availability Test

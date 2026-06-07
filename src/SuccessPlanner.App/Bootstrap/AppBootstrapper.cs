@@ -13,6 +13,7 @@ public sealed class AppBootstrapper
     private readonly DatabaseStartupMigrationService _databaseStartupMigrationService;
     private readonly TaskRepository _taskRepository;
     private readonly NoteRepository _noteRepository;
+    private readonly SourceLinkRepository _sourceLinkRepository;
     private readonly SettingsMetadataRepository _settingsMetadataRepository;
     private readonly SearchService _searchService;
     private readonly SyncQueueRepository _syncQueueRepository;
@@ -20,6 +21,7 @@ public sealed class AppBootstrapper
     private readonly BackgroundSyncWorker _backgroundSyncWorker;
     private readonly FocusSessionRepository _focusSessionRepository;
     private readonly MovementSessionRepository _movementSessionRepository;
+    private readonly MicrosoftProjectTaskImportService _microsoftProjectTaskImportService;
     private readonly BackgroundWorkerHost _backgroundWorkerHost;
     private readonly NavigationService _navigationService;
     private AppSettings? _loadedSettings;
@@ -39,6 +41,7 @@ public sealed class AppBootstrapper
         _databaseStartupMigrationService = new DatabaseStartupMigrationService(_databaseService);
         _taskRepository = new TaskRepository(_paths);
         _noteRepository = new NoteRepository(_paths);
+        _sourceLinkRepository = new SourceLinkRepository(_paths);
         _settingsMetadataRepository = new SettingsMetadataRepository(_paths);
         _searchService = new SearchService(_paths);
         _syncQueueRepository = new SyncQueueRepository(_paths);
@@ -46,6 +49,10 @@ public sealed class AppBootstrapper
         _backgroundSyncWorker = new BackgroundSyncWorker(_syncService);
         _focusSessionRepository = new FocusSessionRepository(_paths);
         _movementSessionRepository = new MovementSessionRepository(_paths);
+        _microsoftProjectTaskImportService = new MicrosoftProjectTaskImportService(
+            _settingsService,
+            _taskRepository,
+            _sourceLinkRepository);
         _backgroundWorkerHost = new BackgroundWorkerHost(_backgroundSyncWorker);
         _navigationService = new NavigationService();
         RegisterScreens();
@@ -168,7 +175,8 @@ public sealed class AppBootstrapper
         return new SettingsViewModel(
             _settingsService,
             settings,
-            settingsFileStatus: _settingsFileStatus);
+            settingsFileStatus: _settingsFileStatus,
+            importMicrosoftProjectTasksAsync: _microsoftProjectTaskImportService.ImportSelectedProjectFileAsync);
     }
 
     private AppSettings LoadSettingsForView()

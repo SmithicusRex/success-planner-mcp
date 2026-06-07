@@ -18,6 +18,9 @@ TestRunner.RunAll(
     ("SettingsViewModel shows Project file selection status", SettingsViewModelShowsProjectFileSelectionStatus),
     ("SettingsViewModel selects Project file", SettingsViewModelSelectsProjectFile),
     ("SettingsViewModel clears Project file selection", SettingsViewModelClearsProjectFileSelection),
+    ("SettingsViewModel shows Project import status", SettingsViewModelShowsProjectImportStatus),
+    ("SettingsViewModel shows recoverable Project import failure", SettingsViewModelShowsRecoverableProjectImportFailure),
+    ("SettingsViewModel recovers Project import after retry", SettingsViewModelRecoversProjectImportAfterRetry),
     ("CaptureViewModel starts in a simple ready state", CaptureViewModelStartsReady),
     ("CaptureViewModel applies date hint buttons", CaptureViewModelAppliesDateHintButtons),
     ("CaptureViewModel applies destination choices", CaptureViewModelAppliesDestinationChoices),
@@ -335,6 +338,94 @@ static void SettingsViewModelClearsProjectFileSelection()
     Assert.Contains("cleared", viewModel.SaveStatus);
 }
 
+static void SettingsViewModelShowsProjectImportStatus()
+{
+    AppSettings settings = AppSettings.CreateDefault();
+    settings.ProjectDesktop.LocalProjectFilePath = CreateFakeProjectFile();
+    SettingsViewModel viewModel = CreateSettingsViewModelWithProjectImport(
+        settings,
+        _ => Task.FromResult(MicrosoftProjectImportResult.Success(
+            settings.ProjectDesktop.LocalProjectFilePath,
+            importedTasks: [],
+            localTaskIds: [Guid.NewGuid()])));
+
+    Assert.Equal("Ready to import", viewModel.MicrosoftProjectImportStatusText);
+    Assert.Contains("Import", viewModel.MicrosoftProjectImportDetailText);
+    Assert.Contains(Path.GetFileName(settings.ProjectDesktop.LocalProjectFilePath), viewModel.MicrosoftProjectImportDetailText);
+    Assert.Equal("#F4F7FB", viewModel.MicrosoftProjectImportStatusBackgroundColor);
+    Assert.Equal("#4E5965", viewModel.MicrosoftProjectImportStatusAccentColor);
+    Assert.True(viewModel.CanImportMicrosoftProjectTasks, "Enabled Project desktop should allow import attempts.");
+    Assert.True(viewModel.ImportMicrosoftProjectTasksCommand.CanExecute(null), "Import command should start enabled.");
+    Assert.False(viewModel.MicrosoftProjectImportNeedsAttention, "Ready import state should not need attention.");
+}
+
+static void SettingsViewModelShowsRecoverableProjectImportFailure()
+{
+    AppSettings settings = AppSettings.CreateDefault();
+    settings.ProjectDesktop.LocalProjectFilePath = Path.Combine(
+        Path.GetTempPath(),
+        "SuccessPlannerMCP",
+        "ViewModelTests",
+        Guid.NewGuid().ToString("N"),
+        "Missing Plan.mpp");
+    int callCount = 0;
+    SettingsViewModel viewModel = CreateSettingsViewModelWithProjectImport(
+        settings,
+        _ =>
+        {
+            callCount++;
+            return Task.FromResult(MicrosoftProjectImportResult.Failed(
+                settings.ProjectDesktop.LocalProjectFilePath,
+                "Project file not found",
+                "Select an existing Microsoft Project file in Settings, then import again."));
+        });
+
+    viewModel.ImportMicrosoftProjectTasksAsync(CancellationToken.None).GetAwaiter().GetResult();
+
+    Assert.Equal(1, callCount);
+    Assert.Equal("Project file not found", viewModel.MicrosoftProjectImportStatusText);
+    Assert.Contains("Select an existing Microsoft Project file", viewModel.MicrosoftProjectImportDetailText);
+    Assert.Equal("#FFE7E0", viewModel.MicrosoftProjectImportStatusBackgroundColor);
+    Assert.Equal("#B8331F", viewModel.MicrosoftProjectImportStatusAccentColor);
+    Assert.True(viewModel.MicrosoftProjectImportNeedsAttention, "Failed Project import should stay visible.");
+    Assert.True(viewModel.CanImportMicrosoftProjectTasks, "Failed Project import should remain recoverable by retrying.");
+    Assert.True(viewModel.ImportMicrosoftProjectTasksCommand.CanExecute(null), "Import command should remain enabled after failure.");
+}
+
+static void SettingsViewModelRecoversProjectImportAfterRetry()
+{
+    AppSettings settings = AppSettings.CreateDefault();
+    settings.ProjectDesktop.LocalProjectFilePath = CreateFakeProjectFile();
+    Queue<MicrosoftProjectImportResult> results = new([
+        MicrosoftProjectImportResult.Failed(
+            settings.ProjectDesktop.LocalProjectFilePath,
+            "Project import failed",
+            "Microsoft Project desktop automation could not start."),
+        MicrosoftProjectImportResult.Success(
+            settings.ProjectDesktop.LocalProjectFilePath,
+            importedTasks: [],
+            localTaskIds: [Guid.NewGuid()],
+            sourceLinkIds: [Guid.NewGuid()])
+    ]);
+    SettingsViewModel viewModel = CreateSettingsViewModelWithProjectImport(
+        settings,
+        _ => Task.FromResult(results.Dequeue()));
+
+    viewModel.ImportMicrosoftProjectTasksAsync(CancellationToken.None).GetAwaiter().GetResult();
+
+    Assert.Equal("Project import failed", viewModel.MicrosoftProjectImportStatusText);
+    Assert.True(viewModel.MicrosoftProjectImportNeedsAttention, "First import should show a visible failure.");
+    Assert.True(viewModel.CanImportMicrosoftProjectTasks, "Failed import should allow a retry.");
+
+    viewModel.ImportMicrosoftProjectTasksAsync(CancellationToken.None).GetAwaiter().GetResult();
+
+    Assert.Equal("Project tasks imported", viewModel.MicrosoftProjectImportStatusText);
+    Assert.Contains("Imported 1 Project task", viewModel.MicrosoftProjectImportDetailText);
+    Assert.Equal("#E7F8EE", viewModel.MicrosoftProjectImportStatusBackgroundColor);
+    Assert.Equal("#1E6B3A", viewModel.MicrosoftProjectImportStatusAccentColor);
+    Assert.False(viewModel.MicrosoftProjectImportNeedsAttention, "Successful retry should clear attention state.");
+}
+
 static NavigationService CreateShellNavigationService()
 {
     NavigationService navigationService = new();
@@ -377,12 +468,25 @@ static SettingsViewModel CreateSettingsViewModelWithProjectFilePicker(
         projectFilePicker: picker);
 }
 
+static SettingsViewModel CreateSettingsViewModelWithProjectImport(
+    AppSettings settings,
+    Func<CancellationToken, Task<MicrosoftProjectImportResult>> importProjectTasksAsync)
+{
+    return CreateSettingsViewModelWithProbeInstance(
+        settings,
+        new TestMicrosoftToDoConnectionProbe((checkedAt, _) =>
+            Task.FromResult(MicrosoftToDoConnectionStatus.Connected(checkedAt: checkedAt))),
+        DateTimeOffset.Now,
+        importProjectTasksAsync: importProjectTasksAsync);
+}
+
 static SettingsViewModel CreateSettingsViewModelWithProbeInstance(
     AppSettings settings,
     TestMicrosoftToDoConnectionProbe probe,
     DateTimeOffset now,
     MicrosoftProjectDesktopDetector? projectDetector = null,
-    IMicrosoftProjectFilePicker? projectFilePicker = null)
+    IMicrosoftProjectFilePicker? projectFilePicker = null,
+    Func<CancellationToken, Task<MicrosoftProjectImportResult>>? importProjectTasksAsync = null)
 {
     string settingsRoot = Path.Combine(
         Path.GetTempPath(),
@@ -398,7 +502,8 @@ static SettingsViewModel CreateSettingsViewModelWithProbeInstance(
         settingsFileStatus: "Loaded settings",
         microsoftToDoConnectionTestService: connectionTestService,
         microsoftProjectDesktopDetector: projectDetector,
-        microsoftProjectFilePicker: projectFilePicker);
+        microsoftProjectFilePicker: projectFilePicker,
+        importMicrosoftProjectTasksAsync: importProjectTasksAsync);
 }
 
 static string CreateFakeProjectDesktopInstall(out string executablePath)
