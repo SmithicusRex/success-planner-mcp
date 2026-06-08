@@ -242,6 +242,55 @@ public sealed class TaskRepository
         return tasks;
     }
 
+    public async Task<IReadOnlyList<TaskItem>> GetRecentCapturedAsync(
+        int limit = 30,
+        CancellationToken cancellationToken = default)
+    {
+        if (limit is < 1 or > 100)
+        {
+            throw new ArgumentOutOfRangeException(nameof(limit), "Recent captured thought limit must be between 1 and 100.");
+        }
+
+        List<TaskItem> tasks = [];
+
+        await using SqliteConnection connection = await SqliteConnectionFactory.OpenAsync(_paths, cancellationToken);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT
+                id,
+                title,
+                notes,
+                status,
+                priority,
+                due_date,
+                start_date,
+                created_at,
+                completed_at,
+                project_id,
+                estimated_minutes,
+                energy_level,
+                is_tiny_step,
+                is_physical_activity,
+                tags_json
+            FROM tasks
+            WHERE status <> $doneStatus
+            ORDER BY created_at DESC, title COLLATE NOCASE
+            LIMIT $limit;
+            """;
+
+        command.Parameters.AddWithValue("$doneStatus", TaskItemStatus.Done.ToString());
+        command.Parameters.AddWithValue("$limit", limit);
+
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            tasks.Add(ReadTask(reader));
+        }
+
+        return tasks;
+    }
+
     public async Task<IReadOnlyList<TaskItem>> GetTodayAsync(
         DateOnly today,
         CancellationToken cancellationToken = default)

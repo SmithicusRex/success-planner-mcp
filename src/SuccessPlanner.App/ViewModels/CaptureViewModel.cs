@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
@@ -12,8 +13,10 @@ public sealed class CaptureViewModel : ScreenViewModelBase, INotifyPropertyChang
     private const string EmptyTitleMessage = "Add one small action first.";
     private const string ReadyStatus = "Ready to capture.";
     private const string NoSavedTaskMessage = "No task saved yet.";
+    private const int MaxCapturedThoughts = 30;
 
     private readonly Func<TaskItem, CancellationToken, Task> _saveTaskAsync;
+    private readonly Func<CancellationToken, Task<IReadOnlyList<TaskItem>>> _loadCapturedThoughtsAsync;
     private string _taskTitle = string.Empty;
     private string _notes = string.Empty;
     private string _validationMessage = string.Empty;
@@ -25,17 +28,29 @@ public sealed class CaptureViewModel : ScreenViewModelBase, INotifyPropertyChang
     private bool _hasSavedTask;
     private Guid? _lastSavedTaskId;
     private string _successFeedbackText = NoSavedTaskMessage;
+    private bool _isLoadingCapturedThoughts;
+    private string _capturedThoughtsStatusText = "Captured thoughts not loaded yet.";
+    private string _capturedThoughtCountText = "0 captured thoughts";
 
     public CaptureViewModel()
-        : this(MissingTaskRepositorySaveAsync)
+        : this(MissingTaskRepositorySaveAsync, NoCapturedThoughtsLoadAsync)
     {
     }
 
     public CaptureViewModel(Func<TaskItem, CancellationToken, Task> saveTaskAsync)
+        : this(saveTaskAsync, NoCapturedThoughtsLoadAsync)
+    {
+    }
+
+    public CaptureViewModel(
+        Func<TaskItem, CancellationToken, Task> saveTaskAsync,
+        Func<CancellationToken, Task<IReadOnlyList<TaskItem>>> loadCapturedThoughtsAsync)
         : base(ScreenCatalog.Capture)
     {
         ArgumentNullException.ThrowIfNull(saveTaskAsync);
+        ArgumentNullException.ThrowIfNull(loadCapturedThoughtsAsync);
         _saveTaskAsync = saveTaskAsync;
+        _loadCapturedThoughtsAsync = loadCapturedThoughtsAsync;
 
         TodayDateCommand = new AsyncRelayCommand(() =>
         {
@@ -92,6 +107,9 @@ public sealed class CaptureViewModel : ScreenViewModelBase, INotifyPropertyChang
                 return Task.CompletedTask;
             },
             () => HasSavedTask);
+        RefreshCapturedThoughtsCommand = new AsyncRelayCommand(
+            () => LoadCapturedThoughtsAsync(CancellationToken.None),
+            () => !IsLoadingCapturedThoughts);
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -103,6 +121,8 @@ public sealed class CaptureViewModel : ScreenViewModelBase, INotifyPropertyChang
     public string IconGlyph => Descriptor.IconGlyph;
 
     public string AccentColor => Descriptor.AccentColor;
+
+    public ObservableCollection<CapturedThoughtViewModel> CapturedThoughts { get; } = [];
 
     public ICommand TodayDateCommand { get; }
 
@@ -125,6 +145,8 @@ public sealed class CaptureViewModel : ScreenViewModelBase, INotifyPropertyChang
     public AsyncRelayCommand SaveTaskCommand { get; }
 
     public AsyncRelayCommand CaptureAnotherCommand { get; }
+
+    public AsyncRelayCommand RefreshCapturedThoughtsCommand { get; }
 
     public string TaskTitle
     {
@@ -222,6 +244,37 @@ public sealed class CaptureViewModel : ScreenViewModelBase, INotifyPropertyChang
 
     public bool CanCreateTask => !string.IsNullOrWhiteSpace(TaskTitle);
 
+    public bool IsLoadingCapturedThoughts
+    {
+        get => _isLoadingCapturedThoughts;
+        private set
+        {
+            if (SetProperty(ref _isLoadingCapturedThoughts, value))
+            {
+                RefreshCapturedThoughtsCommand.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
+    public string CapturedThoughtsStatusText
+    {
+        get => _capturedThoughtsStatusText;
+        private set => SetProperty(ref _capturedThoughtsStatusText, value);
+    }
+
+    public string CapturedThoughtCountText
+    {
+        get => _capturedThoughtCountText;
+        private set => SetProperty(ref _capturedThoughtCountText, value);
+    }
+
+    public bool HasCapturedThoughts => CapturedThoughts.Count > 0;
+
+    public override Task OnNavigatedToAsync(CancellationToken cancellationToken)
+    {
+        return LoadCapturedThoughtsAsync(cancellationToken);
+    }
+
     public bool TryCreateCapturedTask(out TaskItem? task)
     {
         if (!CanCreateTask)
@@ -261,6 +314,7 @@ public sealed class CaptureViewModel : ScreenViewModelBase, INotifyPropertyChang
             ValidationMessage = string.Empty;
             SuccessFeedbackText = $"Saved locally: {task.Title}";
             StatusText = "Saved locally.";
+            await LoadCapturedThoughtsAsync(cancellationToken);
         }
         catch (OperationCanceledException)
         {
@@ -273,6 +327,45 @@ public sealed class CaptureViewModel : ScreenViewModelBase, INotifyPropertyChang
             SuccessFeedbackText = NoSavedTaskMessage;
             ValidationMessage = "Could not save locally. Try again.";
             StatusText = "Save failed.";
+        }
+    }
+
+    public async Task LoadCapturedThoughtsAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (IsLoadingCapturedThoughts)
+        {
+            return;
+        }
+
+        try
+        {
+            IsLoadingCapturedThoughts = true;
+            CapturedThoughtsStatusText = "Checking captured thoughts.";
+
+            IReadOnlyList<TaskItem> capturedThoughts = await _loadCapturedThoughtsAsync(cancellationToken);
+            CapturedThoughts.Clear();
+            foreach (TaskItem thought in capturedThoughts.Take(MaxCapturedThoughts))
+            {
+                CapturedThoughts.Add(CapturedThoughtViewModel.FromTask(thought));
+            }
+
+            UpdateCapturedThoughtsSummary();
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            CapturedThoughts.Clear();
+            UpdateCapturedThoughtCount();
+            CapturedThoughtsStatusText = "Captured thoughts could not load.";
+        }
+        finally
+        {
+            IsLoadingCapturedThoughts = false;
         }
     }
 
@@ -330,6 +423,28 @@ public sealed class CaptureViewModel : ScreenViewModelBase, INotifyPropertyChang
         throw new InvalidOperationException("Task save service is not configured.");
     }
 
+    private static Task<IReadOnlyList<TaskItem>> NoCapturedThoughtsLoadAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult<IReadOnlyList<TaskItem>>([]);
+    }
+
+    private void UpdateCapturedThoughtsSummary()
+    {
+        UpdateCapturedThoughtCount();
+        CapturedThoughtsStatusText = HasCapturedThoughts
+            ? "Recent captured thoughts are ready."
+            : "No captured thoughts yet.";
+    }
+
+    private void UpdateCapturedThoughtCount()
+    {
+        CapturedThoughtCountText = CapturedThoughts.Count == 1
+            ? "1 captured thought"
+            : $"{CapturedThoughts.Count} captured thoughts";
+        OnPropertyChanged(nameof(HasCapturedThoughts));
+    }
+
     private bool SetProperty<T>(
         ref T field,
         T value,
@@ -348,5 +463,67 @@ public sealed class CaptureViewModel : ScreenViewModelBase, INotifyPropertyChang
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
     {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    }
+}
+
+public sealed class CapturedThoughtViewModel
+{
+    private CapturedThoughtViewModel(TaskItem task)
+    {
+        Id = task.Id;
+        Title = task.Title;
+        NotesPreview = BuildNotesPreview(task.Notes);
+        HasNotes = !string.IsNullOrWhiteSpace(NotesPreview);
+        CreatedText = $"Captured {task.CreatedAt.LocalDateTime:MMM d, h:mm tt}";
+        StatusText = BuildStatusText(task);
+        CardToolTip = HasNotes ? $"{Title} - {NotesPreview}" : $"{Title} - {StatusText}";
+    }
+
+    public Guid Id { get; }
+
+    public string Title { get; }
+
+    public string NotesPreview { get; }
+
+    public bool HasNotes { get; }
+
+    public string CreatedText { get; }
+
+    public string StatusText { get; }
+
+    public string CardToolTip { get; }
+
+    public static CapturedThoughtViewModel FromTask(TaskItem task)
+    {
+        ArgumentNullException.ThrowIfNull(task);
+        return new CapturedThoughtViewModel(task);
+    }
+
+    private static string BuildNotesPreview(string notes)
+    {
+        string trimmed = notes.Trim();
+        if (string.IsNullOrWhiteSpace(trimmed))
+        {
+            return string.Empty;
+        }
+
+        return trimmed.Length <= 90 ? trimmed : $"{trimmed[..87]}...";
+    }
+
+    private static string BuildStatusText(TaskItem task)
+    {
+        if (task.Status == TaskItemStatus.Planned && task.DueDate.HasValue)
+        {
+            return $"Planned {task.DueDate.Value:MMM d}";
+        }
+
+        return task.Status switch
+        {
+            TaskItemStatus.Captured => "Captured",
+            TaskItemStatus.Planned => "Planned",
+            TaskItemStatus.InProgress => "Started",
+            TaskItemStatus.Blocked => "Blocked",
+            _ => task.Status.ToString()
+        };
     }
 }

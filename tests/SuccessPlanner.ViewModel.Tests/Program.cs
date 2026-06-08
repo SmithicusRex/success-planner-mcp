@@ -38,6 +38,7 @@ TestRunner.RunAll(
     ("CaptureViewModel validates an empty title", CaptureViewModelValidatesEmptyTitle),
     ("CaptureViewModel creates a captured task draft", CaptureViewModelCreatesCapturedTaskDraft),
     ("CaptureViewModel creates a scheduled task draft when date is selected", CaptureViewModelCreatesScheduledTaskDraftWhenDateIsSelected),
+    ("CaptureViewModel loads captured thoughts", CaptureViewModelLoadsCapturedThoughts),
     ("CaptureViewModel saves a captured task locally", CaptureViewModelSavesCapturedTaskLocally),
     ("CaptureViewModel captures another task after success", CaptureViewModelCapturesAnotherTaskAfterSuccess),
     ("CaptureViewModel resets the capture form", CaptureViewModelResetsCaptureForm),
@@ -983,6 +984,40 @@ static void CaptureViewModelCreatesScheduledTaskDraftWhenDateIsSelected()
     Assert.NotNull(task, "Valid capture should return a task.");
     Assert.Equal(DateOnly.FromDateTime(DateTime.Today).AddDays(1), task!.DueDate);
     Assert.Equal(TaskItemStatus.Planned, task.Status);
+}
+
+static void CaptureViewModelLoadsCapturedThoughts()
+{
+    List<TaskItem> capturedThoughts =
+    [
+        TaskItem.Capture("Call pharmacy about refill"),
+        TaskItem.Capture("Draft the project idea")
+    ];
+    capturedThoughts[0].UpdateNotes("Check whether the prescription is ready.");
+    List<TaskItem> savedTasks = [];
+    CaptureViewModel viewModel = new(
+        (task, _) =>
+        {
+            savedTasks.Add(task);
+            capturedThoughts.Insert(0, task);
+            return Task.CompletedTask;
+        },
+        _ => Task.FromResult<IReadOnlyList<TaskItem>>(capturedThoughts));
+
+    viewModel.OnNavigatedToAsync(CancellationToken.None).GetAwaiter().GetResult();
+
+    Assert.Equal(2, viewModel.CapturedThoughts.Count);
+    Assert.Equal("2 captured thoughts", viewModel.CapturedThoughtCountText);
+    Assert.Equal("Recent captured thoughts are ready.", viewModel.CapturedThoughtsStatusText);
+    Assert.Equal("Call pharmacy about refill", viewModel.CapturedThoughts[0].Title);
+    Assert.Contains("prescription", viewModel.CapturedThoughts[0].NotesPreview);
+
+    viewModel.TaskTitle = "New capture from the quick list test";
+    viewModel.SaveCapturedTaskAsync(CancellationToken.None).GetAwaiter().GetResult();
+
+    Assert.Equal(1, savedTasks.Count);
+    Assert.Equal(3, viewModel.CapturedThoughts.Count);
+    Assert.Equal("New capture from the quick list test", viewModel.CapturedThoughts[0].Title);
 }
 
 static void CaptureViewModelSavesCapturedTaskLocally()

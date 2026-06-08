@@ -65,6 +65,7 @@ TestRunner.RunAll(
     ("AppBootstrapper shows a simple database failure message", AppBootstrapperShowsSimpleDatabaseFailureMessage),
     ("TaskRepository saves and loads task state", TaskRepositorySavesAndLoadsTaskState),
     ("TaskRepository loads unplanned tasks", TaskRepositoryLoadsUnplannedTasks),
+    ("TaskRepository loads recent captured thoughts", TaskRepositoryLoadsRecentCapturedThoughts),
     ("TaskRepository loads today tasks", TaskRepositoryLoadsTodayTasks),
     ("TaskRepository loads recent active tasks", TaskRepositoryLoadsRecentActiveTasks),
     ("TodayViewModel saves task actions through TaskRepository", TodayViewModelSavesTaskActionsThroughTaskRepository),
@@ -2342,6 +2343,34 @@ static async Task TaskRepositoryLoadsUnplannedTasks()
     Assert.False(unplannedTasks.Any(task => task.Title == "Started task"), "In-progress tasks should not load into Plan inbox.");
     Assert.False(unplannedTasks.Any(task => task.Title == "Done task"), "Completed tasks should not load into Plan inbox.");
     Assert.False(unplannedTasks.Any(task => task.Title == "Assigned project"), "Project-assigned captures should not load into Plan inbox.");
+}
+
+static async Task TaskRepositoryLoadsRecentCapturedThoughts()
+{
+    using TestWorkspace workspace = TestWorkspace.Create();
+    AppPaths paths = new(workspace.Path);
+    await CreateMigratedDatabaseAsync(paths);
+
+    DateOnly today = new(2026, 5, 30);
+    TaskItem looseCapture = CreateRepositoryTask("Loose capture");
+    TaskItem plannedThought = CreateRepositoryTask("Planned thought", dueDate: today);
+    TaskItem inProgressThought = CreateRepositoryTask("Started thought", inProgress: true);
+    TaskItem doneThought = CreateRepositoryTask("Completed thought", done: true);
+
+    TaskRepository repository = new(paths);
+    TaskItem[] tasks = [looseCapture, plannedThought, doneThought, inProgressThought];
+    foreach (TaskItem task in tasks)
+    {
+        await repository.AddAsync(task, CancellationToken.None);
+    }
+
+    IReadOnlyList<TaskItem> capturedThoughts = await repository.GetRecentCapturedAsync(10, CancellationToken.None);
+
+    Assert.Equal(3, capturedThoughts.Count);
+    Assert.True(capturedThoughts.Any(task => task.Title == "Loose capture"), "Loose captures should appear in quick duplicate checks.");
+    Assert.True(capturedThoughts.Any(task => task.Title == "Planned thought"), "Planned thoughts should appear in quick duplicate checks.");
+    Assert.True(capturedThoughts.Any(task => task.Title == "Started thought"), "Started thoughts should appear in quick duplicate checks.");
+    Assert.False(capturedThoughts.Any(task => task.Title == "Completed thought"), "Done thoughts should not appear in quick duplicate checks.");
 }
 
 static async Task TaskRepositoryLoadsTodayTasks()

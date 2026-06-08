@@ -115,7 +115,9 @@ public sealed class AppBootstrapper
     private void RegisterScreens()
     {
         _navigationService.Register(AppScreen.Home, () => new HomeScreenViewModel(_navigationService));
-        _navigationService.Register(AppScreen.Capture, () => new CaptureViewModel(_taskRepository.AddAsync));
+        _navigationService.Register(AppScreen.Capture, () => new CaptureViewModel(
+            _taskRepository.AddAsync,
+            cancellationToken => _taskRepository.GetRecentCapturedAsync(cancellationToken: cancellationToken)));
         _navigationService.Register(AppScreen.Today, () => new TodayViewModel(
             _taskRepository.GetTodayAsync,
             _taskRepository.SaveAsync));

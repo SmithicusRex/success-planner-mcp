@@ -116,6 +116,15 @@
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <Style x:Key="CapturedThoughtCardStyle" TargetType="Border">
+            <Setter Property="Background" Value="#FFFFFF" />
+            <Setter Property="BorderBrush" Value="#DDE8F5" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="14" />
+            <Setter Property="Margin" Value="0,0,0,10" />
+        </Style>
     </UserControl.Resources>
 
     <Grid>
@@ -197,6 +206,7 @@
                     Padding="26">
                 <Grid>
                     <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
@@ -289,6 +299,130 @@
                                     </Button>
                                 </StackPanel>
                             </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <Border Grid.Row="2"
+                            Margin="0,18,0,0"
+                            Background="#F5FAFF"
+                            BorderBrush="#CFE5FF"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Padding="18">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <StackPanel>
+                                    <TextBlock Text="Already Captured"
+                                               Foreground="{StaticResource InkBrush}"
+                                               FontSize="20"
+                                               FontWeight="SemiBold" />
+                                    <TextBlock Text="{Binding CapturedThoughtsStatusText}"
+                                               Foreground="{StaticResource MutedBrush}"
+                                               FontSize="13"
+                                               TextWrapping="Wrap"
+                                               Margin="0,4,0,0" />
+                                </StackPanel>
+
+                                <Button Grid.Column="1"
+                                        Command="{Binding RefreshCapturedThoughtsCommand}"
+                                        Style="{StaticResource ChoiceButtonStyle}"
+                                        MinWidth="44"
+                                        Width="44"
+                                        Height="40"
+                                        Padding="0"
+                                        Margin="12,0,0,0"
+                                        ToolTip="Refresh captured thoughts">
+                                    <TextBlock Text="&#xE72C;"
+                                               FontFamily="Segoe MDL2 Assets"
+                                               FontSize="15"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center" />
+                                </Button>
+                            </Grid>
+
+                            <Border Grid.Row="1"
+                                    Background="#FFFFFF"
+                                    BorderBrush="#DDE8F5"
+                                    BorderThickness="1"
+                                    CornerRadius="8"
+                                    Padding="10,6"
+                                    HorizontalAlignment="Left"
+                                    Margin="0,12,0,12">
+                                <TextBlock Text="{Binding CapturedThoughtCountText}"
+                                           Foreground="#245EC9"
+                                           FontSize="12"
+                                           FontWeight="SemiBold" />
+                            </Border>
+
+                            <ScrollViewer Grid.Row="2"
+                                          VerticalScrollBarVisibility="Auto">
+                                <ItemsControl ItemsSource="{Binding CapturedThoughts}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Style="{StaticResource CapturedThoughtCardStyle}"
+                                                    ToolTip="{Binding CardToolTip}">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="8" />
+                                                        <ColumnDefinition Width="12" />
+                                                        <ColumnDefinition Width="*" />
+                                                    </Grid.ColumnDefinitions>
+
+                                                    <Border Background="#9DCCFF"
+                                                            CornerRadius="4" />
+
+                                                    <StackPanel Grid.Column="2">
+                                                        <TextBlock Text="{Binding Title}"
+                                                                   Foreground="{StaticResource InkBrush}"
+                                                                   FontSize="16"
+                                                                   FontWeight="SemiBold"
+                                                                   TextWrapping="Wrap" />
+                                                        <TextBlock Text="{Binding NotesPreview}"
+                                                                   Foreground="{StaticResource MutedBrush}"
+                                                                   FontSize="12"
+                                                                   TextWrapping="Wrap"
+                                                                   Margin="0,4,0,0" />
+                                                        <WrapPanel Margin="0,8,0,0">
+                                                            <Border Background="#EEF6FF"
+                                                                    BorderBrush="#DDE8F5"
+                                                                    BorderThickness="1"
+                                                                    CornerRadius="8"
+                                                                    Padding="8,4"
+                                                                    Margin="0,0,8,0">
+                                                                <TextBlock Text="{Binding StatusText}"
+                                                                           Foreground="#245EC9"
+                                                                           FontSize="11"
+                                                                           FontWeight="SemiBold" />
+                                                            </Border>
+                                                            <Border Background="#F5F3EE"
+                                                                    BorderBrush="#E7E2D8"
+                                                                    BorderThickness="1"
+                                                                    CornerRadius="8"
+                                                                    Padding="8,4">
+                                                                <TextBlock Text="{Binding CreatedText}"
+                                                                           Foreground="{StaticResource MutedBrush}"
+                                                                           FontSize="11"
+                                                                           FontWeight="SemiBold" />
+                                                            </Border>
+                                                        </WrapPanel>
+                                                    </StackPanel>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
                         </Grid>
                     </Border>
                 </Grid>
